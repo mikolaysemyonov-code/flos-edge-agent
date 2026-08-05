@@ -35,7 +35,7 @@ const deviceId = env("FLOS_DEVICE_ID", "REACTOR_DEVICE_ID");
 const fingerprint =
   env("FLOS_PUBLIC_KEY_FINGERPRINT", "REACTOR_PUBLIC_KEY_FINGERPRINT") ??
   `sha256:${crypto.createHash("sha256").update(deviceId).digest("hex")}`;
-const enrollmentToken = env("FLOS_ENROLLMENT_TOKEN", "REACTOR_ENROLLMENT_TOKEN");
+const enrollmentToken = String(env("FLOS_ENROLLMENT_TOKEN", "REACTOR_ENROLLMENT_TOKEN") ?? "").trim();
 const heartbeatIntervalSec = Number(env("FLOS_HEARTBEAT_INTERVAL_SEC", "REACTOR_HEARTBEAT_INTERVAL_SEC") ?? 30);
 const pollIntervalMs = Number(env("FLOS_COMMAND_POLL_INTERVAL_MS", "REACTOR_COMMAND_POLL_INTERVAL_MS") ?? 4000);
 const protocolVersion = env("FLOS_AGENT_PROTOCOL_VERSION", "REACTOR_AGENT_PROTOCOL_VERSION") ?? "1.0";

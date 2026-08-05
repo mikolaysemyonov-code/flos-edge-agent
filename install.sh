@@ -69,17 +69,35 @@ if ! docker compose version >/dev/null 2>&1; then
   exit 1
 fi
 
+# CLI flags win. Read previous .env only for missing values — never `set -a; source`
+# (that exports stale FLOS_* into the shell; docker compose then prefers shell over --env-file).
+CLI_CLOUD_URL="$CLOUD_URL"
+CLI_PROJECT_ID="$PROJECT_ID"
+CLI_DEVICE_ID="$DEVICE_ID"
+CLI_TOKEN="$TOKEN"
+CLI_AUTH_TOKEN="$AUTH_TOKEN"
+
 if [[ -f "$DATA_DIR/.env" ]]; then
-  set -a
-  # shellcheck source=/dev/null
-  source "$DATA_DIR/.env"
-  set +a
-  [[ -z "$CLOUD_URL" ]] && CLOUD_URL="${FLOS_CLOUD_BASE_URL:-}"
-  [[ -z "$PROJECT_ID" ]] && PROJECT_ID="${FLOS_PROJECT_ID:-}"
-  [[ -z "$DEVICE_ID" ]] && DEVICE_ID="${FLOS_DEVICE_ID:-}"
-  [[ -z "$TOKEN" ]] && TOKEN="${FLOS_ENROLLMENT_TOKEN:-}"
-  [[ -z "$AUTH_TOKEN" ]] && AUTH_TOKEN="${FLOS_RUNTIME_HTTP_AUTH_TOKEN:-}"
-  [[ -n "${FLOS_AGENT_DIR:-}" ]] && AGENT_DIR="$FLOS_AGENT_DIR"
+  # shellcheck disable=SC1090
+  # Parse KEY=VALUE lines without exporting into this shell.
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    [[ -z "$line" || "$line" == \#* ]] && continue
+    key="${line%%=*}"
+    val="${line#*=}"
+    case "$key" in
+      FLOS_CLOUD_BASE_URL) [[ -z "$CLI_CLOUD_URL" ]] && CLOUD_URL="$val" ;;
+      FLOS_PROJECT_ID) [[ -z "$CLI_PROJECT_ID" ]] && PROJECT_ID="$val" ;;
+      FLOS_DEVICE_ID) [[ -z "$CLI_DEVICE_ID" ]] && DEVICE_ID="$val" ;;
+      FLOS_ENROLLMENT_TOKEN) [[ -z "$CLI_TOKEN" ]] && TOKEN="$val" ;;
+      FLOS_RUNTIME_HTTP_AUTH_TOKEN) [[ -z "$CLI_AUTH_TOKEN" ]] && AUTH_TOKEN="$val" ;;
+      FLOS_AGENT_DIR) AGENT_DIR="$val" ;;
+    esac
+  done < "$DATA_DIR/.env"
+  [[ -n "$CLI_CLOUD_URL" ]] && CLOUD_URL="$CLI_CLOUD_URL"
+  [[ -n "$CLI_PROJECT_ID" ]] && PROJECT_ID="$CLI_PROJECT_ID"
+  [[ -n "$CLI_DEVICE_ID" ]] && DEVICE_ID="$CLI_DEVICE_ID"
+  [[ -n "$CLI_TOKEN" ]] && TOKEN="$CLI_TOKEN"
+  [[ -n "$CLI_AUTH_TOKEN" ]] && AUTH_TOKEN="$CLI_AUTH_TOKEN"
 fi
 
 if [[ -z "$CLOUD_URL" || -z "$PROJECT_ID" || -z "$DEVICE_ID" || -z "$TOKEN" ]]; then
@@ -137,6 +155,17 @@ FLOS_CONTROLLER_MQTT_URL=mqtt://127.0.0.1:1883
 FLOS_STRICT_SIGNATURES=false
 EOF
 chmod 600 "$DATA_DIR/.env"
+
+# Compose interpolates ${VAR} from the *shell* before --env-file. Force shell to match the file.
+export FLOS_AGENT_DIR="$AGENT_DIR"
+export FLOS_EDGE_DATA_DIR="$DATA_DIR"
+export FLOS_CLOUD_BASE_URL="$CLOUD_URL"
+export FLOS_PROJECT_ID="$PROJECT_ID"
+export FLOS_DEVICE_ID="$DEVICE_ID"
+export FLOS_ENROLLMENT_TOKEN="$TOKEN"
+export FLOS_RUNTIME_HTTP_AUTH_TOKEN="$AUTH_TOKEN"
+export FLOS_CONTROLLER_MQTT_URL="mqtt://127.0.0.1:1883"
+export FLOS_STRICT_SIGNATURES="false"
 
 echo "[flos-edge-agent] docker compose up --build…"
 cd "$DATA_DIR"
