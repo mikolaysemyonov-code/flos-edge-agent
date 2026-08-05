@@ -1,0 +1,39 @@
+# Wiren Board field agent — build from /opt/flos/flos-edge-agent (public repo).
+# Data under /mnt/data (WB flash policy). Run via install.sh
+#
+# Required env in /mnt/data/flos-edge/.env:
+#   FLOS_CLOUD_BASE_URL, FLOS_PROJECT_ID, FLOS_DEVICE_ID, FLOS_ENROLLMENT_TOKEN
+# Optional: FLOS_RUNTIME_HTTP_AUTH_TOKEN, FLOS_AGENT_DIR (build context)
+
+services:
+  flos-edge-agent:
+    build:
+      context: ${FLOS_AGENT_DIR:-/opt/flos/flos-edge-agent}
+      dockerfile: Dockerfile
+    container_name: flos-edge-agent
+    network_mode: host
+    pid: host
+    privileged: true
+    restart: unless-stopped
+    volumes:
+      - ${FLOS_EDGE_DATA_DIR:-/mnt/data/flos-edge}/state:/var/lib/reactor-edge
+      - /etc/wb-rules:/etc/wb-rules
+      - /etc/formlogic:/etc/formlogic
+      - /run/systemd/system:/run/systemd/system:ro
+      - /var/run/dbus/system_bus_socket:/var/run/dbus/system_bus_socket
+    environment:
+      FLOS_CLOUD_BASE_URL: "${FLOS_CLOUD_BASE_URL}"
+      FLOS_PROJECT_ID: "${FLOS_PROJECT_ID}"
+      FLOS_DEVICE_ID: "${FLOS_DEVICE_ID}"
+      FLOS_ENROLLMENT_TOKEN: "${FLOS_ENROLLMENT_TOKEN}"
+      FLOS_STATE_PATH: /var/lib/reactor-edge/agent.state.json
+      FLOS_CONTROLLER_MQTT_URL: "${FLOS_CONTROLLER_MQTT_URL:-mqtt://127.0.0.1:1883}"
+      FLOS_HANDSHAKE_HTTP_ENABLED: "1"
+      FLOS_HANDSHAKE_HTTP_PORT: "18081"
+      FLOS_WB_RULES_DEPLOY_DIR: "/etc/wb-rules"
+      FLOS_WB_RULES_DEPLOY_PATH: "/etc/wb-rules/40_rules_integrator.js"
+      FLOS_WB_RULES_RELEASE_HASH_PATH: "/etc/formlogic/current_release.hash"
+      FLOS_RUNTIME_HTTP_AUTH_TOKEN: "${FLOS_RUNTIME_HTTP_AUTH_TOKEN:-}"
+      FLOS_ROUTER_SETUP_HTTP_ENABLED: "1"
+      FLOS_ROUTER_SETUP_SSH_ENABLED: "1"
+      FLOS_ROUTER_SETUP_APPLY_MODE: "safe_apply"

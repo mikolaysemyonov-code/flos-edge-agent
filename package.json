@@ -1,0 +1,8 @@
+{
+  "name": "reactor-edge-agent",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "mqtt": "^5.10.3"
+  }
+}
