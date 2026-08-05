@@ -39,8 +39,9 @@ const enrollmentToken = env("FLOS_ENROLLMENT_TOKEN", "REACTOR_ENROLLMENT_TOKEN")
 const heartbeatIntervalSec = Number(env("FLOS_HEARTBEAT_INTERVAL_SEC", "REACTOR_HEARTBEAT_INTERVAL_SEC") ?? 30);
 const pollIntervalMs = Number(env("FLOS_COMMAND_POLL_INTERVAL_MS", "REACTOR_COMMAND_POLL_INTERVAL_MS") ?? 4000);
 const protocolVersion = env("FLOS_AGENT_PROTOCOL_VERSION", "REACTOR_AGENT_PROTOCOL_VERSION") ?? "1.0";
+/** Field SaaS default: off unless explicitly enabled with a public key. */
 const strictSignatures =
-  String(env("FLOS_STRICT_SIGNATURES", "REACTOR_STRICT_SIGNATURES") ?? "true").toLowerCase() === "true";
+  String(env("FLOS_STRICT_SIGNATURES", "REACTOR_STRICT_SIGNATURES") ?? "false").toLowerCase() === "true";
 const allowedCommandTypes = new Set(
   String(
     env("FLOS_ALLOWED_COMMAND_TYPES", "REACTOR_ALLOWED_COMMAND_TYPES") ??

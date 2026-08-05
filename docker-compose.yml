@@ -37,3 +37,5 @@ services:
       FLOS_ROUTER_SETUP_HTTP_ENABLED: "1"
       FLOS_ROUTER_SETUP_SSH_ENABLED: "1"
       FLOS_ROUTER_SETUP_APPLY_MODE: "safe_apply"
+      # Field install has no cloud signing key; enable only with FLOS_CLOUD_SIGNING_PUBLIC_KEY.
+      FLOS_STRICT_SIGNATURES: "${FLOS_STRICT_SIGNATURES:-false}"
