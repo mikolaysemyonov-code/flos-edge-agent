@@ -398,7 +398,7 @@ async function heartbeat() {
 
 async function ackCommand(command, traceId, status, result, errorMessage) {
   if (!agentAccessToken || !agentId) return;
-  await postJson(`/api/projects/${projectId}/controller/agent/commands/${command.id}/ack`, {
+  const ackRes = await postJson(`/api/projects/${projectId}/controller/agent/commands/${command.id}/ack`, {
     projectId,
     commandId: command.id,
     traceId,
@@ -411,6 +411,11 @@ async function ackCommand(command, traceId, status, result, errorMessage) {
     errorMessage,
     finishedAt: new Date().toISOString(),
   });
+  if (!ackRes.ok) {
+    console.warn(
+      `[flos-edge-agent] command ack failed (${ackRes.status}) ${ackRes.body ? JSON.stringify(ackRes.body) : ""}`,
+    );
+  }
 }
 
 async function reportIncident(input) {
@@ -438,6 +443,112 @@ async function reportIncident(input) {
   if (result.transient) return;
   if (!result.ok) {
     console.warn(`[flos-edge-agent] incident report failed (${result.status})`);
+  }
+}
+
+/**
+ * Local MQTT publish for SaaS shield channel-ping (cloud cannot TCP to LAN/Tailscale).
+ * Invoked via system_check payload:
+ *   { action: "mqtt_publish", writes:[{topic,payload}] }
+ *   { action: "mqtt_publish", onWrites, offWrites, pulseMs } — pulse on→wait→off
+ */
+async function runMqttPublishCommand(payload) {
+  const host = typeof payload?.host === "string" && payload.host.trim() ? payload.host.trim() : "127.0.0.1";
+  const port = Number(payload?.port) > 0 ? Number(payload.port) : 1883;
+  const pulseMs = Math.min(Math.max(Number(payload?.pulseMs) || 800, 200), 5_000);
+  const normalizeWrites = (raw) => {
+    if (!Array.isArray(raw)) return [];
+    return raw
+      .map((w) => {
+        const topic = typeof w?.topic === "string" ? w.topic.trim() : "";
+        const body = w?.payload != null ? String(w.payload) : "";
+        if (!topic) return null;
+        return { topic, payload: body };
+      })
+      .filter(Boolean);
+  };
+  const onWrites = normalizeWrites(payload?.onWrites ?? payload?.writes);
+  const offWrites = normalizeWrites(payload?.offWrites);
+  const isPulse = offWrites.length > 0;
+  if (onWrites.length === 0) {
+    return { ok: false, error: "mqtt_publish_empty_writes" };
+  }
+  let mqttMod;
+  try {
+    mqttMod = await import("mqtt");
+  } catch (err) {
+    return { ok: false, error: `mqtt_package_missing:${err?.message ?? err}` };
+  }
+  const connect = mqttMod.connect ?? mqttMod.default?.connect;
+  if (typeof connect !== "function") {
+    return { ok: false, error: "mqtt_connect_missing" };
+  }
+  const url = `mqtt://${host}:${port}`;
+  const client = connect(url, { connectTimeout: 6_000, reconnectPeriod: 0, protocolVersion: 4, clean: true });
+  const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+  const forceEnd = () => {
+    try {
+      client.end(true);
+    } catch {
+      /* ignore */
+    }
+  };
+  const publishOne = (topic, body) =>
+    new Promise((resolve, reject) => {
+      const t = setTimeout(() => reject(new Error(`puback timeout: ${topic}`)), 5_000);
+      client.publish(topic, body, { qos: 1, retain: false }, (err) => {
+        clearTimeout(t);
+        if (err) reject(err);
+        else resolve();
+      });
+    });
+  const publishAll = async (writes) => {
+    for (const w of writes) {
+      const withSlash = w.topic.startsWith("/") ? w.topic : `/${w.topic}`;
+      const cmd = withSlash.endsWith("/on") ? withSlash : `${withSlash.replace(/\/+$/, "")}/on`;
+      const bare = cmd.replace(/^\//, "");
+      await publishOne(cmd, w.payload);
+      if (bare !== cmd) {
+        try {
+          await publishOne(bare, w.payload);
+        } catch {
+          /* optional bare alias for brokers without leading slash */
+        }
+      }
+    }
+  };
+  try {
+    await new Promise((resolve, reject) => {
+      const t = setTimeout(() => reject(new Error("mqtt connect timeout")), 6_000);
+      client.once("connect", () => {
+        clearTimeout(t);
+        resolve();
+      });
+      client.once("error", (err) => {
+        clearTimeout(t);
+        reject(err instanceof Error ? err : new Error(String(err)));
+      });
+    });
+    await publishAll(onWrites);
+    if (isPulse) {
+      await sleep(pulseMs);
+      await publishAll(offWrites);
+    }
+    forceEnd();
+    return {
+      ok: true,
+      details: {
+        mqttPublish: {
+          brokerLabel: `${host}:${port}`,
+          confirmed: true,
+          mode: isPulse ? "pulsed" : "set",
+          writes: onWrites.length + (isPulse ? offWrites.length : 0),
+        },
+      },
+    };
+  } catch (err) {
+    forceEnd();
+    return { ok: false, error: `mqtt_publish_failed:${err?.message ?? err}` };
   }
 }
 
@@ -638,6 +749,9 @@ async function executeCommand(command) {
   if (commandType === "system_check") {
     if (command.payload?.action === "mqtt_topic_scan") {
       return await runMqttTopicScanCommand(command.payload);
+    }
+    if (command.payload?.action === "mqtt_publish") {
+      return await runMqttPublishCommand(command.payload);
     }
     return {
       ok: true,
