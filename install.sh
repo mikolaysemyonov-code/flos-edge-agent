@@ -99,16 +99,14 @@ ensure_agent_files() {
     git -C "$AGENT_DIR" reset --hard "origin/$GIT_REF" 2>/dev/null || git -C "$AGENT_DIR" pull --ff-only origin "$GIT_REF"
     return
   fi
-  if [[ -f "$AGENT_DIR/Dockerfile" && -f "$AGENT_DIR/reactor-edge-agent.mjs" ]]; then
-    echo "[flos-edge-agent] использую файлы в $AGENT_DIR"
-    return
-  fi
   if [[ "$DO_CLONE" == "true" ]]; then
     echo "[flos-edge-agent] git clone $REPO_URL → $AGENT_DIR ($GIT_REF)…"
     mkdir -p "$(dirname "$AGENT_DIR")"
+    rm -rf "$AGENT_DIR"
     git clone --depth 1 --branch "$GIT_REF" "$REPO_URL" "$AGENT_DIR"
     return
   fi
+  # Always refresh from GitHub so field upgrades pick up fixes (no stale cache).
   echo "[flos-edge-agent] скачиваю файлы с GitHub ($RAW)…"
   mkdir -p "$AGENT_DIR"
   for f in Dockerfile docker-compose.yml entrypoint.sh package.json reactor-edge-agent.mjs runtime-control-plane-http.mjs; do
