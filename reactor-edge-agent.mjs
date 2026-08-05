@@ -68,6 +68,9 @@ let agentId = null;
 let agentAccessToken = null;
 let lastLowMemoryIncidentAt = 0;
 let activeCommandTraceId = null;
+/** After a fresh enroll, tolerate a few heartbeat 401s before wiping creds (token already burned). */
+let heartbeatAuthFailStreak = 0;
+const HEARTBEAT_AUTH_FAIL_CLEAR_AFTER = 5;
 
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -351,6 +354,7 @@ async function enroll() {
   }
   agentId = result.body.data.agentId;
   agentAccessToken = result.body.data.agentAccessToken;
+  heartbeatAuthFailStreak = 0;
   console.log(`[flos-edge-agent] enrolled: agentId=${agentId}`);
   return true;
 }
@@ -367,7 +371,6 @@ async function heartbeat() {
     agentAccessToken,
     controllerStatus: "online",
     agentVersion: "edge-pilot-v1",
-    protocolVersion,
     observedAt,
     appliedSnapshotHash,
     edgeHostSnapshot,
@@ -375,9 +378,22 @@ async function heartbeat() {
   const result = await postJson(`/api/projects/${projectId}/controller/agent/heartbeat`, body);
   if (result.transient) return;
   if (!result.ok) {
-    console.warn(`[flos-edge-agent] heartbeat failed (${result.status})`);
-    if (result.status === 401) clearPersistedCredentials("heartbeat_401");
+    const detail = result.body ? JSON.stringify(result.body) : "";
+    console.warn(`[flos-edge-agent] heartbeat failed (${result.status}) ${detail}`);
+    if (result.status === 401) {
+      heartbeatAuthFailStreak += 1;
+      if (heartbeatAuthFailStreak >= HEARTBEAT_AUTH_FAIL_CLEAR_AFTER) {
+        clearPersistedCredentials(`heartbeat_401_x${heartbeatAuthFailStreak}`);
+        heartbeatAuthFailStreak = 0;
+      } else {
+        console.warn(
+          `[flos-edge-agent] keeping credentials after heartbeat 401 (${heartbeatAuthFailStreak}/${HEARTBEAT_AUTH_FAIL_CLEAR_AFTER})`,
+        );
+      }
+    }
+    return;
   }
+  heartbeatAuthFailStreak = 0;
 }
 
 async function ackCommand(command, traceId, status, result, errorMessage) {
