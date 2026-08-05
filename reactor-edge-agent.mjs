@@ -322,6 +322,18 @@ function persistCredentials() {
   }
 }
 
+function clearPersistedCredentials(reason) {
+  console.warn(`[flos-edge-agent] clearing credentials (${reason})`);
+  agentId = null;
+  agentAccessToken = null;
+  if (!flosStatePath) return;
+  try {
+    fs.unlinkSync(flosStatePath);
+  } catch {
+    // missing is fine
+  }
+}
+
 async function enroll() {
   const result = await postJson(`/api/projects/${projectId}/controller/agent/enroll`, {
     projectId,
@@ -332,7 +344,10 @@ async function enroll() {
   });
   if (result.transient) return false;
   if (!result.ok || !result.body?.data?.agentId || !result.body?.data?.agentAccessToken) {
-    throw new Error(`Enroll failed (${result.status}): ${JSON.stringify(result.body)}`);
+    console.warn(
+      `[flos-edge-agent] enroll failed (${result.status}): ${JSON.stringify(result.body)}`,
+    );
+    return false;
   }
   agentId = result.body.data.agentId;
   agentAccessToken = result.body.data.agentAccessToken;
@@ -361,6 +376,7 @@ async function heartbeat() {
   if (result.transient) return;
   if (!result.ok) {
     console.warn(`[flos-edge-agent] heartbeat failed (${result.status})`);
+    if (result.status === 401) clearPersistedCredentials("heartbeat_401");
   }
 }
 
@@ -700,6 +716,7 @@ async function pollCommands() {
   if (result.transient) return;
   if (!result.ok) {
     console.warn(`[flos-edge-agent] commands/next failed (${result.status})`);
+    if (result.status === 401) clearPersistedCredentials("commands_next_401");
     return;
   }
   const command = result.body?.data?.command;
