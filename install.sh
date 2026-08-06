@@ -212,10 +212,40 @@ echo "[flos-edge-agent] docker compose up --build…"
 cd "$DATA_DIR"
 docker compose --env-file "$DATA_DIR/.env" -f "$DATA_DIR/docker-compose.yml" up -d --build
 
+echo "[flos-edge-agent] проверяю облако с контроллера…"
+if curl -fsS --max-time 20 -o /dev/null "$CLOUD_URL/"; then
+  echo "[flos-edge-agent] облако доступно: $CLOUD_URL"
+else
+  echo "[flos-edge-agent] WARN: $CLOUD_URL недоступен с щита (DNS/firewall/Tailscale). Enroll не пройдёт." >&2
+fi
+
+echo "[flos-edge-agent] жду http://127.0.0.1:18081/runtime/health…"
+HEALTH_OK=0
+for _ in $(seq 1 45); do
+  if curl -fsS --max-time 2 "http://127.0.0.1:18081/runtime/health" 2>/dev/null | grep -q '"ok"'; then
+    HEALTH_OK=1
+    break
+  fi
+  sleep 1
+done
+
+if [[ "$HEALTH_OK" != "1" ]]; then
+  echo "[flos-edge-agent] ERROR: /runtime/health не ответил за 45с." >&2
+  echo "--- docker ps ---" >&2
+  docker ps -a --filter name=flos-edge-agent >&2 || true
+  echo "--- docker logs (tail 100) ---" >&2
+  docker logs --tail 100 flos-edge-agent >&2 || true
+  echo "---" >&2
+  echo "Частые причины: порт 18081 занят, контейнер падает, нет FLOS_* в .env." >&2
+  exit 1
+fi
+
 echo "---"
-echo "Health на контроллере:"
-echo "  curl -s http://127.0.0.1:18081/runtime/health"
+echo "Health OK:"
+curl -sS --max-time 3 "http://127.0.0.1:18081/runtime/health" || true
+echo
 echo "В сервисе Integrator: «Проверить агент», затем Разметить щит."
+echo "Если «агент не зарегистрирован»: docker logs --tail 50 flos-edge-agent | grep -E 'enroll|fetch'"
 echo "Обновление:"
 echo "  curl -fsSL $RAW/install.sh | bash -s -- --upgrade-only (креды из $DATA_DIR/.env)"
 echo "Удаление (переустановка):"

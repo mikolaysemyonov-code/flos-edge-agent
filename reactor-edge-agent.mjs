@@ -25,7 +25,6 @@ const requiredPairs = [
   ["FLOS_CLOUD_BASE_URL", "REACTOR_CLOUD_BASE_URL"],
   ["FLOS_PROJECT_ID", "REACTOR_PROJECT_ID"],
   ["FLOS_DEVICE_ID", "REACTOR_DEVICE_ID"],
-  ["FLOS_ENROLLMENT_TOKEN", "REACTOR_ENROLLMENT_TOKEN"],
 ];
 
 for (const [primary, legacy] of requiredPairs) {
@@ -60,7 +59,8 @@ const allowedCommandTypes = new Set(
 const selfDiagnoseIntervalMs = 5 * 60 * 1000;
 const lowMemoryThresholdPercent = 10;
 const lowMemoryIncidentCooldownMs = 30 * 60 * 1000;
-const requestTimeoutMs = 8000;
+/** Vercel cold start + RS485 WB uplink often exceeds 8s. */
+const requestTimeoutMs = Number(env("FLOS_REQUEST_TIMEOUT_MS", "REACTOR_REQUEST_TIMEOUT_MS") ?? 30_000);
 const EMPTY_COMMAND_PAYLOAD_MARKER = "__EMPTY_COMMAND_PAYLOAD__";
 const healthStatePath = (
   env("FLOS_HEALTH_STATE_PATH", "REACTOR_HEALTH_STATE_PATH") ?? "/tmp/flos-edge-health"
@@ -346,6 +346,12 @@ function clearPersistedCredentials(reason) {
 }
 
 async function enroll() {
+  if (!enrollmentToken) {
+    console.warn(
+      "[flos-edge-agent] enroll skipped: no FLOS_ENROLLMENT_TOKEN (need --fresh with new code from UI)",
+    );
+    return false;
+  }
   const result = await postJson(`/api/projects/${projectId}/controller/agent/enroll`, {
     projectId,
     deviceId,
@@ -353,11 +359,22 @@ async function enroll() {
     enrollmentToken,
     protocolVersion,
   });
-  if (result.transient) return false;
-  if (!result.ok || !result.body?.data?.agentId || !result.body?.data?.agentAccessToken) {
+  if (result.transient) {
     console.warn(
-      `[flos-edge-agent] enroll failed (${result.status}): ${JSON.stringify(result.body)}`,
+      `[flos-edge-agent] enroll transient (timeout/network) to ${baseUrl} — will retry. Check: curl -I ${baseUrl}/`,
     );
+    return false;
+  }
+  if (!result.ok || !result.body?.data?.agentId || !result.body?.data?.agentAccessToken) {
+    const code = result.body?.code ?? result.body?.error ?? "enroll_failed";
+    console.warn(
+      `[flos-edge-agent] enroll failed (${result.status}) code=${code}: ${JSON.stringify(result.body)}`,
+    );
+    if (code === "token_used" || code === "token_revoked" || code === "token_expired") {
+      console.warn(
+        "[flos-edge-agent] Выдайте новый код в Integrator (Установка → Агент FLOS) и снова --fresh с этим токеном.",
+      );
+    }
     return false;
   }
   agentId = result.body.data.agentId;
@@ -1906,7 +1923,10 @@ async function handleHandshakeHttpRequest(req, res) {
 
 function startHandshakeHttpServerIfEnabled() {
   const en = String(env("FLOS_HANDSHAKE_HTTP_ENABLED", "REACTOR_HANDSHAKE_HTTP_ENABLED") ?? "").toLowerCase();
-  if (en !== "1" && en !== "true") return null;
+  if (en !== "1" && en !== "true") {
+    console.warn("[flos-edge-agent] handshake HTTP disabled (FLOS_HANDSHAKE_HTTP_ENABLED)");
+    return null;
+  }
   const port = Number(env("FLOS_HANDSHAKE_HTTP_PORT", "REACTOR_HANDSHAKE_HTTP_PORT") ?? 18081);
   const bind = (env("FLOS_HANDSHAKE_HTTP_BIND", "REACTOR_HANDSHAKE_HTTP_BIND") ?? "0.0.0.0").trim();
   const server = http.createServer((req, res) => {
@@ -1928,7 +1948,9 @@ function startHandshakeHttpServerIfEnabled() {
     );
   });
   server.on("error", (err) => {
-    console.warn("[flos-edge-agent] handshake http listen failed:", err?.message ?? err);
+    console.error("[flos-edge-agent] handshake http listen failed:", err?.message ?? err);
+    // Without :18081 field health and local apply are dead — fail loud for docker restart logs.
+    process.exit(1);
   });
   return server;
 }
