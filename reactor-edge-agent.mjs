@@ -607,9 +607,33 @@ async function runMqttTopicScanCommand(payload) {
       client.on("message", (topic, buf) => {
         const normalized = String(topic).replace(/^\/+/, "/").replace(/^([^/])/, "/$1");
         const parts = normalized.split("/").filter(Boolean);
-        if (parts.length < 4 || parts[0] !== "devices" || parts[2] !== "controls") return;
+        // Device-level meta/error — for offline retained filter in SaaS discovery.
+        if (parts.length === 4 && parts[0] === "devices" && parts[2] === "meta" && parts[3] === "error") {
+          const deviceTopicKey = parts[1];
+          const topicPath = `/devices/${deviceTopicKey}/meta/error`;
+          if (entriesByPath.has(topicPath)) return;
+          const raw = buf.length > 0 ? buf.toString("utf8") : "";
+          let lastValue;
+          if (raw === "0") lastValue = 0;
+          else if (raw === "1") lastValue = 1;
+          else if (raw && /^-?\d+(\.\d+)?$/.test(raw)) lastValue = Number(raw);
+          else if (raw) lastValue = raw;
+          entriesByPath.set(topicPath, {
+            id: `${deviceTopicKey}:__device_meta_error`,
+            deviceTopicKey,
+            controlId: "__device_meta_error",
+            topicPath,
+            valueType: "text",
+            importedAt,
+            ...(raw && raw.length <= 120 ? { lastValue } : {}),
+          });
+          return;
+        }
+        // Only leaf controls: /devices/{id}/controls/{controlId} — skip …/meta/type noise.
+        if (parts.length !== 4 || parts[0] !== "devices" || parts[2] !== "controls") return;
         const deviceTopicKey = parts[1];
         const controlId = parts[3];
+        if (!controlId || /meta/i.test(controlId)) return;
         const topicPath = `/devices/${deviceTopicKey}/controls/${controlId}`;
         if (entriesByPath.has(topicPath)) return;
         const raw = buf.length > 0 ? buf.toString("utf8") : "";
