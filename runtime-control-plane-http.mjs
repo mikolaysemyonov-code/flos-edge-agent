@@ -242,7 +242,8 @@ export function applyMonolithScript(script, revisionId) {
   return { deployPath: target, ackCount: 1, deployMode: "monolith", restarted: restarted != null };
 }
 
-export function applyShardBundle(shards, loadOrder, revisionId) {
+export function applyShardBundle(shards, loadOrder, revisionId, options = {}) {
+  const preserveOtherShards = options?.preserveOtherShards === true;
   const deployDir = wbRulesDeployDir();
   const byName = new Map(shards.map((s) => [s.filename, s.content]));
   const order =
@@ -260,7 +261,9 @@ export function applyShardBundle(shards, loadOrder, revisionId) {
   }
   if (ackCount === 0) throw new Error("No shards written");
 
-  removeStaleIntegratorShards(deployDir, order);
+  if (!preserveOtherShards) {
+    removeStaleIntegratorShards(deployDir, order);
+  }
 
   const monolithPath = wbRulesDeployPath();
   const monolithBase = path.basename(monolithPath);
@@ -313,6 +316,7 @@ export async function handleRuntimeApply(req, res) {
   const script = typeof body.script === "string" ? body.script : "";
   const shards = Array.isArray(body.shards) ? body.shards : [];
   const loadOrder = Array.isArray(body.loadOrder) ? body.loadOrder : [];
+  const preserveOtherShards = body.preserveOtherShards === true;
 
   if (!revisionId) {
     jsonWrite(res, 400, { status: "blocked", reasons: ["Missing revisionId"] });
@@ -332,7 +336,7 @@ export async function handleRuntimeApply(req, res) {
   try {
     backupCurrentStateBeforeApply();
     const result = useShards
-      ? applyShardBundle(shards, loadOrder, revisionId)
+      ? applyShardBundle(shards, loadOrder, revisionId, { preserveOtherShards })
       : applyMonolithScript(script, revisionId);
     console.log(
       `[runtime-control-plane] applied revision=${revisionId} mode=${result.deployMode} acks=${result.ackCount}`,

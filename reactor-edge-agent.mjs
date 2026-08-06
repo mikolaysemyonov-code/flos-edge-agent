@@ -180,6 +180,8 @@ function buildEdgeHostSnapshot() {
     uptimeSec: Math.floor(os.uptime()),
     loadAvg: /** @type {[number, number, number]} */ (os.loadavg()),
     mem: { totalBytes: total, freeBytes: free },
+    /** Capabilities for SaaS UI gates (split marking/rules deploy). */
+    capabilities: ["preserve_other_shards", "agent_self_update", "partial_shard_apply"],
   };
   const rs485 = normalizeRs485BusMetrics(
     readOptionalJsonFromEnvPath("FLOS_RS485_BUS_METRICS_PATH", "REACTOR_RS485_BUS_METRICS_PATH"),
@@ -376,7 +378,7 @@ async function heartbeat() {
     deviceId,
     agentAccessToken,
     controllerStatus: "online",
-    agentVersion: "edge-pilot-v1",
+    agentVersion: "edge-pilot-v2",
     observedAt,
     appliedSnapshotHash,
     edgeHostSnapshot,
@@ -706,6 +708,65 @@ async function startMqttDiagnosticsBridge() {
   client.on("error", (err) => console.warn("[flos-edge-agent] mqtt error:", err?.message ?? err));
 }
 
+function shellQuoteSingle(value) {
+  return `'${String(value).replace(/'/g, `'\\''`)}'`;
+}
+
+function execOnHostBash(script, timeoutMs = 120_000) {
+  const cmds = [
+    `nsenter --target 1 --mount --uts --ipc --net --pid -- bash -lc ${shellQuoteSingle(script)}`,
+    `bash -lc ${shellQuoteSingle(script)}`,
+  ];
+  let lastErr;
+  for (const cmd of cmds) {
+    try {
+      return execSync(cmd, { encoding: "utf8", timeout: timeoutMs, maxBuffer: 2 * 1024 * 1024 });
+    } catch (err) {
+      lastErr = err;
+    }
+  }
+  throw lastErr;
+}
+
+/**
+ * Self-update via host install.sh (--upgrade-only). Runs detached: container restarts during compose up.
+ * Payload: { action: "agent_self_update", gitRef? }
+ */
+function runAgentSelfUpdateCommand(payload) {
+  const gitRef =
+    typeof payload?.gitRef === "string" && payload.gitRef.trim()
+      ? payload.gitRef.trim().slice(0, 64)
+      : String(env("FLOS_AGENT_GIT_REF", "REACTOR_AGENT_GIT_REF") ?? "main").trim() || "main";
+  const slug = String(
+    env("FLOS_EDGE_AGENT_GITHUB_SLUG", "REACTOR_EDGE_AGENT_GITHUB_SLUG") ??
+      "mikolaysemyonov-code/flos-edge-agent",
+  ).trim();
+  const dataDir = String(env("FLOS_EDGE_DATA_DIR", "REACTOR_EDGE_DATA_DIR") ?? "/mnt/data/flos-edge").trim();
+  const agentDir = String(env("FLOS_AGENT_DIR", "REACTOR_AGENT_DIR") ?? "/opt/flos/flos-edge-agent").trim();
+  const installUrl = `https://raw.githubusercontent.com/${slug}/${gitRef}/install.sh`;
+  const logPath = "/tmp/flos-edge-agent-self-update.log";
+  const inner = `
+set -euo pipefail
+sleep 2
+exec >> ${logPath} 2>&1
+echo "[flos-edge-agent] self-update start $(date -Iseconds 2>/dev/null || date) ref=${gitRef}"
+curl -fsSL ${shellQuoteSingle(installUrl)} | bash -s -- --upgrade-only --data-dir ${shellQuoteSingle(dataDir)} --agent-dir ${shellQuoteSingle(agentDir)} --git-ref ${shellQuoteSingle(gitRef)}
+echo "[flos-edge-agent] self-update done $(date -Iseconds 2>/dev/null || date)"
+`;
+  try {
+    execOnHostBash(`nohup bash -lc ${shellQuoteSingle(inner)} >/dev/null 2>&1 &`, 15_000);
+    console.log(`[flos-edge-agent] agent_self_update scheduled ref=${gitRef}`);
+    return {
+      ok: true,
+      details: {
+        agentSelfUpdate: { scheduled: true, gitRef, logPath },
+      },
+    };
+  } catch (err) {
+    return { ok: false, error: `agent_self_update_failed:${err?.message ?? err}` };
+  }
+}
+
 /**
  * Field rules apply via command queue (SaaS cannot TCP to LAN/Tailscale :18081).
  * Payload: { action: "wb_rules_apply", revisionId, script?, shards?, loadOrder?, deployMode? }
@@ -732,10 +793,11 @@ function runWbRulesApplyCommand(payload) {
   if (!useShards && !script.trim()) {
     return { ok: false, error: "wb_rules_apply_missing_script_or_shards" };
   }
+  const preserveOtherShards = payload?.preserveOtherShards === true;
   try {
     backupCurrentStateBeforeApply();
     const applied = useShards
-      ? applyShardBundle(shards, loadOrder, revisionId)
+      ? applyShardBundle(shards, loadOrder, revisionId, { preserveOtherShards })
       : applyMonolithScript(script, revisionId);
     console.log(
       `[flos-edge-agent] wb_rules_apply revision=${revisionId} mode=${applied.deployMode} acks=${applied.ackCount}`,
@@ -813,6 +875,9 @@ async function executeCommand(command) {
     }
     if (command.payload?.action === "wb_rules_apply") {
       return runWbRulesApplyCommand(command.payload);
+    }
+    if (command.payload?.action === "agent_self_update") {
+      return runAgentSelfUpdateCommand(command.payload);
     }
     return {
       ok: true,

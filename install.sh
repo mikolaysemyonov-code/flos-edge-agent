@@ -2,9 +2,9 @@
 # Install / upgrade FLOS edge agent on Wiren Board (public repo).
 # Docker must already be installed.
 #
-# One-liner from Integrator UI:
+# One-liner from Integrator UI (после «Выдать код»):
 #   curl -fsSL https://raw.githubusercontent.com/mikolaysemyonov-code/flos-edge-agent/main/install.sh \
-#     | bash -s -- --cloud-url https://app.example.com --project-id UUID --device-id wb-SERIAL --token TOKEN
+#     | bash -s -- --fresh --cloud-url https://app.example.com --project-id UUID --device-id wb-SERIAL --token TOKEN
 #
 set -euo pipefail
 
@@ -18,6 +18,9 @@ GIT_REF="$DEFAULT_GIT_REF"
 AGENT_DIR="$DEFAULT_AGENT_DIR"
 DATA_DIR="$DEFAULT_DATA_DIR"
 DO_CLONE=false
+UPGRADE_ONLY=false
+DO_FRESH=false
+DO_UNINSTALL=false
 CLOUD_URL="${FLOS_CLOUD_BASE_URL:-}"
 PROJECT_ID="${FLOS_PROJECT_ID:-}"
 DEVICE_ID="${FLOS_DEVICE_ID:-}"
@@ -30,14 +33,20 @@ raw_base() {
 
 usage() {
   sed -n '1,12p' "$0" | sed 's/^# \{0,1\}//'
-  echo "Options: --clone --git-ref REF --agent-dir DIR --data-dir DIR --github-slug owner/repo"
+  echo "Options: --clone --fresh --uninstall --upgrade-only --git-ref REF --agent-dir DIR --data-dir DIR --github-slug owner/repo"
   echo "         --cloud-url URL --project-id ID --device-id ID --token TOKEN"
   echo "         --auth-token TOKEN (optional Bearer for /runtime/apply)"
+  echo "  --fresh         чистая установка: каталоги + сброс state/agent.state.json"
+  echo "  --uninstall     остановить контейнер и удалить данные агента (для установки заново)"
+  echo "  --upgrade-only  обновление без нового enrollment token (креды из \$DATA_DIR/.env)"
 }
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --clone) DO_CLONE=true; shift ;;
+    --fresh) DO_FRESH=true; shift ;;
+    --uninstall) DO_UNINSTALL=true; shift ;;
+    --upgrade-only) UPGRADE_ONLY=true; shift ;;
     --git-ref) GIT_REF="${2:-}"; shift 2 ;;
     --agent-dir) AGENT_DIR="${2:-}"; shift 2 ;;
     --data-dir) DATA_DIR="${2:-}"; shift 2 ;;
@@ -67,6 +76,26 @@ fi
 if ! docker compose version >/dev/null 2>&1; then
   echo "[flos-edge-agent] нужен docker compose plugin." >&2
   exit 1
+fi
+
+if [[ "$DO_UNINSTALL" == "true" ]]; then
+  echo "[flos-edge-agent] удаляю контейнер и локальные данные агента ($DATA_DIR)…"
+  if [[ -f "$DATA_DIR/docker-compose.yml" ]]; then
+    (
+      cd "$DATA_DIR"
+      if [[ -f "$DATA_DIR/.env" ]]; then
+        docker compose --env-file "$DATA_DIR/.env" -f "$DATA_DIR/docker-compose.yml" down --remove-orphans 2>/dev/null || true
+      else
+        docker compose -f "$DATA_DIR/docker-compose.yml" down --remove-orphans 2>/dev/null || true
+      fi
+    )
+  fi
+  docker rm -f flos-edge-agent 2>/dev/null || true
+  rm -rf "$DATA_DIR/state"
+  rm -f "$DATA_DIR/.env" "$DATA_DIR/docker-compose.yml"
+  echo "[flos-edge-agent] агент удалён."
+  echo "Для установки заново: в сервисе «Выдать код» → install.sh --fresh …"
+  exit 0
 fi
 
 # CLI flags win. Read previous .env only for missing values — never `set -a; source`
@@ -100,8 +129,16 @@ if [[ -f "$DATA_DIR/.env" ]]; then
   [[ -n "$CLI_AUTH_TOKEN" ]] && AUTH_TOKEN="$CLI_AUTH_TOKEN"
 fi
 
-if [[ -z "$CLOUD_URL" || -z "$PROJECT_ID" || -z "$DEVICE_ID" || -z "$TOKEN" ]]; then
-  echo "[flos-edge-agent] задайте --cloud-url --project-id --device-id --token (или env FLOS_*)." >&2
+if [[ -z "$CLOUD_URL" || -z "$PROJECT_ID" || -z "$DEVICE_ID" ]]; then
+  echo "[flos-edge-agent] задайте --cloud-url --project-id --device-id (или env FLOS_* / $DATA_DIR/.env)." >&2
+  exit 1
+fi
+if [[ "$UPGRADE_ONLY" != "true" && -z "$TOKEN" ]]; then
+  echo "[flos-edge-agent] задайте --token (или FLOS_ENROLLMENT_TOKEN в .env)." >&2
+  exit 1
+fi
+if [[ "$UPGRADE_ONLY" == "true" && ! -f "$DATA_DIR/.env" ]]; then
+  echo "[flos-edge-agent] --upgrade-only: нет $DATA_DIR/.env" >&2
   exit 1
 fi
 
@@ -141,6 +178,10 @@ if [[ ! -f "$AGENT_DIR/docker-compose.yml" ]]; then
 fi
 
 mkdir -p "$DATA_DIR/state" /etc/wb-rules /etc/formlogic
+if [[ "$DO_FRESH" == "true" ]]; then
+  echo "[flos-edge-agent] --fresh: сброс state/agent.state.json"
+  rm -f "$DATA_DIR/state/agent.state.json"
+fi
 cp "$AGENT_DIR/docker-compose.yml" "$DATA_DIR/docker-compose.yml"
 
 cat > "$DATA_DIR/.env" <<EOF
@@ -176,4 +217,6 @@ echo "Health на контроллере:"
 echo "  curl -s http://127.0.0.1:18081/runtime/health"
 echo "В сервисе Integrator: «Проверить агент», затем Разметить щит."
 echo "Обновление:"
-echo "  curl -fsSL $RAW/install.sh | bash -s -- --cloud-url … (те же флаги; креды подхватятся из $DATA_DIR/.env)"
+echo "  curl -fsSL $RAW/install.sh | bash -s -- --upgrade-only (креды из $DATA_DIR/.env)"
+echo "Удаление (переустановка):"
+echo "  curl -fsSL $RAW/install.sh | bash -s -- --uninstall"
