@@ -562,8 +562,15 @@ async function runMqttPublishCommand(payload) {
 
 /**
  * Local MQTT topic scan for SaaS mark-shield (cloud cannot TCP to LAN/Tailscale).
- * Invoked via system_check payload { action: "mqtt_topic_scan", scanMs?, host?, port? }.
+ * Invoked via system_check payload { action: "mqtt_topic_scan", scanMs?, host?, port?, markShield? }.
  */
+function isMarkShieldDiscoverableDeviceKey(deviceTopicKey) {
+  const key = String(deviceTopicKey ?? "");
+  return /mr6c|mr6cu|mr6cv|mdm|mrm2|mrm|wb[-_]?led|ampled|mali|mao|maod|dimmer|mr3|mr12|mr11|mdali|dali|mcm8|mcm16|mcm24|wd14|mdi|^wb-gpio$|gpio|m1w2|msw/i.test(
+    key,
+  );
+}
+
 async function runMqttTopicScanCommand(payload) {
   const host = typeof payload?.host === "string" && payload.host.trim() ? payload.host.trim() : "127.0.0.1";
   const port = Number(payload?.port) > 0 ? Number(payload.port) : 1883;
@@ -610,6 +617,7 @@ async function runMqttTopicScanCommand(payload) {
         // Device-level meta/error — for offline retained filter in SaaS discovery.
         if (parts.length === 4 && parts[0] === "devices" && parts[2] === "meta" && parts[3] === "error") {
           const deviceTopicKey = parts[1];
+          if (payload?.markShield && !isMarkShieldDiscoverableDeviceKey(deviceTopicKey)) return;
           const topicPath = `/devices/${deviceTopicKey}/meta/error`;
           if (entriesByPath.has(topicPath)) return;
           const raw = buf.length > 0 ? buf.toString("utf8") : "";
@@ -632,6 +640,7 @@ async function runMqttTopicScanCommand(payload) {
         // Only leaf controls: /devices/{id}/controls/{controlId} — skip …/meta/type noise.
         if (parts.length !== 4 || parts[0] !== "devices" || parts[2] !== "controls") return;
         const deviceTopicKey = parts[1];
+        if (payload?.markShield && !isMarkShieldDiscoverableDeviceKey(deviceTopicKey)) return;
         const controlId = parts[3];
         if (!controlId || /meta/i.test(controlId)) return;
         const topicPath = `/devices/${deviceTopicKey}/controls/${controlId}`;
