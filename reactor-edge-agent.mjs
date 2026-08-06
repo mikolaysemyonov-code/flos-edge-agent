@@ -6,7 +6,13 @@ import fs from "node:fs";
 import http from "node:http";
 import os from "node:os";
 import path from "node:path";
-import { runtimeHttpPathHandler, applyMonolithScript, applyShardBundle, restartWbRules } from "./runtime-control-plane-http.mjs";
+import {
+  runtimeHttpPathHandler,
+  applyMonolithScript,
+  applyShardBundle,
+  backupCurrentStateBeforeApply,
+  restartWbRules,
+} from "./runtime-control-plane-http.mjs";
 
 /** Prefer `FLOS_*` (FL OS); fall back to legacy `REACTOR_*` for existing deployments. */
 function env(primary, legacy) {
@@ -700,6 +706,58 @@ async function startMqttDiagnosticsBridge() {
   client.on("error", (err) => console.warn("[flos-edge-agent] mqtt error:", err?.message ?? err));
 }
 
+/**
+ * Field rules apply via command queue (SaaS cannot TCP to LAN/Tailscale :18081).
+ * Payload: { action: "wb_rules_apply", revisionId, script?, shards?, loadOrder?, deployMode? }
+ */
+function runWbRulesApplyCommand(payload) {
+  const revisionId = typeof payload?.revisionId === "string" ? payload.revisionId.trim() : "";
+  if (!revisionId) {
+    return { ok: false, error: "wb_rules_apply_missing_revision" };
+  }
+  const script = typeof payload?.script === "string" ? payload.script : "";
+  const shardsRaw = Array.isArray(payload?.shards) ? payload.shards : [];
+  const shards = shardsRaw
+    .map((s) => {
+      const filename = typeof s?.filename === "string" ? s.filename.trim() : "";
+      const content = typeof s?.content === "string" ? s.content : "";
+      if (!filename || !content) return null;
+      return { filename, content };
+    })
+    .filter(Boolean);
+  const loadOrder = Array.isArray(payload?.loadOrder)
+    ? payload.loadOrder.map((x) => String(x)).filter(Boolean)
+    : [];
+  const useShards = shards.length > 0 || payload?.deployMode === "shards";
+  if (!useShards && !script.trim()) {
+    return { ok: false, error: "wb_rules_apply_missing_script_or_shards" };
+  }
+  try {
+    backupCurrentStateBeforeApply();
+    const applied = useShards
+      ? applyShardBundle(shards, loadOrder, revisionId)
+      : applyMonolithScript(script, revisionId);
+    console.log(
+      `[flos-edge-agent] wb_rules_apply revision=${revisionId} mode=${applied.deployMode} acks=${applied.ackCount}`,
+    );
+    return {
+      ok: true,
+      details: {
+        wbRulesApplied: {
+          revisionId,
+          ackCount: applied.ackCount,
+          deployMode: applied.deployMode,
+          deployPath: applied.deployPath ?? null,
+          deployDir: applied.deployDir ?? null,
+          restarted: applied.restarted,
+        },
+      },
+    };
+  } catch (err) {
+    return { ok: false, error: `wb_rules_apply_failed:${err?.message ?? err}` };
+  }
+}
+
 async function executeCommand(command) {
   const traceId = getCommandTraceId(command);
   if (!traceId) {
@@ -752,6 +810,9 @@ async function executeCommand(command) {
     }
     if (command.payload?.action === "mqtt_publish") {
       return await runMqttPublishCommand(command.payload);
+    }
+    if (command.payload?.action === "wb_rules_apply") {
+      return runWbRulesApplyCommand(command.payload);
     }
     return {
       ok: true,
@@ -845,12 +906,28 @@ async function pollCommands() {
   });
   if (result.transient) return;
   if (!result.ok) {
-    console.warn(`[flos-edge-agent] commands/next failed (${result.status})`);
+    const detail =
+      typeof result.body?.error === "string"
+        ? result.body.error
+        : typeof result.body?.code === "string"
+          ? result.body.code
+          : "";
+    console.warn(
+      `[flos-edge-agent] commands/next failed (${result.status})${detail ? ` ${detail}` : ""}`,
+    );
     if (result.status === 401) clearPersistedCredentials("commands_next_401");
     return;
   }
+  const pending = Number(result.body?.data?.pendingCommands ?? 0);
   const command = result.body?.data?.command;
-  if (!command) return;
+  if (!command) {
+    if (pending > 0) {
+      console.warn(
+        `[flos-edge-agent] commands/next returned no command but pendingCommands=${pending} — claim may be broken on cloud`,
+      );
+    }
+    return;
+  }
   const traceId = getCommandTraceId(command);
   if (!traceId) {
     console.warn(`[flos-edge-agent] dropping command without traceId id=${command.id}`);
