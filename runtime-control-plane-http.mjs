@@ -282,6 +282,7 @@ export function applyShardBundle(shards, loadOrder, revisionId, options = {}) {
 
 export function handleRuntimeHealth(_req, res) {
   const manifest = loadBackupManifest();
+  const extra = typeof runtimeHealthExtraProvider === "function" ? runtimeHealthExtraProvider() : {};
   jsonWrite(res, 200, {
     ok: true,
     service: "integrator-runtime-control-plane",
@@ -290,7 +291,14 @@ export function handleRuntimeHealth(_req, res) {
     appliedRevisionId: readAppliedRevisionId(),
     canRollback: Boolean(manifest?.files?.length),
     previousRevisionId: manifest?.revisionId ?? null,
+    ...(extra && typeof extra === "object" ? extra : {}),
   });
+}
+
+/** Optional enricher for GET /runtime/health (enrollment state from reactor-edge-agent). */
+let runtimeHealthExtraProvider = null;
+export function setRuntimeHealthExtraProvider(fn) {
+  runtimeHealthExtraProvider = typeof fn === "function" ? fn : null;
 }
 
 export async function handleRuntimeApply(req, res) {

@@ -1,9 +1,13 @@
 # Wiren Board field agent — build from /opt/flos/flos-edge-agent (public repo).
-# Data under /mnt/data (WB flash policy). Run via install.sh
+# Data under /mnt/data (WB flash policy). Run via install.sh from /mnt/data/flos-edge.
 #
-# Required env in /mnt/data/flos-edge/.env:
-#   FLOS_CLOUD_BASE_URL, FLOS_PROJECT_ID, FLOS_DEVICE_ID, FLOS_ENROLLMENT_TOKEN
-# Optional: FLOS_RUNTIME_HTTP_AUTH_TOKEN, FLOS_AGENT_DIR (build context)
+# Secrets come ONLY from env_file (.env next to this compose file).
+# Do NOT interpolate FLOS_CLOUD_* / TOKEN via "${VAR}" — empty shell exports would blank them.
+#
+# Required in .env:
+#   FLOS_CLOUD_BASE_URL, FLOS_PROJECT_ID, FLOS_DEVICE_ID
+# Optional: FLOS_ENROLLMENT_TOKEN (needed until first successful enroll+heartbeat),
+#           FLOS_RUNTIME_HTTP_AUTH_TOKEN, FLOS_AGENT_DIR (build context)
 
 services:
   flos-edge-agent:
@@ -15,6 +19,8 @@ services:
     pid: host
     privileged: true
     restart: unless-stopped
+    env_file:
+      - .env
     volumes:
       - ${FLOS_EDGE_DATA_DIR:-/mnt/data/flos-edge}/state:/var/lib/reactor-edge
       - /etc/wb-rules:/etc/wb-rules
@@ -22,20 +28,15 @@ services:
       - /run/systemd/system:/run/systemd/system:ro
       - /var/run/dbus/system_bus_socket:/var/run/dbus/system_bus_socket
     environment:
-      FLOS_CLOUD_BASE_URL: "${FLOS_CLOUD_BASE_URL}"
-      FLOS_PROJECT_ID: "${FLOS_PROJECT_ID}"
-      FLOS_DEVICE_ID: "${FLOS_DEVICE_ID}"
-      FLOS_ENROLLMENT_TOKEN: "${FLOS_ENROLLMENT_TOKEN}"
+      # Non-secrets only — secrets load from env_file above.
       FLOS_STATE_PATH: /var/lib/reactor-edge/agent.state.json
-      FLOS_CONTROLLER_MQTT_URL: "${FLOS_CONTROLLER_MQTT_URL:-mqtt://127.0.0.1:1883}"
+      FLOS_CONTROLLER_MQTT_URL: mqtt://127.0.0.1:1883
       FLOS_HANDSHAKE_HTTP_ENABLED: "1"
       FLOS_HANDSHAKE_HTTP_PORT: "18081"
       FLOS_WB_RULES_DEPLOY_DIR: "/etc/wb-rules"
       FLOS_WB_RULES_DEPLOY_PATH: "/etc/wb-rules/40_rules_integrator.js"
       FLOS_WB_RULES_RELEASE_HASH_PATH: "/etc/formlogic/current_release.hash"
-      FLOS_RUNTIME_HTTP_AUTH_TOKEN: "${FLOS_RUNTIME_HTTP_AUTH_TOKEN:-}"
       FLOS_ROUTER_SETUP_HTTP_ENABLED: "1"
       FLOS_ROUTER_SETUP_SSH_ENABLED: "1"
       FLOS_ROUTER_SETUP_APPLY_MODE: "safe_apply"
-      # Field install has no cloud signing key; enable only with FLOS_CLOUD_SIGNING_PUBLIC_KEY.
-      FLOS_STRICT_SIGNATURES: "${FLOS_STRICT_SIGNATURES:-false}"
+      FLOS_STRICT_SIGNATURES: "false"

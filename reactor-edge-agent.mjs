@@ -12,6 +12,7 @@ import {
   applyShardBundle,
   backupCurrentStateBeforeApply,
   restartWbRules,
+  setRuntimeHealthExtraProvider,
 } from "./runtime-control-plane-http.mjs";
 
 /** Prefer `FLOS_*` (FL OS); fall back to legacy `REACTOR_*` for existing deployments. */
@@ -77,6 +78,15 @@ let activeCommandTraceId = null;
 /** After a fresh enroll, tolerate a few heartbeat 401s before wiping creds (token already burned). */
 let heartbeatAuthFailStreak = 0;
 const HEARTBEAT_AUTH_FAIL_CLEAR_AFTER = 5;
+/** Exposed on GET /runtime/health for field diagnosis without docker logs. */
+let enrollmentHealth = {
+  state: "starting",
+  lastError: null,
+  lastCode: null,
+  agentId: null,
+};
+/** HTTP listen once per process — never re-enter listen on main() retry. */
+let handshakeHttpServer = null;
 
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -337,6 +347,12 @@ function clearPersistedCredentials(reason) {
   console.warn(`[flos-edge-agent] clearing credentials (${reason})`);
   agentId = null;
   agentAccessToken = null;
+  enrollmentHealth = {
+    state: "credentials_cleared",
+    lastError: String(reason),
+    lastCode: "cleared",
+    agentId: null,
+  };
   if (!flosStatePath) return;
   try {
     fs.unlinkSync(flosStatePath);
@@ -347,11 +363,18 @@ function clearPersistedCredentials(reason) {
 
 async function enroll() {
   if (!enrollmentToken) {
+    enrollmentHealth = {
+      state: "need_token",
+      lastError: "no FLOS_ENROLLMENT_TOKEN",
+      lastCode: "missing_token",
+      agentId: null,
+    };
     console.warn(
       "[flos-edge-agent] enroll skipped: no FLOS_ENROLLMENT_TOKEN (need --fresh with new code from UI)",
     );
     return false;
   }
+  enrollmentHealth = { ...enrollmentHealth, state: "enrolling", lastError: null, lastCode: null };
   const result = await postJson(`/api/projects/${projectId}/controller/agent/enroll`, {
     projectId,
     deviceId,
@@ -360,6 +383,12 @@ async function enroll() {
     protocolVersion,
   });
   if (result.transient) {
+    enrollmentHealth = {
+      state: "enroll_transient",
+      lastError: `timeout/network to ${baseUrl}`,
+      lastCode: "transient",
+      agentId: null,
+    };
     console.warn(
       `[flos-edge-agent] enroll transient (timeout/network) to ${baseUrl} — will retry. Check: curl -I ${baseUrl}/`,
     );
@@ -367,6 +396,12 @@ async function enroll() {
   }
   if (!result.ok || !result.body?.data?.agentId || !result.body?.data?.agentAccessToken) {
     const code = result.body?.code ?? result.body?.error ?? "enroll_failed";
+    enrollmentHealth = {
+      state: "enroll_failed",
+      lastError: typeof result.body?.error === "string" ? result.body.error : String(code),
+      lastCode: String(code),
+      agentId: null,
+    };
     console.warn(
       `[flos-edge-agent] enroll failed (${result.status}) code=${code}: ${JSON.stringify(result.body)}`,
     );
@@ -380,6 +415,12 @@ async function enroll() {
   agentId = result.body.data.agentId;
   agentAccessToken = result.body.data.agentAccessToken;
   heartbeatAuthFailStreak = 0;
+  enrollmentHealth = {
+    state: "enrolled_awaiting_heartbeat",
+    lastError: null,
+    lastCode: null,
+    agentId,
+  };
   console.log(`[flos-edge-agent] enrolled: agentId=${agentId}`);
   return true;
 }
@@ -405,6 +446,12 @@ async function heartbeat() {
   if (!result.ok) {
     const detail = result.body ? JSON.stringify(result.body) : "";
     console.warn(`[flos-edge-agent] heartbeat failed (${result.status}) ${detail}`);
+    enrollmentHealth = {
+      state: "heartbeat_failed",
+      lastError: detail || `status ${result.status}`,
+      lastCode: result.body?.code ?? "heartbeat_failed",
+      agentId,
+    };
     if (result.status === 401) {
       heartbeatAuthFailStreak += 1;
       if (heartbeatAuthFailStreak >= HEARTBEAT_AUTH_FAIL_CLEAR_AFTER) {
@@ -419,6 +466,12 @@ async function heartbeat() {
     return;
   }
   heartbeatAuthFailStreak = 0;
+  enrollmentHealth = {
+    state: "online",
+    lastError: null,
+    lastCode: null,
+    agentId,
+  };
 }
 
 async function ackCommand(command, traceId, status, result, errorMessage) {
@@ -1922,6 +1975,7 @@ async function handleHandshakeHttpRequest(req, res) {
 }
 
 function startHandshakeHttpServerIfEnabled() {
+  if (handshakeHttpServer) return handshakeHttpServer;
   const en = String(env("FLOS_HANDSHAKE_HTTP_ENABLED", "REACTOR_HANDSHAKE_HTTP_ENABLED") ?? "").toLowerCase();
   if (en !== "1" && en !== "true") {
     console.warn("[flos-edge-agent] handshake HTTP disabled (FLOS_HANDSHAKE_HTTP_ENABLED)");
@@ -1952,22 +2006,22 @@ function startHandshakeHttpServerIfEnabled() {
     // Without :18081 field health and local apply are dead — fail loud for docker restart logs.
     process.exit(1);
   });
+  handshakeHttpServer = server;
   return server;
 }
 
-async function main() {
-  if (strictSignatures && !env("FLOS_CLOUD_SIGNING_PUBLIC_KEY", "REACTOR_CLOUD_SIGNING_PUBLIC_KEY")) {
-    throw new Error(
-      "FLOS_STRICT_SIGNATURES=true requires FLOS_CLOUD_SIGNING_PUBLIC_KEY (or legacy REACTOR_CLOUD_SIGNING_PUBLIC_KEY)",
-    );
-  }
-  startMqttDiagnosticsBridge().catch((err) => console.warn("[flos-edge-agent] mqtt bridge failed:", err?.message ?? err));
-  startHandshakeHttpServerIfEnabled();
+async function runAgentLoop() {
   touchHealthState();
   const persisted = loadPersistedCredentials();
   if (persisted) {
     agentId = persisted.agentId;
     agentAccessToken = persisted.agentAccessToken;
+    enrollmentHealth = {
+      state: "restored",
+      lastError: null,
+      lastCode: null,
+      agentId,
+    };
     console.log("[flos-edge-agent] restored persisted credentials (enroll skipped)");
   } else {
     const enrolled = await enroll();
@@ -1999,6 +2053,23 @@ async function main() {
   }
 }
 
+async function main() {
+  if (strictSignatures && !env("FLOS_CLOUD_SIGNING_PUBLIC_KEY", "REACTOR_CLOUD_SIGNING_PUBLIC_KEY")) {
+    throw new Error(
+      "FLOS_STRICT_SIGNATURES=true requires FLOS_CLOUD_SIGNING_PUBLIC_KEY (or legacy REACTOR_CLOUD_SIGNING_PUBLIC_KEY)",
+    );
+  }
+  setRuntimeHealthExtraProvider(() => ({
+    enrollment: { ...enrollmentHealth },
+    deviceId,
+    projectId,
+    cloudBaseUrl: baseUrl,
+  }));
+  startMqttDiagnosticsBridge().catch((err) => console.warn("[flos-edge-agent] mqtt bridge failed:", err?.message ?? err));
+  startHandshakeHttpServerIfEnabled();
+  await runAgentLoop();
+}
+
 export const __test = {
   postJson,
   ackCommand,
@@ -2022,10 +2093,10 @@ export const __test = {
 
 if (process.env.FLOS_EDGE_AGENT_DISABLE_MAIN !== "true") {
   main().catch((error) => {
-    console.warn("[flos-edge-agent] unrecoverable loop error, retrying:", error);
+    console.warn("[flos-edge-agent] agent loop error, retrying without re-listen:", error);
     setTimeout(() => {
-      main().catch((nestedError) => {
-        console.warn("[flos-edge-agent] restart loop failed:", nestedError);
+      runAgentLoop().catch((nestedError) => {
+        console.warn("[flos-edge-agent] agent loop retry failed:", nestedError);
       });
     }, pollIntervalMs);
   });
