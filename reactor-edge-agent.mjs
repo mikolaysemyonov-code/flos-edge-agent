@@ -618,7 +618,9 @@ async function runMqttPublishCommand(payload) {
       details: {
         mqttPublish: {
           brokerLabel: `${host}:${port}`,
-          confirmed: true,
+          // Puback only — no state subscribe/settle (cloud path does full echo).
+          confirmed: false,
+          verification: "puback_only",
           mode: isPulse ? "pulsed" : "set",
           writes: onWrites.length + (isPulse ? offWrites.length : 0),
         },
@@ -1252,10 +1254,6 @@ function validateRouterSetupEnvelope(body, headerProtocolVersion, expectedProjec
     return { ok: false, httpStatus: 400, wire: { ok: false, errorCode: "VALIDATION_FAILED", message: "Invalid routerIp." } };
   }
   return { ok: true, request: o };
-}
-
-function shellQuoteSingle(s) {
-  return `'${String(s).replace(/'/g, `'\\''`)}'`;
 }
 
 function routerSshEnabled() {
