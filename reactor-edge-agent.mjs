@@ -440,6 +440,7 @@ async function heartbeat() {
     observedAt,
     appliedSnapshotHash,
     edgeHostSnapshot,
+    mqttMirror: mqttMirrorHealth(),
   };
   const result = await postJson(`/api/projects/${projectId}/controller/agent/heartbeat`, body);
   if (result.transient) return;
@@ -708,6 +709,27 @@ async function runMqttTopicScanCommand(payload) {
   const port = Number(payload?.port) > 0 ? Number(payload.port) : 1883;
   const scanMs = Math.min(Math.max(Number(payload?.scanMs) || 12_000, 2_000), 25_000);
   const maxEntries = 800;
+  const preferMirror = payload?.preferMirror !== false;
+  const mirrorWarm =
+    preferMirror &&
+    mqttMirrorState.connected &&
+    mqttMirrorState.entriesByPath.size > 0;
+  if (mirrorWarm) {
+    const snapshot = buildMqttMirrorSnapshotV1(maxEntries);
+    return {
+      ok: true,
+      details: {
+        mqttTopicScan: {
+          brokerLabel: `${host}:${port}`,
+          scanMs: 0,
+          entryCount: snapshot.entries.length,
+          source: "wb_mqtt_mirror",
+          mqttMirror: mqttMirrorHealth(),
+          snapshot,
+        },
+      },
+    };
+  }
   let mqttMod;
   try {
     mqttMod = await import("mqtt");
@@ -872,6 +894,171 @@ async function startMqttDiagnosticsBridge() {
   });
   client.on("error", (err) => console.warn("[flos-edge-agent] mqtt error:", err?.message ?? err));
 }
+
+/** P1 continuous bus mirror — last-value map for /devices/# (H3). */
+const mqttMirrorState = {
+  connected: false,
+  startedAt: null,
+  lastMsgAt: null,
+  lastError: null,
+  topicCount: 0,
+  /** @type {Map<string, object>} */
+  entriesByPath: new Map(),
+};
+
+function mqttMirrorHealth() {
+  const lastMsgAt = mqttMirrorState.lastMsgAt;
+  const lagMs =
+    lastMsgAt && mqttMirrorState.connected ? Math.max(0, Date.now() - Date.parse(lastMsgAt)) : null;
+  return {
+    connected: mqttMirrorState.connected === true,
+    startedAt: mqttMirrorState.startedAt,
+    lastMsgAt,
+    lagMs,
+    topicCount: mqttMirrorState.topicCount,
+    lastError: mqttMirrorState.lastError,
+  };
+}
+
+function ingestMqttMirrorMessage(topic, buf) {
+  const normalized = String(topic).replace(/^\/+/, "/").replace(/^([^/])/, "/$1");
+  const parts = normalized.split("/").filter(Boolean);
+  const importedAt = new Date().toISOString();
+  mqttMirrorState.lastMsgAt = importedAt;
+  if (parts.length === 4 && parts[0] === "devices" && parts[2] === "meta" && parts[3] === "error") {
+    const deviceTopicKey = parts[1];
+    if (!isMarkShieldDiscoverableDeviceKey(deviceTopicKey)) return;
+    const topicPath = `/devices/${deviceTopicKey}/meta/error`;
+    const raw = buf.length > 0 ? buf.toString("utf8") : "";
+    let lastValue;
+    if (raw === "0") lastValue = 0;
+    else if (raw === "1") lastValue = 1;
+    else if (raw && /^-?\d+(\.\d+)?$/.test(raw)) lastValue = Number(raw);
+    else if (raw) lastValue = raw;
+    mqttMirrorState.entriesByPath.set(topicPath, {
+      id: `${deviceTopicKey}:__device_meta_error`,
+      deviceTopicKey,
+      controlId: "__device_meta_error",
+      topicPath,
+      valueType: "text",
+      importedAt,
+      ...(raw && raw.length <= 120 ? { lastValue } : {}),
+    });
+    mqttMirrorState.topicCount = mqttMirrorState.entriesByPath.size;
+    return;
+  }
+  if (parts.length !== 4 || parts[0] !== "devices" || parts[2] !== "controls") return;
+  const deviceTopicKey = parts[1];
+  if (!isMarkShieldDiscoverableDeviceKey(deviceTopicKey)) return;
+  const controlId = parts[3];
+  if (!controlId || /meta/i.test(controlId)) return;
+  const topicPath = `/devices/${deviceTopicKey}/controls/${controlId}`;
+  const raw = buf.length > 0 ? buf.toString("utf8") : "";
+  let valueType = "unknown";
+  if (raw === "0" || raw === "1") valueType = "switch";
+  else if (/^-?\d+(\.\d+)?$/.test(raw)) valueType = "range";
+  else if (raw.startsWith("{") || raw.startsWith("[")) valueType = "json";
+  else if (raw.length > 0) valueType = "text";
+  let lastValue;
+  if (raw === "0") lastValue = 0;
+  else if (raw === "1") lastValue = 1;
+  else if (raw && /^-?\d+(\.\d+)?$/.test(raw)) lastValue = Number(raw);
+  else if (raw) lastValue = raw;
+  mqttMirrorState.entriesByPath.set(topicPath, {
+    id: `${deviceTopicKey}:${controlId}`,
+    deviceTopicKey,
+    controlId,
+    topicPath,
+    valueType,
+    importedAt,
+    ...(raw && raw.length <= 120 ? { lastValue } : {}),
+  });
+  mqttMirrorState.topicCount = mqttMirrorState.entriesByPath.size;
+}
+
+function buildMqttMirrorSnapshotV1(maxEntries = 800) {
+  const importedAt = new Date().toISOString();
+  const entries = [...mqttMirrorState.entriesByPath.values()].slice(0, maxEntries);
+  return {
+    version: 1,
+    source: "wb_mqtt_mirror",
+    importedAt,
+    entries,
+  };
+}
+
+/**
+ * Long-lived MQTT subscribe to local broker (default 127.0.0.1:1883).
+ * Opt-out: FLOS_MQTT_MIRROR=0
+ */
+async function startMqttBusMirror() {
+  const disabled = String(env("FLOS_MQTT_MIRROR", "REACTOR_MQTT_MIRROR") ?? "1").trim() === "0";
+  if (disabled) {
+    console.log("[flos-edge-agent] mqtt bus mirror disabled (FLOS_MQTT_MIRROR=0)");
+    return;
+  }
+  const host =
+    (env("FLOS_MQTT_MIRROR_HOST", "REACTOR_MQTT_MIRROR_HOST") ?? "").trim() || "127.0.0.1";
+  const port = Number(env("FLOS_MQTT_MIRROR_PORT", "REACTOR_MQTT_MIRROR_PORT") ?? 1883) || 1883;
+  let mqttMod;
+  try {
+    mqttMod = await import("mqtt");
+  } catch (err) {
+    mqttMirrorState.lastError = `mqtt_package_missing:${err?.message ?? err}`;
+    console.warn("[flos-edge-agent] mqtt mirror: package missing:", err?.message ?? err);
+    return;
+  }
+  const connect = mqttMod.connect ?? mqttMod.default?.connect;
+  if (typeof connect !== "function") {
+    mqttMirrorState.lastError = "mqtt_connect_missing";
+    return;
+  }
+  const url = `mqtt://${host}:${port}`;
+  const client = connect(url, {
+    connectTimeout: 8_000,
+    reconnectPeriod: 3_000,
+    protocolVersion: 4,
+    clean: true,
+  });
+  mqttMirrorState.startedAt = new Date().toISOString();
+  client.on("connect", () => {
+    mqttMirrorState.connected = true;
+    mqttMirrorState.lastError = null;
+    client.subscribe(
+      ["/devices/#", "devices/#", "/devices/+/controls/+", "devices/+/controls/+"],
+      { qos: 0 },
+      (err) => {
+        if (err) {
+          mqttMirrorState.lastError = err.message ?? String(err);
+          console.warn("[flos-edge-agent] mqtt mirror subscribe failed:", mqttMirrorState.lastError);
+        } else {
+          console.log(`[flos-edge-agent] mqtt bus mirror connected ${url}`);
+        }
+      },
+    );
+  });
+  client.on("reconnect", () => {
+    mqttMirrorState.connected = false;
+  });
+  client.on("close", () => {
+    mqttMirrorState.connected = false;
+  });
+  client.on("offline", () => {
+    mqttMirrorState.connected = false;
+  });
+  client.on("error", (err) => {
+    mqttMirrorState.lastError = err?.message ?? String(err);
+    console.warn("[flos-edge-agent] mqtt mirror error:", mqttMirrorState.lastError);
+  });
+  client.on("message", (topic, buf) => {
+    try {
+      ingestMqttMirrorMessage(topic, buf);
+    } catch (err) {
+      mqttMirrorState.lastError = err?.message ?? String(err);
+    }
+  });
+}
+
 
 function shellQuoteSingle(value) {
   return `'${String(value).replace(/'/g, `'\\''`)}'`;
@@ -2122,8 +2309,10 @@ async function main() {
     deviceId,
     projectId,
     cloudBaseUrl: baseUrl,
+    mqttMirror: mqttMirrorHealth(),
   }));
   startMqttDiagnosticsBridge().catch((err) => console.warn("[flos-edge-agent] mqtt bridge failed:", err?.message ?? err));
+  startMqttBusMirror().catch((err) => console.warn("[flos-edge-agent] mqtt mirror failed:", err?.message ?? err));
   startHandshakeHttpServerIfEnabled();
   await runAgentLoop();
 }
