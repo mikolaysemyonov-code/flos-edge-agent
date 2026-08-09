@@ -720,6 +720,8 @@ async function runMqttTopicScanCommand(payload) {
       ok: true,
       details: {
         mqttTopicScan: {
+          // Top-level entries — SaaS parseEntries (burst + mirror).
+          entries: snapshot.entries,
           brokerLabel: `${host}:${port}`,
           scanMs: 0,
           entryCount: snapshot.entries.length,
