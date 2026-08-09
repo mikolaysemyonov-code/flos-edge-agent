@@ -595,6 +595,60 @@ async function runMqttPublishCommand(payload) {
       }
     }
   };
+  /** `/controls/X/on` → `/controls/X` state topic (both slash styles). */
+  const stateTopicsForWrite = (topic) => {
+    const withSlash = topic.startsWith("/") ? topic : `/${topic}`;
+    const state = withSlash.replace(/\/on$/i, "").replace(/\/+$/, "");
+    return [state, state.replace(/^\//, "")];
+  };
+  const waitForEcho = (writes, settleMs) =>
+    new Promise((resolve) => {
+      const pending = new Map();
+      for (const w of writes) {
+        for (const st of stateTopicsForWrite(w.topic)) {
+          pending.set(st, String(w.payload));
+        }
+      }
+      const need = [...new Set([...pending.keys()].filter((t) => t.startsWith("/")))];
+      if (need.length === 0) {
+        resolve({ confirmed: false, verification: "no_state_topics" });
+        return;
+      }
+      const matched = new Set();
+      let timer = null;
+      const finish = (result) => {
+        if (timer) clearTimeout(timer);
+        client.removeListener("message", onMsg);
+        resolve(result);
+      };
+      const onMsg = (topic, buf) => {
+        const raw = buf?.toString?.() ?? String(buf ?? "");
+        const withSlash = topic.startsWith("/") ? topic : `/${topic}`;
+        const want = pending.get(withSlash) ?? pending.get(topic);
+        if (want == null) return;
+        if (String(raw) !== want) return;
+        matched.add(withSlash);
+        if (need.every((t) => matched.has(t))) {
+          finish({ confirmed: true, verification: "state_echo", echoed: matched.size });
+        }
+      };
+      client.on("message", onMsg);
+      const topics = [...new Set([...pending.keys()])];
+      client.subscribe(topics, { qos: 0 }, (err) => {
+        if (err) {
+          finish({ confirmed: false, verification: "subscribe_failed" });
+          return;
+        }
+        timer = setTimeout(() => {
+          finish({
+            confirmed: false,
+            verification: "echo_timeout",
+            echoed: matched.size,
+            expected: need.length,
+          });
+        }, settleMs);
+      });
+    });
   try {
     await new Promise((resolve, reject) => {
       const t = setTimeout(() => reject(new Error("mqtt connect timeout")), 6_000);
@@ -607,22 +661,28 @@ async function runMqttPublishCommand(payload) {
         reject(err instanceof Error ? err : new Error(String(err)));
       });
     });
+    const echoWrites = isPulse ? offWrites : onWrites;
+    const echoSettleMs = Math.min(Math.max(Number(payload?.echoMs) || 2_500, 500), 8_000);
+    const echoPromise = waitForEcho(echoWrites, echoSettleMs);
+    // Yield so subscribe callback can arm before first publish.
+    await sleep(50);
     await publishAll(onWrites);
     if (isPulse) {
       await sleep(pulseMs);
       await publishAll(offWrites);
     }
+    const echo = await echoPromise;
     forceEnd();
     return {
       ok: true,
       details: {
         mqttPublish: {
           brokerLabel: `${host}:${port}`,
-          // Puback only — no state subscribe/settle (cloud path does full echo).
-          confirmed: false,
-          verification: "puback_only",
+          confirmed: echo.confirmed === true,
+          verification: echo.verification ?? "puback_only",
           mode: isPulse ? "pulsed" : "set",
           writes: onWrites.length + (isPulse ? offWrites.length : 0),
+          echo,
         },
       },
     };
