@@ -699,7 +699,7 @@ async function runMqttPublishCommand(payload) {
  */
 function isMarkShieldDiscoverableDeviceKey(deviceTopicKey) {
   const key = String(deviceTopicKey ?? "");
-  return /mr6c|mr6cu|mr6cv|mdm|mrm2|mrm|wb[-_]?led|ampled|mali|mao|maod|dimmer|mr3|mr12|mr11|mdali|dali|mcm8|mcm16|mcm24|wd14|mdi|^wb-gpio$|gpio|m1w2|msw/i.test(
+  return /mr6c|mr6cu|mr6cv|mrps6|mdm|mrm2|mrm|wb[-_]?led|ampled|mali|mao|maod|dimmer|mr3|mr12|mr11|mdali|dali|mcm8|mcm16|mcm24|wd14|mdi|^wb-gpio$|gpio|m1w2|msw/i.test(
     key,
   );
 }
