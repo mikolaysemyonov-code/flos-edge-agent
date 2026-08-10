@@ -11,6 +11,7 @@ import {
   applyMonolithScript,
   applyShardBundle,
   backupCurrentStateBeforeApply,
+  rollbackToPreviousBackup,
   restartWbRules,
   setRuntimeHealthExtraProvider,
 } from "./runtime-control-plane-http.mjs";
@@ -1242,6 +1243,32 @@ function runWbRulesApplyCommand(payload) {
   }
 }
 
+/**
+ * Field rules rollback via command queue (SaaS cannot TCP to LAN/Tailscale :18081).
+ * Payload: { action: "wb_rules_rollback" }
+ */
+function runWbRulesRollbackCommand(_payload) {
+  try {
+    const rolled = rollbackToPreviousBackup();
+    console.log(
+      `[flos-edge-agent] wb_rules_rollback revision=${rolled.appliedRevisionId} mode=${rolled.deployMode}`,
+    );
+    return {
+      ok: true,
+      details: {
+        wbRulesRolledBack: {
+          appliedRevisionId: rolled.appliedRevisionId,
+          ackCount: rolled.ackCount,
+          deployMode: rolled.deployMode,
+          restarted: rolled.restarted,
+        },
+      },
+    };
+  } catch (err) {
+    return { ok: false, error: `wb_rules_rollback_failed:${err?.message ?? err}` };
+  }
+}
+
 async function executeCommand(command) {
   const traceId = getCommandTraceId(command);
   if (!traceId) {
@@ -1297,6 +1324,9 @@ async function executeCommand(command) {
     }
     if (command.payload?.action === "wb_rules_apply") {
       return runWbRulesApplyCommand(command.payload);
+    }
+    if (command.payload?.action === "wb_rules_rollback") {
+      return runWbRulesRollbackCommand(command.payload);
     }
     if (command.payload?.action === "agent_self_update") {
       return runAgentSelfUpdateCommand(command.payload);
