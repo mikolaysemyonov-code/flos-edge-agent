@@ -11,6 +11,7 @@ import {
   applyMonolithScript,
   applyShardBundle,
   backupCurrentStateBeforeApply,
+  loadBackupManifest,
   rollbackToPreviousBackup,
   restartWbRules,
   setRuntimeHealthExtraProvider,
@@ -195,6 +196,8 @@ function buildEdgeHostSnapshot() {
     capabilities: ["preserve_other_shards", "agent_self_update", "partial_shard_apply"],
     /** Same as heartbeat agentVersion — survives mqtt-ingest merges. */
     agentVersion: "edge-pilot-v2",
+    /** True when .integrator-backup has files — Comfort «Откатить» without HTTP probe. */
+    canRollback: Boolean(loadBackupManifest()?.files?.length),
   };
   const rs485 = normalizeRs485BusMetrics(
     readOptionalJsonFromEnvPath("FLOS_RS485_BUS_METRICS_PATH", "REACTOR_RS485_BUS_METRICS_PATH"),
