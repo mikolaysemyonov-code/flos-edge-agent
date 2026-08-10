@@ -193,6 +193,8 @@ function buildEdgeHostSnapshot() {
     mem: { totalBytes: total, freeBytes: free },
     /** Capabilities for SaaS UI gates (split marking/rules deploy). */
     capabilities: ["preserve_other_shards", "agent_self_update", "partial_shard_apply"],
+    /** Same as heartbeat agentVersion — survives mqtt-ingest merges. */
+    agentVersion: "edge-pilot-v2",
   };
   const rs485 = normalizeRs485BusMetrics(
     readOptionalJsonFromEnvPath("FLOS_RS485_BUS_METRICS_PATH", "REACTOR_RS485_BUS_METRICS_PATH"),
