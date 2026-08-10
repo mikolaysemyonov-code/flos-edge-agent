@@ -906,7 +906,14 @@ const mqttMirrorState = {
   topicCount: 0,
   /** @type {Map<string, object>} */
   entriesByPath: new Map(),
+  /** @type {Set<string>} dirty topicPaths pending cloud push */
+  dirtyPaths: new Set(),
+  /** Full bootstrap push once after mirror warms. */
+  bootstrapPushed: false,
 };
+const MQTT_MIRROR_DELTA_BATCH = 200;
+const MQTT_MIRROR_FLUSH_MS = 5_000;
+let lastMqttMirrorFlushAt = 0;
 
 function mqttMirrorHealth() {
   const lastMsgAt = mqttMirrorState.lastMsgAt;
@@ -946,6 +953,7 @@ function ingestMqttMirrorMessage(topic, buf) {
       importedAt,
       ...(raw && raw.length <= 120 ? { lastValue } : {}),
     });
+    mqttMirrorState.dirtyPaths.add(topicPath);
     mqttMirrorState.topicCount = mqttMirrorState.entriesByPath.size;
     return;
   }
@@ -975,7 +983,67 @@ function ingestMqttMirrorMessage(topic, buf) {
     importedAt,
     ...(raw && raw.length <= 120 ? { lastValue } : {}),
   });
+  mqttMirrorState.dirtyPaths.add(topicPath);
   mqttMirrorState.topicCount = mqttMirrorState.entriesByPath.size;
+}
+
+/**
+ * Push dirty (or bootstrap) mirror entries to SaaS — merge-only ingest, no shelf prune.
+ */
+async function flushMqttMirrorDelta(forceBootstrap = false) {
+  if (!agentId || !agentAccessToken) return;
+  const warm =
+    mqttMirrorState.connected && mqttMirrorState.entriesByPath.size > 0;
+  if (!warm) return;
+
+  let paths;
+  if (forceBootstrap || !mqttMirrorState.bootstrapPushed) {
+    paths = [...mqttMirrorState.entriesByPath.keys()].slice(0, MQTT_MIRROR_DELTA_BATCH);
+  } else if (mqttMirrorState.dirtyPaths.size === 0) {
+    return;
+  } else {
+    paths = [...mqttMirrorState.dirtyPaths].slice(0, MQTT_MIRROR_DELTA_BATCH);
+  }
+
+  const entries = paths
+    .map((p) => mqttMirrorState.entriesByPath.get(p))
+    .filter(Boolean);
+  if (entries.length === 0) return;
+
+  const body = {
+    projectId,
+    agentId,
+    deviceId,
+    agentAccessToken,
+    observedAt: new Date().toISOString(),
+    source: "wb_mqtt_mirror",
+    entries,
+    mqttMirror: mqttMirrorHealth(),
+  };
+  const result = await postJson(
+    `/api/projects/${projectId}/controller/agent/mqtt-mirror/ingest`,
+    body,
+  );
+  if (!result.ok) {
+    if (result.status !== 404 && result.status !== 503) {
+      console.warn(
+        `[flos-edge-agent] mqtt mirror ingest failed (${result.status}) ${
+          result.body ? JSON.stringify(result.body) : ""
+        }`,
+      );
+    }
+    return;
+  }
+  for (const p of paths) mqttMirrorState.dirtyPaths.delete(p);
+  if (!mqttMirrorState.bootstrapPushed) {
+    mqttMirrorState.bootstrapPushed = true;
+    console.log(
+      `[flos-edge-agent] mqtt mirror bootstrap pushed (${entries.length} entries, cache=${
+        result.body?.data?.cachedTopicCount ?? "?"
+      })`,
+    );
+  }
+  lastMqttMirrorFlushAt = Date.now();
 }
 
 function buildMqttMirrorSnapshotV1(maxEntries = 800) {
@@ -2290,6 +2358,13 @@ async function runAgentLoop() {
     if (now - lastHeartbeatAt >= heartbeatIntervalSec * 1000) {
       await heartbeat();
       lastHeartbeatAt = now;
+    }
+    if (
+      now - lastMqttMirrorFlushAt >= MQTT_MIRROR_FLUSH_MS ||
+      mqttMirrorState.dirtyPaths.size >= MQTT_MIRROR_DELTA_BATCH ||
+      (!mqttMirrorState.bootstrapPushed && mqttMirrorState.entriesByPath.size >= 8)
+    ) {
+      await flushMqttMirrorDelta();
     }
     if (now - lastSelfDiagnoseAt >= selfDiagnoseIntervalMs) {
       await selfDiagnose();
