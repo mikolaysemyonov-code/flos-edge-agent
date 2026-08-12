@@ -16,6 +16,7 @@ import {
   restartWbRules,
   setRuntimeHealthExtraProvider,
 } from "./runtime-control-plane-http.mjs";
+import { isMarkShieldDiscoverableDeviceKey } from "./lib/mark-shield-discoverable-device.mjs";
 
 /** Prefer `FLOS_*` (FL OS); fall back to legacy `REACTOR_*` for existing deployments. */
 function env(primary, legacy) {
@@ -702,16 +703,8 @@ async function runMqttPublishCommand(payload) {
 /**
  * Local MQTT topic scan for SaaS mark-shield (cloud cannot TCP to LAN/Tailscale).
  * Invoked via system_check payload { action: "mqtt_topic_scan", scanMs?, host?, port?, markShield? }.
- *
- * Keep in sync with SaaS propose/assess allowlists + topic-utils aliases.
- * Missing here ⇒ Connect never sees the device (mirror + burst filter).
+ * Allowlist: ./lib/mark-shield-discoverable-device.mjs (sync with SaaS).
  */
-function isMarkShieldDiscoverableDeviceKey(deviceTopicKey) {
-  const key = String(deviceTopicKey ?? "");
-  return /mr6c|mr6cu|mr6cv|mr6lv|mrps6|mdm|mrm2|mrm|mrwm|mrwl|mr3|mr12|mr11|wb[-_]?led|ampled|mali|mao4|maod|dimmer|mdali|dali|mcm8|mcm16|mcm24|wd14|mdi|^wb-gpio$|gpio|m1w2|msw|mwac|map3|map12|map6|^wb-map|mai6|mir|mdr8|mgev|mio|ups/i.test(
-    key,
-  );
-}
 
 /** Ack payload budget — fair-cap target. Collect window can be larger (see collectCap). */
 const MQTT_SCAN_ACK_MAX_ENTRIES = 800;
@@ -2591,6 +2584,7 @@ export const __test = {
   reportIncident,
   executeCommand,
   digestCommandPayload,
+  isMarkShieldDiscoverableDeviceKey,
   setAgentSession(nextAgentId, nextAgentAccessToken) {
     agentId = nextAgentId;
     agentAccessToken = nextAgentAccessToken;
