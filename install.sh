@@ -211,7 +211,20 @@ export FLOS_STRICT_SIGNATURES="false"
 
 echo "[flos-edge-agent] docker compose up --build…"
 cd "$DATA_DIR"
+set +e
 docker compose --env-file "$DATA_DIR/.env" -f "$DATA_DIR/docker-compose.yml" up -d --build
+COMPOSE_RC=$?
+set -e
+if [[ "$COMPOSE_RC" != "0" ]]; then
+  echo "[flos-edge-agent] WARN: compose --build exit=$COMPOSE_RC — пробую up -d без rebuild…" >&2
+  docker compose --env-file "$DATA_DIR/.env" -f "$DATA_DIR/docker-compose.yml" up -d || true
+fi
+# Never leave the field without a running agent after install/upgrade.
+if ! docker ps --filter name=flos-edge-agent --format '{{.Names}}' | grep -q '^flos-edge-agent$'; then
+  echo "[flos-edge-agent] WARN: контейнер не Running — docker start / compose up -d…" >&2
+  docker start flos-edge-agent 2>/dev/null || true
+  docker compose --env-file "$DATA_DIR/.env" -f "$DATA_DIR/docker-compose.yml" up -d || true
+fi
 
 echo "[flos-edge-agent] проверяю облако с контроллера…"
 if curl -fsS --max-time 20 -o /dev/null "$CLOUD_URL/"; then

@@ -48,6 +48,11 @@ const enrollmentToken = String(env("FLOS_ENROLLMENT_TOKEN", "REACTOR_ENROLLMENT_
 const heartbeatIntervalSec = Number(env("FLOS_HEARTBEAT_INTERVAL_SEC", "REACTOR_HEARTBEAT_INTERVAL_SEC") ?? 30);
 const pollIntervalMs = Number(env("FLOS_COMMAND_POLL_INTERVAL_MS", "REACTOR_COMMAND_POLL_INTERVAL_MS") ?? 4000);
 const protocolVersion = env("FLOS_AGENT_PROTOCOL_VERSION", "REACTOR_AGENT_PROTOCOL_VERSION") ?? "1.0";
+/** Process boot time — skip self_update for a few minutes after (re)start to avoid update death-loops. */
+const agentProcessStartedAtMs = Date.now();
+const AGENT_SELF_UPDATE_BOOT_GRACE_MS = 10 * 60 * 1000;
+const AGENT_SELF_UPDATE_DEBOUNCE_MS = 30 * 60 * 1000;
+let lastAgentSelfUpdateScheduledAtMs = 0;
 /** Field SaaS default: off unless explicitly enabled with a public key. */
 const strictSignatures =
   String(env("FLOS_STRICT_SIGNATURES", "REACTOR_STRICT_SIGNATURES") ?? "false").toLowerCase() === "true";
@@ -1561,8 +1566,40 @@ function execOnHostBash(script, timeoutMs = 120_000) {
 /**
  * Self-update via host install.sh (--upgrade-only). Runs detached: container restarts during compose up.
  * Payload: { action: "agent_self_update", gitRef? }
+ *
+ * Safety: skip during boot grace / debounce so a failed update cannot immediately re-kill a just-restored agent.
  */
 function runAgentSelfUpdateCommand(payload) {
+  const uptimeMs = Date.now() - agentProcessStartedAtMs;
+  if (uptimeMs < AGENT_SELF_UPDATE_BOOT_GRACE_MS) {
+    console.warn(
+      `[flos-edge-agent] agent_self_update skipped (boot grace ${Math.round(uptimeMs / 1000)}s < ${AGENT_SELF_UPDATE_BOOT_GRACE_MS / 1000}s)`,
+    );
+    return {
+      ok: true,
+      details: {
+        agentSelfUpdate: {
+          scheduled: false,
+          skipped: true,
+          reason: "boot_grace",
+          retryAfterSec: Math.ceil((AGENT_SELF_UPDATE_BOOT_GRACE_MS - uptimeMs) / 1000),
+        },
+      },
+    };
+  }
+  if (
+    lastAgentSelfUpdateScheduledAtMs > 0 &&
+    Date.now() - lastAgentSelfUpdateScheduledAtMs < AGENT_SELF_UPDATE_DEBOUNCE_MS
+  ) {
+    console.warn("[flos-edge-agent] agent_self_update skipped (debounce)");
+    return {
+      ok: true,
+      details: {
+        agentSelfUpdate: { scheduled: false, skipped: true, reason: "debounce" },
+      },
+    };
+  }
+
   const gitRef =
     typeof payload?.gitRef === "string" && payload.gitRef.trim()
       ? payload.gitRef.trim().slice(0, 64)
@@ -1576,15 +1613,27 @@ function runAgentSelfUpdateCommand(payload) {
   const installUrl = `https://raw.githubusercontent.com/${slug}/${gitRef}/install.sh`;
   const logPath = "/tmp/flos-edge-agent-self-update.log";
   const inner = `
-set -euo pipefail
+set -uo pipefail
 sleep 2
 exec >> ${logPath} 2>&1
 echo "[flos-edge-agent] self-update start $(date -Iseconds 2>/dev/null || date) ref=${gitRef}"
+set +e
 curl -fsSL ${shellQuoteSingle(installUrl)} | bash -s -- --upgrade-only --data-dir ${shellQuoteSingle(dataDir)} --agent-dir ${shellQuoteSingle(agentDir)} --git-ref ${shellQuoteSingle(gitRef)}
-echo "[flos-edge-agent] self-update done $(date -Iseconds 2>/dev/null || date)"
+rc=$?
+set -e
+echo "[flos-edge-agent] self-update install exit=$rc $(date -Iseconds 2>/dev/null || date)"
+# Always try to leave a running container (upgrade must not erase the agent).
+cd ${shellQuoteSingle(dataDir)} 2>/dev/null || true
+if [[ -f ${shellQuoteSingle(dataDir)}/docker-compose.yml ]]; then
+  docker compose --env-file ${shellQuoteSingle(dataDir)}/.env -f ${shellQuoteSingle(dataDir)}/docker-compose.yml up -d || true
+fi
+docker start flos-edge-agent 2>/dev/null || true
+docker ps --filter name=flos-edge-agent --format '{{.Names}} {{.Status}}' || true
+echo "[flos-edge-agent] self-update ensure-up done"
 `;
   try {
     execOnHostBash(`nohup bash -lc ${shellQuoteSingle(inner)} >/dev/null 2>&1 &`, 15_000);
+    lastAgentSelfUpdateScheduledAtMs = Date.now();
     console.log(`[flos-edge-agent] agent_self_update scheduled ref=${gitRef}`);
     return {
       ok: true,
