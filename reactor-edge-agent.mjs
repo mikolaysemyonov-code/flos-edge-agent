@@ -1100,6 +1100,8 @@ const mqttMirrorState = {
   entriesByPath: new Map(),
   /** @type {Set<string>} dirty topicPaths pending cloud push */
   dirtyPaths: new Set(),
+  /** @type {Set<string>} control paths removed after offline meta/error (ghost prune) */
+  pendingRemovedPaths: new Set(),
   /** Full bootstrap push once after mirror warms. */
   bootstrapPushed: false,
   /** @type {Set<string>} topicPaths already sent in current bootstrap cycle */
@@ -1211,6 +1213,31 @@ function mqttMirrorHealth() {
   };
 }
 
+function isMqttMetaErrorOffline(lastValue) {
+  return lastValue === 1 || lastValue === true || lastValue === "1" || lastValue === "true";
+}
+
+/**
+ * Ghost prune: drop control entries for an offline device; keep meta/error marker.
+ * Returns removed topicPaths for SaaS cache tombstones.
+ */
+function pruneMirrorControlsForOfflineDevice(deviceTopicKey) {
+  const want = String(deviceTopicKey ?? "").trim();
+  if (!want) return [];
+  const metaPath = `/devices/${want}/meta/error`;
+  const removed = [];
+  for (const [path, entry] of [...mqttMirrorState.entriesByPath.entries()]) {
+    if (path === metaPath) continue;
+    if (String(entry?.deviceTopicKey ?? "").trim() !== want) continue;
+    mqttMirrorState.entriesByPath.delete(path);
+    mqttMirrorState.dirtyPaths.delete(path);
+    mqttMirrorState.bootstrapSent.delete(path);
+    removed.push(path);
+  }
+  mqttMirrorState.topicCount = mqttMirrorState.entriesByPath.size;
+  return removed;
+}
+
 function ingestMqttMirrorMessage(topic, buf) {
   const normalized = String(topic).replace(/^\/+/, "/").replace(/^([^/])/, "/$1");
   const parts = normalized.split("/").filter(Boolean);
@@ -1236,6 +1263,11 @@ function ingestMqttMirrorMessage(topic, buf) {
       ...(raw && raw.length <= 120 ? { lastValue } : {}),
     });
     mqttMirrorState.dirtyPaths.add(topicPath);
+    if (isMqttMetaErrorOffline(lastValue)) {
+      for (const p of pruneMirrorControlsForOfflineDevice(deviceTopicKey)) {
+        mqttMirrorState.pendingRemovedPaths.add(p);
+      }
+    }
     mqttMirrorState.topicCount = mqttMirrorState.entriesByPath.size;
     return;
   }
@@ -1266,16 +1298,18 @@ function ingestMqttMirrorMessage(topic, buf) {
     ...(raw && raw.length <= 120 ? { lastValue } : {}),
   });
   mqttMirrorState.dirtyPaths.add(topicPath);
+  mqttMirrorState.pendingRemovedPaths.delete(topicPath);
   mqttMirrorState.topicCount = mqttMirrorState.entriesByPath.size;
 }
 
 /**
- * Push dirty (or bootstrap) mirror entries to SaaS — merge-only ingest, no shelf prune.
+ * Push dirty (or bootstrap) mirror entries to SaaS — merge + optional path tombstones (ghost prune).
  */
 async function flushMqttMirrorDelta(forceBootstrap = false) {
   if (!agentId || !agentAccessToken) return;
   const warm =
-    mqttMirrorState.connected && mqttMirrorState.entriesByPath.size > 0;
+    mqttMirrorState.connected &&
+    (mqttMirrorState.entriesByPath.size > 0 || mqttMirrorState.pendingRemovedPaths.size > 0);
   if (!warm) return;
 
   let paths;
@@ -1283,11 +1317,11 @@ async function flushMqttMirrorDelta(forceBootstrap = false) {
     paths = [...mqttMirrorState.entriesByPath.keys()]
       .filter((p) => !mqttMirrorState.bootstrapSent.has(p))
       .slice(0, MQTT_MIRROR_DELTA_BATCH);
-    if (paths.length === 0) {
+    if (paths.length === 0 && mqttMirrorState.pendingRemovedPaths.size === 0) {
       mqttMirrorState.bootstrapPushed = true;
       return;
     }
-  } else if (mqttMirrorState.dirtyPaths.size === 0) {
+  } else if (mqttMirrorState.dirtyPaths.size === 0 && mqttMirrorState.pendingRemovedPaths.size === 0) {
     return;
   } else {
     paths = [...mqttMirrorState.dirtyPaths].slice(0, MQTT_MIRROR_DELTA_BATCH);
@@ -1296,7 +1330,8 @@ async function flushMqttMirrorDelta(forceBootstrap = false) {
   const entries = paths
     .map((p) => mqttMirrorState.entriesByPath.get(p))
     .filter(Boolean);
-  if (entries.length === 0) return;
+  const removedTopicPaths = [...mqttMirrorState.pendingRemovedPaths].slice(0, 500);
+  if (entries.length === 0 && removedTopicPaths.length === 0) return;
 
   const body = {
     projectId,
@@ -1306,6 +1341,7 @@ async function flushMqttMirrorDelta(forceBootstrap = false) {
     observedAt: new Date().toISOString(),
     source: "wb_mqtt_mirror",
     entries,
+    ...(removedTopicPaths.length ? { removedTopicPaths } : {}),
     mqttMirror: mqttMirrorHealth(),
   };
   const result = await postJson(
@@ -1325,6 +1361,9 @@ async function flushMqttMirrorDelta(forceBootstrap = false) {
   for (const p of paths) {
     mqttMirrorState.dirtyPaths.delete(p);
     if (!mqttMirrorState.bootstrapPushed) mqttMirrorState.bootstrapSent.add(p);
+  }
+  for (const p of removedTopicPaths) {
+    mqttMirrorState.pendingRemovedPaths.delete(p);
   }
   if (!mqttMirrorState.bootstrapPushed) {
     const left = [...mqttMirrorState.entriesByPath.keys()].filter(
@@ -2814,11 +2853,32 @@ export const __test = {
   buildChunkedOrSingleScanAck,
   runMqttTopicScanChunkCommand,
   pruneMqttScanSessions,
+  pruneMirrorControlsForOfflineDevice,
+  isMqttMetaErrorOffline,
+  ingestMqttMirrorMessage,
   clearMqttScanSessions() {
     mqttScanSessions.clear();
   },
   mqttScanSessionCount() {
     return mqttScanSessions.size;
+  },
+  seedMqttMirrorEntry(entry) {
+    if (!entry?.topicPath) return;
+    mqttMirrorState.entriesByPath.set(entry.topicPath, entry);
+    mqttMirrorState.topicCount = mqttMirrorState.entriesByPath.size;
+  },
+  mirrorEntryCount() {
+    return mqttMirrorState.entriesByPath.size;
+  },
+  pendingRemovedPathCount() {
+    return mqttMirrorState.pendingRemovedPaths.size;
+  },
+  clearMqttMirrorEntries() {
+    mqttMirrorState.entriesByPath.clear();
+    mqttMirrorState.dirtyPaths.clear();
+    mqttMirrorState.pendingRemovedPaths.clear();
+    mqttMirrorState.bootstrapSent.clear();
+    mqttMirrorState.topicCount = 0;
   },
   setMqttMirrorReuseProbe(probe) {
     mqttMirrorState.connected = probe?.connected === true;
