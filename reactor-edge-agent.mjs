@@ -748,6 +748,10 @@ async function runMqttTopicScanCommand(payload) {
       },
     };
   }
+  // B3: same broker already mirrored — wait on ingest, do not open a second client.
+  if (canReuseMqttMirrorForScan(host, port)) {
+    return runMqttTopicScanViaMirrorWait({ host, port, scanMs, ackMaxEntries });
+  }
   let mqttMod;
   try {
     mqttMod = await import("mqtt");
@@ -940,6 +944,10 @@ const mqttMirrorState = {
   bootstrapSent: new Set(),
   /** Epoch ms when subscribe succeeded — retained dump starts then. */
   subscribedAtMs: null,
+  /** Long-lived mqtt.js client — B3: reuse instead of second Connect burst. */
+  client: null,
+  brokerHost: "127.0.0.1",
+  brokerPort: 1883,
 };
 const MQTT_MIRROR_DELTA_BATCH = 200;
 const MQTT_MIRROR_FLUSH_MS = 5_000;
@@ -975,6 +983,42 @@ function isMqttMirrorSettledForScan() {
   if (Date.now() - lastMsg < MQTT_MIRROR_SETTLE_QUIET_MS) return false;
   if (countMirrorDiscoverableDevices() < MQTT_MIRROR_MIN_DEVICES) return false;
   return true;
+}
+
+/**
+ * B3: markShield Connect used to open a second mqtt.js client while the
+ * long-lived mirror was already on 127.0.0.1:1883.
+ */
+function canReuseMqttMirrorForScan(host, port) {
+  if (!mqttMirrorState.connected || !mqttMirrorState.client) return false;
+  const h = String(host ?? "").trim().toLowerCase() || "127.0.0.1";
+  const p = Number(port) > 0 ? Number(port) : 1883;
+  const mh = String(mqttMirrorState.brokerHost ?? "").trim().toLowerCase() || "127.0.0.1";
+  const mp = Number(mqttMirrorState.brokerPort) > 0 ? Number(mqttMirrorState.brokerPort) : 1883;
+  return h === mh && p === mp;
+}
+
+async function runMqttTopicScanViaMirrorWait({ host, port, scanMs, ackMaxEntries }) {
+  await new Promise((resolve) => setTimeout(resolve, scanMs));
+  const snapshot = buildMqttMirrorSnapshotV1(ackMaxEntries);
+  return {
+    ok: true,
+    details: {
+      mqttTopicScan: {
+        entries: snapshot.entries,
+        brokerLabel: `${host}:${port}`,
+        scanMs,
+        entryCount: snapshot.entries.length,
+        collectedCount: mqttMirrorState.entriesByPath.size,
+        source: "wb_mqtt_mirror",
+        mirrorReuse: true,
+        truncated: snapshot.truncated === true,
+        discoverableDeviceCount: snapshot.discoverableDeviceCount,
+        omittedDeviceHint: snapshot.omittedDeviceHint ?? null,
+        mqttMirror: mqttMirrorHealth(),
+      },
+    },
+  };
 }
 
 function mqttMirrorHealth() {
@@ -1224,12 +1268,15 @@ async function startMqttBusMirror() {
     return;
   }
   const url = `mqtt://${host}:${port}`;
+  mqttMirrorState.brokerHost = host;
+  mqttMirrorState.brokerPort = port;
   const client = connect(url, {
     connectTimeout: 8_000,
     reconnectPeriod: 3_000,
     protocolVersion: 4,
     clean: true,
   });
+  mqttMirrorState.client = client;
   mqttMirrorState.startedAt = new Date().toISOString();
   client.on("connect", () => {
     mqttMirrorState.connected = true;
@@ -1259,6 +1306,7 @@ async function startMqttBusMirror() {
   client.on("close", () => {
     mqttMirrorState.connected = false;
     mqttMirrorState.subscribedAtMs = null;
+    if (mqttMirrorState.client === client) mqttMirrorState.client = null;
   });
   client.on("offline", () => {
     mqttMirrorState.connected = false;
@@ -2585,6 +2633,13 @@ export const __test = {
   executeCommand,
   digestCommandPayload,
   isMarkShieldDiscoverableDeviceKey,
+  canReuseMqttMirrorForScan,
+  setMqttMirrorReuseProbe(probe) {
+    mqttMirrorState.connected = probe?.connected === true;
+    mqttMirrorState.client = probe?.client ?? null;
+    if (probe?.brokerHost) mqttMirrorState.brokerHost = probe.brokerHost;
+    if (probe?.brokerPort) mqttMirrorState.brokerPort = probe.brokerPort;
+  },
   setAgentSession(nextAgentId, nextAgentAccessToken) {
     agentId = nextAgentId;
     agentAccessToken = nextAgentAccessToken;
