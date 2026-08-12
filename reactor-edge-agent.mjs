@@ -705,7 +705,7 @@ async function runMqttPublishCommand(payload) {
  */
 function isMarkShieldDiscoverableDeviceKey(deviceTopicKey) {
   const key = String(deviceTopicKey ?? "");
-  return /mr6c|mr6cu|mr6cv|mrps6|mdm|mrm2|mrm|wb[-_]?led|ampled|mali|mao|maod|dimmer|mr3|mr12|mr11|mdali|dali|mcm8|mcm16|mcm24|wd14|mdi|^wb-gpio$|gpio|m1w2|msw/i.test(
+  return /mr6c|mr6cu|mr6cv|mrps6|mdm|mrm2|mrm|wb[-_]?led|ampled|mali|mao4|maod|dimmer|mr3|mr12|mr11|mdali|dali|mcm8|mcm16|mcm24|wd14|mdi|^wb-gpio$|gpio|m1w2|msw|mwac|map3|map12|map6/i.test(
     key,
   );
 }
@@ -715,25 +715,32 @@ async function runMqttTopicScanCommand(payload) {
   const port = Number(payload?.port) > 0 ? Number(payload.port) : 1883;
   const scanMs = Math.min(Math.max(Number(payload?.scanMs) || 12_000, 2_000), 25_000);
   const maxEntries = 800;
-  const preferMirror = payload?.preferMirror !== false;
-  const mirrorWarm =
-    preferMirror &&
-    mqttMirrorState.connected &&
-    mqttMirrorState.entriesByPath.size > 0;
+  // markShield Connect must not trust a half-filled retained dump after agent reinstall.
+  const preferMirror =
+    payload?.preferMirror === true
+      ? true
+      : payload?.preferMirror === false
+        ? false
+        : payload?.markShield
+          ? false
+          : true;
+  const mirrorWarm = preferMirror && isMqttMirrorSettledForScan();
   if (mirrorWarm) {
     const snapshot = buildMqttMirrorSnapshotV1(maxEntries);
     return {
       ok: true,
       details: {
         mqttTopicScan: {
-          // Top-level entries — SaaS parseEntries (burst + mirror).
+          // Top-level entries only — duplicate `snapshot` blew ack JSON size.
           entries: snapshot.entries,
           brokerLabel: `${host}:${port}`,
           scanMs: 0,
           entryCount: snapshot.entries.length,
           source: "wb_mqtt_mirror",
+          truncated: snapshot.truncated === true,
+          discoverableDeviceCount: snapshot.discoverableDeviceCount,
+          omittedDeviceHint: snapshot.omittedDeviceHint ?? null,
           mqttMirror: mqttMirrorHealth(),
-          snapshot,
         },
       },
     };
@@ -843,7 +850,11 @@ async function runMqttTopicScanCommand(payload) {
   } catch {
     /* ignore */
   }
-  const entries = [...entriesByPath.values()].sort((a, b) => a.topicPath.localeCompare(b.topicPath));
+  const capped = fairCapMqttEntriesByDevice(
+    [...entriesByPath.values()],
+    maxEntries,
+  );
+  const entries = capped.entries.slice().sort((a, b) => a.topicPath.localeCompare(b.topicPath));
   return {
     ok: true,
     details: {
@@ -851,6 +862,9 @@ async function runMqttTopicScanCommand(payload) {
         entries,
         brokerLabel: `${host}:${port}`,
         entryCount: entries.length,
+        truncated: capped.truncated,
+        discoverableDeviceCount: capped.discoverableDeviceCount,
+        omittedDeviceHint: capped.omittedDeviceHint,
       },
     },
   };
@@ -916,10 +930,46 @@ const mqttMirrorState = {
   dirtyPaths: new Set(),
   /** Full bootstrap push once after mirror warms. */
   bootstrapPushed: false,
+  /** @type {Set<string>} topicPaths already sent in current bootstrap cycle */
+  bootstrapSent: new Set(),
+  /** Epoch ms when subscribe succeeded — retained dump starts then. */
+  subscribedAtMs: null,
 };
 const MQTT_MIRROR_DELTA_BATCH = 200;
 const MQTT_MIRROR_FLUSH_MS = 5_000;
+/** Retained dump settles when no new msgs for this long (after subscribe). */
+const MQTT_MIRROR_SETTLE_QUIET_MS = 1_500;
+/** Min age after subscribe before mirror may shortcut a mark-shield scan. */
+const MQTT_MIRROR_MIN_AGE_MS = 4_000;
+/** Min discoverable devices before mirror is trusted for replaceShelves. */
+const MQTT_MIRROR_MIN_DEVICES = 4;
 let lastMqttMirrorFlushAt = 0;
+
+function countMirrorDiscoverableDevices() {
+  const keys = new Set();
+  for (const e of mqttMirrorState.entriesByPath.values()) {
+    const k = String(e?.deviceTopicKey ?? "").trim();
+    if (k && isMarkShieldDiscoverableDeviceKey(k)) keys.add(k);
+  }
+  return keys.size;
+}
+
+/**
+ * Incomplete retained dump after agent reinstall used to pass `size > 0` and
+ * wipe shelves on Connect (MAP/MWAC missing). Require quiet + age + device floor.
+ */
+function isMqttMirrorSettledForScan() {
+  if (!mqttMirrorState.connected || mqttMirrorState.entriesByPath.size === 0) return false;
+  const subAt = mqttMirrorState.subscribedAtMs;
+  if (!subAt || !Number.isFinite(subAt)) return false;
+  const ageMs = Date.now() - subAt;
+  if (ageMs < MQTT_MIRROR_MIN_AGE_MS) return false;
+  const lastMsg = mqttMirrorState.lastMsgAt ? Date.parse(mqttMirrorState.lastMsgAt) : NaN;
+  if (!Number.isFinite(lastMsg)) return false;
+  if (Date.now() - lastMsg < MQTT_MIRROR_SETTLE_QUIET_MS) return false;
+  if (countMirrorDiscoverableDevices() < MQTT_MIRROR_MIN_DEVICES) return false;
+  return true;
+}
 
 function mqttMirrorHealth() {
   const lastMsgAt = mqttMirrorState.lastMsgAt;
@@ -932,6 +982,8 @@ function mqttMirrorHealth() {
     lagMs,
     topicCount: mqttMirrorState.topicCount,
     lastError: mqttMirrorState.lastError,
+    settled: isMqttMirrorSettledForScan(),
+    discoverableDeviceCount: countMirrorDiscoverableDevices(),
   };
 }
 
@@ -1004,7 +1056,13 @@ async function flushMqttMirrorDelta(forceBootstrap = false) {
 
   let paths;
   if (forceBootstrap || !mqttMirrorState.bootstrapPushed) {
-    paths = [...mqttMirrorState.entriesByPath.keys()].slice(0, MQTT_MIRROR_DELTA_BATCH);
+    paths = [...mqttMirrorState.entriesByPath.keys()]
+      .filter((p) => !mqttMirrorState.bootstrapSent.has(p))
+      .slice(0, MQTT_MIRROR_DELTA_BATCH);
+    if (paths.length === 0) {
+      mqttMirrorState.bootstrapPushed = true;
+      return;
+    }
   } else if (mqttMirrorState.dirtyPaths.size === 0) {
     return;
   } else {
@@ -1040,26 +1098,96 @@ async function flushMqttMirrorDelta(forceBootstrap = false) {
     }
     return;
   }
-  for (const p of paths) mqttMirrorState.dirtyPaths.delete(p);
+  for (const p of paths) {
+    mqttMirrorState.dirtyPaths.delete(p);
+    if (!mqttMirrorState.bootstrapPushed) mqttMirrorState.bootstrapSent.add(p);
+  }
   if (!mqttMirrorState.bootstrapPushed) {
-    mqttMirrorState.bootstrapPushed = true;
-    console.log(
-      `[flos-edge-agent] mqtt mirror bootstrap pushed (${entries.length} entries, cache=${
-        result.body?.data?.cachedTopicCount ?? "?"
-      })`,
-    );
+    const left = [...mqttMirrorState.entriesByPath.keys()].filter(
+      (p) => !mqttMirrorState.bootstrapSent.has(p),
+    ).length;
+    if (left === 0) {
+      mqttMirrorState.bootstrapPushed = true;
+      console.log(
+        `[flos-edge-agent] mqtt mirror bootstrap complete (${mqttMirrorState.entriesByPath.size} entries, cache=${
+          result.body?.data?.cachedTopicCount ?? "?"
+        })`,
+      );
+    } else {
+      console.log(
+        `[flos-edge-agent] mqtt mirror bootstrap batch ${entries.length}, remaining=${left}`,
+      );
+    }
   }
   lastMqttMirrorFlushAt = Date.now();
 }
 
+function fairCapMqttEntriesByDevice(entries, maxEntries) {
+  const list = Array.isArray(entries) ? entries : [];
+  const totalBeforeCap = list.length;
+  const byDevice = new Map();
+  for (const e of list) {
+    const key = String(e?.deviceTopicKey ?? "").trim() || "__unknown__";
+    const bucket = byDevice.get(key);
+    if (bucket) bucket.push(e);
+    else byDevice.set(key, [e]);
+  }
+  const deviceKeys = [...byDevice.keys()].sort((a, b) => a.localeCompare(b));
+  const discoverableDeviceCount = deviceKeys.filter((k) => k !== "__unknown__").length;
+  if (totalBeforeCap <= maxEntries) {
+    return {
+      entries: list,
+      truncated: false,
+      totalBeforeCap,
+      discoverableDeviceCount,
+      omittedDeviceHint: null,
+    };
+  }
+  const cursors = new Map();
+  for (const k of deviceKeys) cursors.set(k, 0);
+  const out = [];
+  let progressed = true;
+  while (out.length < maxEntries && progressed) {
+    progressed = false;
+    for (const k of deviceKeys) {
+      if (out.length >= maxEntries) break;
+      const bucket = byDevice.get(k);
+      const i = cursors.get(k) ?? 0;
+      if (!bucket || i >= bucket.length) continue;
+      out.push(bucket[i]);
+      cursors.set(k, i + 1);
+      progressed = true;
+    }
+  }
+  const keptDevices = new Set(out.map((e) => String(e?.deviceTopicKey ?? "").trim()).filter(Boolean));
+  const omitted = deviceKeys.filter((k) => k !== "__unknown__" && !keptDevices.has(k));
+  const omittedDeviceHint =
+    omitted.length > 0
+      ? omitted.slice(0, 6).join(", ") + (omitted.length > 6 ? ` (+${omitted.length - 6})` : "")
+      : `cap ${maxEntries}/${totalBeforeCap}`;
+  return {
+    entries: out,
+    truncated: true,
+    totalBeforeCap,
+    discoverableDeviceCount,
+    omittedDeviceHint,
+  };
+}
+
 function buildMqttMirrorSnapshotV1(maxEntries = 800) {
   const importedAt = new Date().toISOString();
-  const entries = [...mqttMirrorState.entriesByPath.values()].slice(0, maxEntries);
+  const capped = fairCapMqttEntriesByDevice(
+    [...mqttMirrorState.entriesByPath.values()],
+    maxEntries,
+  );
   return {
     version: 1,
     source: "wb_mqtt_mirror",
     importedAt,
-    entries,
+    entries: capped.entries,
+    truncated: capped.truncated,
+    discoverableDeviceCount: capped.discoverableDeviceCount,
+    omittedDeviceHint: capped.omittedDeviceHint,
   };
 }
 
@@ -1100,6 +1228,10 @@ async function startMqttBusMirror() {
   client.on("connect", () => {
     mqttMirrorState.connected = true;
     mqttMirrorState.lastError = null;
+    // New session: retained dump must settle again before preferMirror shortcuts.
+    mqttMirrorState.subscribedAtMs = null;
+    mqttMirrorState.bootstrapPushed = false;
+    mqttMirrorState.bootstrapSent = new Set();
     client.subscribe(
       ["/devices/#", "devices/#", "/devices/+/controls/+", "devices/+/controls/+"],
       { qos: 0 },
@@ -1108,6 +1240,7 @@ async function startMqttBusMirror() {
           mqttMirrorState.lastError = err.message ?? String(err);
           console.warn("[flos-edge-agent] mqtt mirror subscribe failed:", mqttMirrorState.lastError);
         } else {
+          mqttMirrorState.subscribedAtMs = Date.now();
           console.log(`[flos-edge-agent] mqtt bus mirror connected ${url}`);
         }
       },
@@ -1115,9 +1248,11 @@ async function startMqttBusMirror() {
   });
   client.on("reconnect", () => {
     mqttMirrorState.connected = false;
+    mqttMirrorState.subscribedAtMs = null;
   });
   client.on("close", () => {
     mqttMirrorState.connected = false;
+    mqttMirrorState.subscribedAtMs = null;
   });
   client.on("offline", () => {
     mqttMirrorState.connected = false;
@@ -1306,7 +1441,8 @@ async function executeCommand(command) {
     const nextToken = command.payload?.newAccessToken ?? command.payload?.token ?? null;
     if (typeof nextToken === "string" && nextToken.length > 16) {
       agentAccessToken = nextToken;
-      return { ok: true, details: { rotated: true } };
+      persistCredentials();
+      return { ok: true, details: { rotated: true, persisted: true } };
     }
     return { ok: false, error: "rotate_token payload missing new token" };
   }
@@ -1452,7 +1588,14 @@ async function pollCommands() {
   }
   const traceId = getCommandTraceId(command);
   if (!traceId) {
-    console.warn(`[flos-edge-agent] dropping command without traceId id=${command.id}`);
+    console.warn(`[flos-edge-agent] command missing traceId id=${command.id} — fail-ack`);
+    await ackCommand(
+      command,
+      "missing-trace-id",
+      "failed",
+      { traceId: null },
+      "trace_id_missing",
+    );
     return;
   }
   activeCommandTraceId = traceId;
