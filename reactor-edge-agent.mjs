@@ -702,31 +702,41 @@ async function runMqttPublishCommand(payload) {
 /**
  * Local MQTT topic scan for SaaS mark-shield (cloud cannot TCP to LAN/Tailscale).
  * Invoked via system_check payload { action: "mqtt_topic_scan", scanMs?, host?, port?, markShield? }.
+ *
+ * Keep in sync with SaaS propose/assess allowlists + topic-utils aliases.
+ * Missing here ⇒ Connect never sees the device (mirror + burst filter).
  */
 function isMarkShieldDiscoverableDeviceKey(deviceTopicKey) {
   const key = String(deviceTopicKey ?? "");
-  return /mr6c|mr6cu|mr6cv|mrps6|mdm|mrm2|mrm|wb[-_]?led|ampled|mali|mao4|maod|dimmer|mr3|mr12|mr11|mdali|dali|mcm8|mcm16|mcm24|wd14|mdi|^wb-gpio$|gpio|m1w2|msw|mwac|map3|map12|map6/i.test(
+  return /mr6c|mr6cu|mr6cv|mr6lv|mrps6|mdm|mrm2|mrm|mrwm|mrwl|mr3|mr12|mr11|wb[-_]?led|ampled|mali|mao4|maod|dimmer|mdali|dali|mcm8|mcm16|mcm24|wd14|mdi|^wb-gpio$|gpio|m1w2|msw|mwac|map3|map12|map6|^wb-map|mai6|mir|mdr8|mgev|mio|ups/i.test(
     key,
   );
 }
+
+/** Ack payload budget — fair-cap target. Collect window can be larger (see collectCap). */
+const MQTT_SCAN_ACK_MAX_ENTRIES = 800;
+/** Hard ceiling while listening so a runaway broker cannot OOM the agent. */
+const MQTT_SCAN_COLLECT_MAX_ENTRIES = 4_000;
 
 async function runMqttTopicScanCommand(payload) {
   const host = typeof payload?.host === "string" && payload.host.trim() ? payload.host.trim() : "127.0.0.1";
   const port = Number(payload?.port) > 0 ? Number(payload.port) : 1883;
   const scanMs = Math.min(Math.max(Number(payload?.scanMs) || 12_000, 2_000), 25_000);
-  const maxEntries = 800;
+  const markShield = payload?.markShield === true;
+  const ackMaxEntries = MQTT_SCAN_ACK_MAX_ENTRIES;
+  const collectCap = markShield ? MQTT_SCAN_COLLECT_MAX_ENTRIES : ackMaxEntries;
   // markShield Connect must not trust a half-filled retained dump after agent reinstall.
   const preferMirror =
     payload?.preferMirror === true
       ? true
       : payload?.preferMirror === false
         ? false
-        : payload?.markShield
+        : markShield
           ? false
           : true;
   const mirrorWarm = preferMirror && isMqttMirrorSettledForScan();
   if (mirrorWarm) {
-    const snapshot = buildMqttMirrorSnapshotV1(maxEntries);
+    const snapshot = buildMqttMirrorSnapshotV1(ackMaxEntries);
     return {
       ok: true,
       details: {
@@ -786,7 +796,7 @@ async function runMqttTopicScanCommand(payload) {
         // Device-level meta/error — for offline retained filter in SaaS discovery.
         if (parts.length === 4 && parts[0] === "devices" && parts[2] === "meta" && parts[3] === "error") {
           const deviceTopicKey = parts[1];
-          if (payload?.markShield && !isMarkShieldDiscoverableDeviceKey(deviceTopicKey)) return;
+          if (markShield && !isMarkShieldDiscoverableDeviceKey(deviceTopicKey)) return;
           const topicPath = `/devices/${deviceTopicKey}/meta/error`;
           if (entriesByPath.has(topicPath)) return;
           const raw = buf.length > 0 ? buf.toString("utf8") : "";
@@ -809,7 +819,7 @@ async function runMqttTopicScanCommand(payload) {
         // Only leaf controls: /devices/{id}/controls/{controlId} — skip …/meta/type noise.
         if (parts.length !== 4 || parts[0] !== "devices" || parts[2] !== "controls") return;
         const deviceTopicKey = parts[1];
-        if (payload?.markShield && !isMarkShieldDiscoverableDeviceKey(deviceTopicKey)) return;
+        if (markShield && !isMarkShieldDiscoverableDeviceKey(deviceTopicKey)) return;
         const controlId = parts[3];
         if (!controlId || /meta/i.test(controlId)) return;
         const topicPath = `/devices/${deviceTopicKey}/controls/${controlId}`;
@@ -834,7 +844,9 @@ async function runMqttTopicScanCommand(payload) {
           importedAt,
           ...(raw && raw.length <= 120 ? { lastValue } : {}),
         });
-        if (entriesByPath.size >= maxEntries) finish();
+        // B11: never early-stop markShield on ack budget — retained dump must finish (timer).
+        // Non-markShield may stop at collectCap to bound latency.
+        if (!markShield && entriesByPath.size >= collectCap) finish();
       });
     });
   } catch (err) {
@@ -852,7 +864,7 @@ async function runMqttTopicScanCommand(payload) {
   }
   const capped = fairCapMqttEntriesByDevice(
     [...entriesByPath.values()],
-    maxEntries,
+    ackMaxEntries,
   );
   const entries = capped.entries.slice().sort((a, b) => a.topicPath.localeCompare(b.topicPath));
   return {
@@ -862,7 +874,8 @@ async function runMqttTopicScanCommand(payload) {
         entries,
         brokerLabel: `${host}:${port}`,
         entryCount: entries.length,
-        truncated: capped.truncated,
+        collectedCount: entriesByPath.size,
+        truncated: capped.truncated || entriesByPath.size > ackMaxEntries,
         discoverableDeviceCount: capped.discoverableDeviceCount,
         omittedDeviceHint: capped.omittedDeviceHint,
       },
