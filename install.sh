@@ -163,10 +163,11 @@ ensure_agent_files() {
   fi
   # Always refresh from GitHub so field upgrades pick up fixes (no stale cache).
   echo "[flos-edge-agent] скачиваю файлы с GitHub ($RAW)…"
-  mkdir -p "$AGENT_DIR"
+  mkdir -p "$AGENT_DIR/lib"
   for f in Dockerfile docker-compose.yml entrypoint.sh package.json reactor-edge-agent.mjs runtime-control-plane-http.mjs; do
     curl -fsSL "$RAW/$f" -o "$AGENT_DIR/$f"
   done
+  curl -fsSL "$RAW/lib/mark-shield-discoverable-device.mjs" -o "$AGENT_DIR/lib/mark-shield-discoverable-device.mjs"
   chmod +x "$AGENT_DIR/entrypoint.sh"
 }
 
