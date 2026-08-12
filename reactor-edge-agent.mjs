@@ -706,10 +706,155 @@ async function runMqttPublishCommand(payload) {
  * Allowlist: ./lib/mark-shield-discoverable-device.mjs (sync with SaaS).
  */
 
-/** Ack payload budget — fair-cap target. Collect window can be larger (see collectCap). */
+/** Ack payload budget — fair-cap / chunk size. Collect window can be larger (see collectCap). */
 const MQTT_SCAN_ACK_MAX_ENTRIES = 800;
 /** Hard ceiling while listening so a runaway broker cannot OOM the agent. */
 const MQTT_SCAN_COLLECT_MAX_ENTRIES = 4_000;
+/** B4: keep full markShield collect for follow-up chunk commands (align with command lease). */
+const MQTT_SCAN_SESSION_TTL_MS = 60_000;
+const MQTT_SCAN_SESSION_RING_MAX = 2;
+
+/** @type {Map<string, { entries: object[], createdAt: number, discoverableDeviceCount: number }>} */
+const mqttScanSessions = new Map();
+
+function pruneMqttScanSessions() {
+  const now = Date.now();
+  for (const [id, session] of mqttScanSessions) {
+    if (now - session.createdAt > MQTT_SCAN_SESSION_TTL_MS) mqttScanSessions.delete(id);
+  }
+  while (mqttScanSessions.size > MQTT_SCAN_SESSION_RING_MAX) {
+    let oldestId = null;
+    let oldestAt = Infinity;
+    for (const [id, session] of mqttScanSessions) {
+      if (session.createdAt < oldestAt) {
+        oldestAt = session.createdAt;
+        oldestId = id;
+      }
+    }
+    if (!oldestId) break;
+    mqttScanSessions.delete(oldestId);
+  }
+}
+
+function countDiscoverableDevicesInEntries(entries) {
+  const keys = new Set();
+  for (const e of entries ?? []) {
+    const k = String(e?.deviceTopicKey ?? "").trim();
+    if (k && isMarkShieldDiscoverableDeviceKey(k)) keys.add(k);
+  }
+  return keys.size;
+}
+
+function sortMqttScanEntries(entries) {
+  return (entries ?? [])
+    .slice()
+    .sort((a, b) => String(a?.topicPath ?? "").localeCompare(String(b?.topicPath ?? "")));
+}
+
+/**
+ * B4: markShield delivers full collect via chunks instead of fair-capping channels.
+ * Non-chunk path (≤800 or non-markShield) stays single-ack.
+ */
+function buildChunkedOrSingleScanAck(entries, meta) {
+  const sorted = sortMqttScanEntries(entries);
+  const discoverableDeviceCount = countDiscoverableDevicesInEntries(sorted);
+  const hardTruncated = meta?.hardTruncated === true;
+  const collectedCount = Number.isFinite(meta?.collectedCount) ? meta.collectedCount : sorted.length;
+  const chunkSize = MQTT_SCAN_ACK_MAX_ENTRIES;
+  const base = {
+    brokerLabel: meta?.brokerLabel,
+    entryCount: 0,
+    collectedCount,
+    discoverableDeviceCount,
+    truncated: hardTruncated,
+    omittedDeviceHint: hardTruncated ? `collect_cap ${MQTT_SCAN_COLLECT_MAX_ENTRIES}` : null,
+    ...(meta?.scanMs !== undefined ? { scanMs: meta.scanMs } : {}),
+    ...(meta?.source ? { source: meta.source } : {}),
+    ...(meta?.mirrorReuse === true ? { mirrorReuse: true } : {}),
+    ...(meta?.mqttMirror ? { mqttMirror: meta.mqttMirror } : {}),
+  };
+
+  if (!meta?.chunked || sorted.length <= chunkSize) {
+    return {
+      ok: true,
+      details: {
+        mqttTopicScan: {
+          ...base,
+          entries: sorted,
+          entryCount: sorted.length,
+          chunkIndex: 0,
+          chunkTotal: 1,
+        },
+      },
+    };
+  }
+
+  pruneMqttScanSessions();
+  const scanSessionId = crypto.randomUUID();
+  mqttScanSessions.set(scanSessionId, {
+    entries: sorted,
+    createdAt: Date.now(),
+    discoverableDeviceCount,
+  });
+  pruneMqttScanSessions();
+  const chunkTotal = Math.ceil(sorted.length / chunkSize) || 1;
+  const chunk0 = sorted.slice(0, chunkSize);
+  return {
+    ok: true,
+    details: {
+      mqttTopicScan: {
+        ...base,
+        entries: chunk0,
+        entryCount: chunk0.length,
+        totalEntryCount: sorted.length,
+        scanSessionId,
+        chunkIndex: 0,
+        chunkTotal,
+      },
+    },
+  };
+}
+
+function runMqttTopicScanChunkCommand(payload) {
+  pruneMqttScanSessions();
+  const sessionId =
+    typeof payload?.sessionId === "string"
+      ? payload.sessionId.trim()
+      : typeof payload?.scanSessionId === "string"
+        ? payload.scanSessionId.trim()
+        : "";
+  const chunkIndex = Number(payload?.chunkIndex);
+  if (!sessionId || !Number.isInteger(chunkIndex) || chunkIndex < 0) {
+    return { ok: false, error: "mqtt_topic_scan_chunk_bad_payload" };
+  }
+  const session = mqttScanSessions.get(sessionId);
+  if (!session) {
+    return { ok: false, error: "mqtt_topic_scan_chunk_expired" };
+  }
+  const chunkSize = MQTT_SCAN_ACK_MAX_ENTRIES;
+  const chunkTotal = Math.ceil(session.entries.length / chunkSize) || 1;
+  if (chunkIndex >= chunkTotal) {
+    return { ok: false, error: "mqtt_topic_scan_chunk_out_of_range" };
+  }
+  const start = chunkIndex * chunkSize;
+  const entries = session.entries.slice(start, start + chunkSize);
+  return {
+    ok: true,
+    details: {
+      mqttTopicScan: {
+        entries,
+        entryCount: entries.length,
+        totalEntryCount: session.entries.length,
+        scanSessionId: sessionId,
+        chunkIndex,
+        chunkTotal,
+        truncated: false,
+        discoverableDeviceCount: session.discoverableDeviceCount,
+        omittedDeviceHint: null,
+      },
+    },
+  };
+}
 
 async function runMqttTopicScanCommand(payload) {
   const host = typeof payload?.host === "string" && payload.host.trim() ? payload.host.trim() : "127.0.0.1";
@@ -729,6 +874,17 @@ async function runMqttTopicScanCommand(payload) {
           : true;
   const mirrorWarm = preferMirror && isMqttMirrorSettledForScan();
   if (mirrorWarm) {
+    const allEntries = [...mqttMirrorState.entriesByPath.values()];
+    if (markShield) {
+      return buildChunkedOrSingleScanAck(allEntries, {
+        brokerLabel: `${host}:${port}`,
+        scanMs: 0,
+        source: "wb_mqtt_mirror",
+        collectedCount: allEntries.length,
+        chunked: true,
+        mqttMirror: mqttMirrorHealth(),
+      });
+    }
     const snapshot = buildMqttMirrorSnapshotV1(ackMaxEntries);
     return {
       ok: true,
@@ -750,7 +906,7 @@ async function runMqttTopicScanCommand(payload) {
   }
   // B3: same broker already mirrored — wait on ingest, do not open a second client.
   if (canReuseMqttMirrorForScan(host, port)) {
-    return runMqttTopicScanViaMirrorWait({ host, port, scanMs, ackMaxEntries });
+    return runMqttTopicScanViaMirrorWait({ host, port, scanMs, ackMaxEntries, markShield });
   }
   let mqttMod;
   try {
@@ -859,10 +1015,16 @@ async function runMqttTopicScanCommand(payload) {
   } catch {
     /* ignore */
   }
-  const capped = fairCapMqttEntriesByDevice(
-    [...entriesByPath.values()],
-    ackMaxEntries,
-  );
+  const collected = [...entriesByPath.values()];
+  if (markShield) {
+    return buildChunkedOrSingleScanAck(collected, {
+      brokerLabel: `${host}:${port}`,
+      collectedCount: collected.length,
+      hardTruncated: collected.length >= collectCap,
+      chunked: true,
+    });
+  }
+  const capped = fairCapMqttEntriesByDevice(collected, ackMaxEntries);
   const entries = capped.entries.slice().sort((a, b) => a.topicPath.localeCompare(b.topicPath));
   return {
     ok: true,
@@ -998,8 +1160,20 @@ function canReuseMqttMirrorForScan(host, port) {
   return h === mh && p === mp;
 }
 
-async function runMqttTopicScanViaMirrorWait({ host, port, scanMs, ackMaxEntries }) {
+async function runMqttTopicScanViaMirrorWait({ host, port, scanMs, ackMaxEntries, markShield }) {
   await new Promise((resolve) => setTimeout(resolve, scanMs));
+  const allEntries = [...mqttMirrorState.entriesByPath.values()];
+  if (markShield) {
+    return buildChunkedOrSingleScanAck(allEntries, {
+      brokerLabel: `${host}:${port}`,
+      scanMs,
+      source: "wb_mqtt_mirror",
+      mirrorReuse: true,
+      collectedCount: allEntries.length,
+      chunked: true,
+      mqttMirror: mqttMirrorHealth(),
+    });
+  }
   const snapshot = buildMqttMirrorSnapshotV1(ackMaxEntries);
   return {
     ok: true,
@@ -1513,6 +1687,9 @@ async function executeCommand(command) {
   if (commandType === "system_check") {
     if (command.payload?.action === "mqtt_topic_scan") {
       return await runMqttTopicScanCommand(command.payload);
+    }
+    if (command.payload?.action === "mqtt_topic_scan_chunk") {
+      return runMqttTopicScanChunkCommand(command.payload);
     }
     if (command.payload?.action === "mqtt_publish") {
       return await runMqttPublishCommand(command.payload);
@@ -2634,6 +2811,15 @@ export const __test = {
   digestCommandPayload,
   isMarkShieldDiscoverableDeviceKey,
   canReuseMqttMirrorForScan,
+  buildChunkedOrSingleScanAck,
+  runMqttTopicScanChunkCommand,
+  pruneMqttScanSessions,
+  clearMqttScanSessions() {
+    mqttScanSessions.clear();
+  },
+  mqttScanSessionCount() {
+    return mqttScanSessions.size;
+  },
   setMqttMirrorReuseProbe(probe) {
     mqttMirrorState.connected = probe?.connected === true;
     mqttMirrorState.client = probe?.client ?? null;
