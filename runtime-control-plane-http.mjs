@@ -6,6 +6,7 @@
 import { execSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
+import { buildRulesInventory } from "./runtime-rules-inventory.mjs";
 
 const MAX_SCRIPT_BYTES = 512_000;
 const MAX_SHARD_BODY_BYTES = 2_500_000;
@@ -283,16 +284,42 @@ export function applyShardBundle(shards, loadOrder, revisionId, options = {}) {
 export function handleRuntimeHealth(_req, res) {
   const manifest = loadBackupManifest();
   const extra = typeof runtimeHealthExtraProvider === "function" ? runtimeHealthExtraProvider() : {};
+  const appliedRevisionId = readAppliedRevisionId();
   jsonWrite(res, 200, {
     ok: true,
     service: "integrator-runtime-control-plane",
     wbRulesDeployPath: wbRulesDeployPath(),
     wbRulesDeployDir: wbRulesDeployDir(),
-    appliedRevisionId: readAppliedRevisionId(),
+    appliedRevisionId,
     canRollback: Boolean(manifest?.files?.length),
     previousRevisionId: manifest?.revisionId ?? null,
+    supportsRulesExport: true,
     ...(extra && typeof extra === "object" ? extra : {}),
+    rulesInventory: buildRulesInventory(listIntegratorRuleFiles(), appliedRevisionId),
   });
+}
+
+/** Тела 40_user* — HTTP export и команда агента wb_rules_export. */
+export function exportIntegratorUserRuleFiles() {
+  const appliedRevisionId = readAppliedRevisionId();
+  const files = listIntegratorRuleFiles().filter((f) => /^40_rules.*\.js$/i.test(f.filename));
+  return {
+    revisionId: appliedRevisionId,
+    files: files.map((f) => ({
+      filename: f.filename,
+      content: f.content,
+      bytes: Buffer.byteLength(f.content, "utf8"),
+    })),
+  };
+}
+
+/** GET /runtime/rules-export — тела 40_user* для «Сверить с щитом» (preserve orphans). */
+export function handleRuntimeRulesExport(_req, res) {
+  if (!authorizeRuntimeRequest(_req)) {
+    jsonWrite(res, 401, { ok: false, error: "AUTH: invalid or missing bearer token" });
+    return;
+  }
+  jsonWrite(res, 200, { ok: true, ...exportIntegratorUserRuleFiles() });
 }
 
 /** Optional enricher for GET /runtime/health (enrollment state from reactor-edge-agent). */
@@ -395,6 +422,10 @@ export function runtimeHttpPathHandler(req, res) {
   const urlPath = (req.url ?? "/").split("?")[0];
   if (method === "GET" && (urlPath === "/runtime/health" || urlPath === "/health")) {
     handleRuntimeHealth(req, res);
+    return true;
+  }
+  if (method === "GET" && urlPath === "/runtime/rules-export") {
+    handleRuntimeRulesExport(req, res);
     return true;
   }
   if (method === "POST" && urlPath === "/runtime/apply") {

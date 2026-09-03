@@ -11,6 +11,7 @@ import {
   applyMonolithScript,
   applyShardBundle,
   backupCurrentStateBeforeApply,
+  exportIntegratorUserRuleFiles,
   loadBackupManifest,
   rollbackToPreviousBackup,
   restartWbRules,
@@ -50,8 +51,9 @@ const pollIntervalMs = Number(env("FLOS_COMMAND_POLL_INTERVAL_MS", "REACTOR_COMM
 const protocolVersion = env("FLOS_AGENT_PROTOCOL_VERSION", "REACTOR_AGENT_PROTOCOL_VERSION") ?? "1.0";
 /** Process boot time — skip self_update for a few minutes after (re)start to avoid update death-loops. */
 const agentProcessStartedAtMs = Date.now();
-const AGENT_SELF_UPDATE_BOOT_GRACE_MS = 10 * 60 * 1000;
-const AGENT_SELF_UPDATE_DEBOUNCE_MS = 30 * 60 * 1000;
+/** Field: 3 мин после старта (раньше 10) — иначе «Обновить агент» молча skip. */
+const AGENT_SELF_UPDATE_BOOT_GRACE_MS = 3 * 60 * 1000;
+const AGENT_SELF_UPDATE_DEBOUNCE_MS = 15 * 60 * 1000;
 let lastAgentSelfUpdateScheduledAtMs = 0;
 /** Field SaaS default: off unless explicitly enabled with a public key. */
 const strictSignatures =
@@ -1610,22 +1612,50 @@ function runAgentSelfUpdateCommand(payload) {
   ).trim();
   const dataDir = String(env("FLOS_EDGE_DATA_DIR", "REACTOR_EDGE_DATA_DIR") ?? "/mnt/data/flos-edge").trim();
   const agentDir = String(env("FLOS_AGENT_DIR", "REACTOR_AGENT_DIR") ?? "/opt/flos/flos-edge-agent").trim();
+  const cloudBase = String(baseUrl || "").replace(/\/$/, "");
   const installUrl = `https://raw.githubusercontent.com/${slug}/${gitRef}/install.sh`;
   const logPath = "/tmp/flos-edge-agent-self-update.log";
+  // Tip/облако = SSOT. GitHub — только fallback, если cloud недоступен.
   const inner = `
 set -uo pipefail
 sleep 2
 exec >> ${logPath} 2>&1
-echo "[flos-edge-agent] self-update start $(date -Iseconds 2>/dev/null || date) ref=${gitRef}"
+echo "[flos-edge-agent] self-update start $(date -Iseconds 2>/dev/null || date) cloud=${shellQuoteSingle(cloudBase)} ref=${gitRef}"
+AGENT_DIR=${shellQuoteSingle(agentDir)}
+DATA_DIR=${shellQuoteSingle(dataDir)}
+CLOUD=${shellQuoteSingle(cloudBase)}
+mkdir -p "$AGENT_DIR/lib" "$DATA_DIR"
+source_ok=0
+if [[ -n "$CLOUD" ]]; then
+  echo "[flos-edge-agent] pulling agent files from cloud tip…"
+  set +e
+  for f in Dockerfile entrypoint.sh package.json reactor-edge-agent.mjs runtime-control-plane-http.mjs docker-compose.yml; do
+    curl -fsSL "$CLOUD/api/edge-agent/files/$f" -o "$AGENT_DIR/$f" || { echo "fail $f"; source_ok=1; break; }
+  done
+  if [[ $source_ok -eq 0 ]]; then
+    curl -fsSL "$CLOUD/api/edge-agent/files/lib/mark-shield-discoverable-device.mjs" -o "$AGENT_DIR/lib/mark-shield-discoverable-device.mjs" || source_ok=1
+  fi
+  set -e
+  if [[ $source_ok -eq 0 ]]; then
+    chmod +x "$AGENT_DIR/entrypoint.sh" 2>/dev/null || true
+    cp "$AGENT_DIR/docker-compose.yml" "$DATA_DIR/docker-compose.yml"
+    echo "[flos-edge-agent] cloud pull ok — rebuild"
+    cd "$DATA_DIR"
+    docker compose --env-file "$DATA_DIR/.env" -f "$DATA_DIR/docker-compose.yml" up -d --build
+    docker ps --filter name=flos-edge-agent --format '{{.Names}} {{.Status}}' || true
+    echo "[flos-edge-agent] self-update cloud done"
+    exit 0
+  fi
+  echo "[flos-edge-agent] cloud pull failed — fallback GitHub install.sh"
+fi
 set +e
-curl -fsSL ${shellQuoteSingle(installUrl)} | bash -s -- --upgrade-only --data-dir ${shellQuoteSingle(dataDir)} --agent-dir ${shellQuoteSingle(agentDir)} --git-ref ${shellQuoteSingle(gitRef)}
+curl -fsSL ${shellQuoteSingle(installUrl)} | bash -s -- --upgrade-only --data-dir "$DATA_DIR" --agent-dir "$AGENT_DIR" --git-ref ${shellQuoteSingle(gitRef)}
 rc=$?
 set -e
 echo "[flos-edge-agent] self-update install exit=$rc $(date -Iseconds 2>/dev/null || date)"
-# Always try to leave a running container (upgrade must not erase the agent).
-cd ${shellQuoteSingle(dataDir)} 2>/dev/null || true
-if [[ -f ${shellQuoteSingle(dataDir)}/docker-compose.yml ]]; then
-  docker compose --env-file ${shellQuoteSingle(dataDir)}/.env -f ${shellQuoteSingle(dataDir)}/docker-compose.yml up -d || true
+cd "$DATA_DIR" 2>/dev/null || true
+if [[ -f "$DATA_DIR/docker-compose.yml" ]]; then
+  docker compose --env-file "$DATA_DIR/.env" -f "$DATA_DIR/docker-compose.yml" up -d || true
 fi
 docker start flos-edge-agent 2>/dev/null || true
 docker ps --filter name=flos-edge-agent --format '{{.Names}} {{.Status}}' || true
@@ -1634,11 +1664,16 @@ echo "[flos-edge-agent] self-update ensure-up done"
   try {
     execOnHostBash(`nohup bash -lc ${shellQuoteSingle(inner)} >/dev/null 2>&1 &`, 15_000);
     lastAgentSelfUpdateScheduledAtMs = Date.now();
-    console.log(`[flos-edge-agent] agent_self_update scheduled ref=${gitRef}`);
+    console.log(`[flos-edge-agent] agent_self_update scheduled cloud=${cloudBase || "none"} ref=${gitRef}`);
     return {
       ok: true,
       details: {
-        agentSelfUpdate: { scheduled: true, gitRef, logPath },
+        agentSelfUpdate: {
+          scheduled: true,
+          gitRef,
+          logPath,
+          source: cloudBase ? "cloud" : "github",
+        },
       },
     };
   } catch (err) {
@@ -1696,6 +1731,22 @@ function runWbRulesApplyCommand(payload) {
     };
   } catch (err) {
     return { ok: false, error: `wb_rules_apply_failed:${err?.message ?? err}` };
+  }
+}
+
+/**
+ * Pull 40_user bodies for cloud «Сверить с щитом» (Vercel cannot TCP to LAN).
+ * Payload: { action: "wb_rules_export" }
+ */
+function runWbRulesExportCommand(_payload) {
+  try {
+    const exported = exportIntegratorUserRuleFiles();
+    console.log(
+      `[flos-edge-agent] wb_rules_export files=${exported.files.length} revision=${exported.revisionId ?? "none"}`,
+    );
+    return { ok: true, details: { rulesExport: exported } };
+  } catch (err) {
+    return { ok: false, error: `wb_rules_export_failed:${err?.message ?? err}` };
   }
 }
 
@@ -1785,11 +1836,17 @@ async function executeCommand(command) {
     if (command.payload?.action === "wb_rules_apply") {
       return runWbRulesApplyCommand(command.payload);
     }
+    if (command.payload?.action === "wb_rules_export") {
+      return runWbRulesExportCommand(command.payload);
+    }
     if (command.payload?.action === "wb_rules_rollback") {
       return runWbRulesRollbackCommand(command.payload);
     }
     if (command.payload?.action === "agent_self_update") {
       return runAgentSelfUpdateCommand(command.payload);
+    }
+    if (typeof command.payload?.action === "string" && command.payload.action.trim()) {
+      return { ok: false, error: `unknown_system_check_action:${command.payload.action}` };
     }
     return {
       ok: true,

@@ -145,6 +145,7 @@ fi
 CLOUD_URL="${CLOUD_URL%/}"
 RAW="$(raw_base)"
 REPO_URL="https://github.com/${GITHUB_SLUG}.git"
+CLOUD_FILES="${CLOUD_URL}/api/edge-agent/files"
 
 ensure_agent_files() {
   if [[ -d "$AGENT_DIR/.git" ]]; then
@@ -161,9 +162,18 @@ ensure_agent_files() {
     git clone --depth 1 --branch "$GIT_REF" "$REPO_URL" "$AGENT_DIR"
     return
   fi
-  # Always refresh from GitHub so field upgrades pick up fixes (no stale cache).
-  echo "[flos-edge-agent] скачиваю файлы с GitHub ($RAW)…"
   mkdir -p "$AGENT_DIR/lib"
+  # Tip/облако = источник правды (private monorepo недоступен с WB).
+  if [[ -n "$CLOUD_URL" ]] && curl -fsSIL "$CLOUD_FILES/reactor-edge-agent.mjs" >/dev/null 2>&1; then
+    echo "[flos-edge-agent] скачиваю файлы с tip/облака ($CLOUD_FILES)…"
+    for f in Dockerfile docker-compose.yml entrypoint.sh package.json reactor-edge-agent.mjs runtime-control-plane-http.mjs; do
+      curl -fsSL "$CLOUD_FILES/$f" -o "$AGENT_DIR/$f"
+    done
+    curl -fsSL "$CLOUD_FILES/lib/mark-shield-discoverable-device.mjs" -o "$AGENT_DIR/lib/mark-shield-discoverable-device.mjs"
+    chmod +x "$AGENT_DIR/entrypoint.sh"
+    return
+  fi
+  echo "[flos-edge-agent] скачиваю файлы с GitHub ($RAW)…"
   for f in Dockerfile docker-compose.yml entrypoint.sh package.json reactor-edge-agent.mjs runtime-control-plane-http.mjs; do
     curl -fsSL "$RAW/$f" -o "$AGENT_DIR/$f"
   done
