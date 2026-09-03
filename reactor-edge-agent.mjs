@@ -51,9 +51,9 @@ const pollIntervalMs = Number(env("FLOS_COMMAND_POLL_INTERVAL_MS", "REACTOR_COMM
 const protocolVersion = env("FLOS_AGENT_PROTOCOL_VERSION", "REACTOR_AGENT_PROTOCOL_VERSION") ?? "1.0";
 /** Process boot time — skip self_update for a few minutes after (re)start to avoid update death-loops. */
 const agentProcessStartedAtMs = Date.now();
-/** Field: 3 мин после старта (раньше 10) — иначе «Обновить агент» молча skip. */
-const AGENT_SELF_UPDATE_BOOT_GRACE_MS = 3 * 60 * 1000;
-const AGENT_SELF_UPDATE_DEBOUNCE_MS = 15 * 60 * 1000;
+/** Field: короткий grace; force в payload обходит debounce/grace. */
+const AGENT_SELF_UPDATE_BOOT_GRACE_MS = 2 * 60 * 1000;
+const AGENT_SELF_UPDATE_DEBOUNCE_MS = 2 * 60 * 1000;
 let lastAgentSelfUpdateScheduledAtMs = 0;
 /** Field SaaS default: off unless explicitly enabled with a public key. */
 const strictSignatures =
@@ -1572,8 +1572,9 @@ function execOnHostBash(script, timeoutMs = 120_000) {
  * Safety: skip during boot grace / debounce so a failed update cannot immediately re-kill a just-restored agent.
  */
 function runAgentSelfUpdateCommand(payload) {
+  const force = payload?.force === true || payload?.force === "true" || payload?.force === 1;
   const uptimeMs = Date.now() - agentProcessStartedAtMs;
-  if (uptimeMs < AGENT_SELF_UPDATE_BOOT_GRACE_MS) {
+  if (!force && uptimeMs < AGENT_SELF_UPDATE_BOOT_GRACE_MS) {
     console.warn(
       `[flos-edge-agent] agent_self_update skipped (boot grace ${Math.round(uptimeMs / 1000)}s < ${AGENT_SELF_UPDATE_BOOT_GRACE_MS / 1000}s)`,
     );
@@ -1590,14 +1591,18 @@ function runAgentSelfUpdateCommand(payload) {
     };
   }
   if (
+    !force &&
     lastAgentSelfUpdateScheduledAtMs > 0 &&
     Date.now() - lastAgentSelfUpdateScheduledAtMs < AGENT_SELF_UPDATE_DEBOUNCE_MS
   ) {
+    const retryAfterSec = Math.ceil(
+      (AGENT_SELF_UPDATE_DEBOUNCE_MS - (Date.now() - lastAgentSelfUpdateScheduledAtMs)) / 1000,
+    );
     console.warn("[flos-edge-agent] agent_self_update skipped (debounce)");
     return {
       ok: true,
       details: {
-        agentSelfUpdate: { scheduled: false, skipped: true, reason: "debounce" },
+        agentSelfUpdate: { scheduled: false, skipped: true, reason: "debounce", retryAfterSec },
       },
     };
   }
@@ -1634,6 +1639,11 @@ if [[ -n "$CLOUD" ]]; then
   done
   if [[ $source_ok -eq 0 ]]; then
     curl -fsSL "$CLOUD/api/edge-agent/files/lib/mark-shield-discoverable-device.mjs" -o "$AGENT_DIR/lib/mark-shield-discoverable-device.mjs" || source_ok=1
+  fi
+  # Tip мог быть старым деплоем без wb_rules_export — не оставляем такой бинарник.
+  if [[ $source_ok -eq 0 ]] && ! grep -q 'wb_rules_export' "$AGENT_DIR/reactor-edge-agent.mjs" 2>/dev/null; then
+    echo "[flos-edge-agent] cloud file stale (no wb_rules_export) — fallback GitHub"
+    source_ok=1
   fi
   set -e
   if [[ $source_ok -eq 0 ]]; then

@@ -170,8 +170,11 @@ ensure_agent_files() {
       curl -fsSL "$CLOUD_FILES/$f" -o "$AGENT_DIR/$f"
     done
     curl -fsSL "$CLOUD_FILES/lib/mark-shield-discoverable-device.mjs" -o "$AGENT_DIR/lib/mark-shield-discoverable-device.mjs"
-    chmod +x "$AGENT_DIR/entrypoint.sh"
-    return
+    if grep -q 'wb_rules_export' "$AGENT_DIR/reactor-edge-agent.mjs" 2>/dev/null; then
+      chmod +x "$AGENT_DIR/entrypoint.sh"
+      return
+    fi
+    echo "[flos-edge-agent] tip без wb_rules_export — беру GitHub"
   fi
   echo "[flos-edge-agent] скачиваю файлы с GitHub ($RAW)…"
   for f in Dockerfile docker-compose.yml entrypoint.sh package.json reactor-edge-agent.mjs runtime-control-plane-http.mjs; do
