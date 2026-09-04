@@ -147,6 +147,18 @@ RAW="$(raw_base)"
 REPO_URL="https://github.com/${GITHUB_SLUG}.git"
 CLOUD_FILES="${CLOUD_URL}/api/edge-agent/files"
 
+echo "[flos-edge-agent] install cloud=$CLOUD_URL project=$PROJECT_ID device=$DEVICE_ID fresh=$DO_FRESH"
+
+curl_get() {
+  curl -fsSL --connect-timeout 8 --max-time 25 "$@"
+}
+
+cloud_tip_reachable() {
+  [[ -z "$CLOUD_URL" ]] && return 1
+  echo "[flos-edge-agent] проверяю tip (макс. 12с)…"
+  curl -fsS --connect-timeout 5 --max-time 12 -o /dev/null "$CLOUD_FILES/reactor-edge-agent.mjs"
+}
+
 ensure_agent_files() {
   if [[ -d "$AGENT_DIR/.git" ]]; then
     echo "[flos-edge-agent] обновляю $AGENT_DIR ($GIT_REF)…"
@@ -163,24 +175,26 @@ ensure_agent_files() {
     return
   fi
   mkdir -p "$AGENT_DIR/lib"
-  # Tip/облако = источник правды (private monorepo недоступен с WB).
-  if [[ -n "$CLOUD_URL" ]] && curl -fsSIL "$CLOUD_FILES/reactor-edge-agent.mjs" >/dev/null 2>&1; then
+  if cloud_tip_reachable; then
     echo "[flos-edge-agent] скачиваю файлы с tip/облака ($CLOUD_FILES)…"
+    local ok=1
     for f in Dockerfile docker-compose.yml entrypoint.sh package.json reactor-edge-agent.mjs runtime-control-plane-http.mjs; do
-      curl -fsSL "$CLOUD_FILES/$f" -o "$AGENT_DIR/$f"
+      curl_get "$CLOUD_FILES/$f" -o "$AGENT_DIR/$f" || ok=0
     done
-    curl -fsSL "$CLOUD_FILES/lib/mark-shield-discoverable-device.mjs" -o "$AGENT_DIR/lib/mark-shield-discoverable-device.mjs"
-    if grep -q 'wb_rules_export' "$AGENT_DIR/reactor-edge-agent.mjs" 2>/dev/null; then
+    curl_get "$CLOUD_FILES/lib/mark-shield-discoverable-device.mjs" -o "$AGENT_DIR/lib/mark-shield-discoverable-device.mjs" || ok=0
+    if [[ "$ok" == "1" ]] && grep -q 'wb_rules_export' "$AGENT_DIR/reactor-edge-agent.mjs" 2>/dev/null; then
       chmod +x "$AGENT_DIR/entrypoint.sh"
       return
     fi
-    echo "[flos-edge-agent] tip без wb_rules_export — беру GitHub"
+    echo "[flos-edge-agent] tip неполный/без wb_rules_export — беру GitHub"
+  else
+    echo "[flos-edge-agent] tip недоступен с щита (таймаут) — беру GitHub"
   fi
   echo "[flos-edge-agent] скачиваю файлы с GitHub ($RAW)…"
   for f in Dockerfile docker-compose.yml entrypoint.sh package.json reactor-edge-agent.mjs runtime-control-plane-http.mjs; do
-    curl -fsSL "$RAW/$f" -o "$AGENT_DIR/$f"
+    curl_get "$RAW/$f" -o "$AGENT_DIR/$f"
   done
-  curl -fsSL "$RAW/lib/mark-shield-discoverable-device.mjs" -o "$AGENT_DIR/lib/mark-shield-discoverable-device.mjs"
+  curl_get "$RAW/lib/mark-shield-discoverable-device.mjs" -o "$AGENT_DIR/lib/mark-shield-discoverable-device.mjs"
   chmod +x "$AGENT_DIR/entrypoint.sh"
 }
 

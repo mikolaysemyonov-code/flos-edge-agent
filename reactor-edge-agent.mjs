@@ -201,7 +201,7 @@ function buildEdgeHostSnapshot() {
     loadAvg: /** @type {[number, number, number]} */ (os.loadavg()),
     mem: { totalBytes: total, freeBytes: free },
     /** Capabilities for SaaS UI gates (split marking/rules deploy). */
-    capabilities: ["preserve_other_shards", "agent_self_update", "partial_shard_apply"],
+    capabilities: ["preserve_other_shards", "agent_self_update", "partial_shard_apply", "rules_export"],
     /** Same as heartbeat agentVersion — survives mqtt-ingest merges. */
     agentVersion: "edge-pilot-v2",
     /** True when .integrator-backup has files — Comfort «Откатить» without HTTP probe. */
