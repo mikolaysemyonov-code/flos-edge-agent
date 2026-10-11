@@ -2,10 +2,14 @@
 
 import { execSync } from "node:child_process";
 import crypto from "node:crypto";
+import dns from "node:dns";
 import fs from "node:fs";
 import http from "node:http";
 import os from "node:os";
 import path from "node:path";
+
+// На объекте AAAA до Vercel часто висит, GitHub при этом жив. Heartbeat — только IPv4.
+dns.setDefaultResultOrder("ipv4first");
 import {
   runtimeHttpPathHandler,
   applyMonolithScript,

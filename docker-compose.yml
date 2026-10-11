@@ -29,6 +29,7 @@ services:
       - /var/run/dbus/system_bus_socket:/var/run/dbus/system_bus_socket
     environment:
       # Non-secrets only — secrets load from env_file above.
+      NODE_OPTIONS: --dns-result-order=ipv4first
       FLOS_STATE_PATH: /var/lib/reactor-edge/agent.state.json
       FLOS_CONTROLLER_MQTT_URL: mqtt://127.0.0.1:1883
       FLOS_HANDSHAKE_HTTP_ENABLED: "1"

@@ -156,7 +156,9 @@ curl_get() {
 cloud_tip_reachable() {
   [[ -z "$CLOUD_URL" ]] && return 1
   echo "[flos-edge-agent] проверяю tip (макс. 12с)…"
-  curl -fsS --connect-timeout 5 --max-time 12 -o /dev/null "$CLOUD_FILES/reactor-edge-agent.mjs"
+  # IPv4 first: AAAA до Vercel с объекта часто висит.
+  curl -4 -fsS --connect-timeout 5 --max-time 12 -o /dev/null "$CLOUD_FILES/reactor-edge-agent.mjs" \
+    || curl -fsS --connect-timeout 5 --max-time 12 -o /dev/null "$CLOUD_FILES/reactor-edge-agent.mjs"
 }
 
 # --git-ref main — tip если живой. Любой другой ref (sha) — только GitHub.
@@ -284,10 +286,12 @@ if ! docker ps --filter name=flos-edge-agent --format '{{.Names}}' | grep -q '^f
 fi
 
 echo "[flos-edge-agent] проверяю облако с контроллера…"
-if curl -fsS --max-time 20 -o /dev/null "$CLOUD_URL/"; then
+if curl -4 -fsS --max-time 20 -o /dev/null "$CLOUD_URL/" \
+  || curl -fsS --max-time 20 -o /dev/null "$CLOUD_URL/"; then
   echo "[flos-edge-agent] облако доступно: $CLOUD_URL"
 else
-  echo "[flos-edge-agent] WARN: $CLOUD_URL недоступен с щита (DNS/firewall/Tailscale). Enroll не пройдёт." >&2
+  echo "[flos-edge-agent] WARN: $CLOUD_URL недоступен с щита (DNS/firewall/Tailscale/IPv6). Enroll не пройдёт." >&2
+  echo "[flos-edge-agent] с щита: curl -4 -I --max-time 15 $CLOUD_URL/   и   curl -6 -I --max-time 8 $CLOUD_URL/" >&2
 fi
 
 echo "[flos-edge-agent] жду http://127.0.0.1:18081/runtime/health…"
