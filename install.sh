@@ -159,6 +159,15 @@ cloud_tip_reachable() {
   curl -fsS --connect-timeout 5 --max-time 12 -o /dev/null "$CLOUD_FILES/reactor-edge-agent.mjs"
 }
 
+# --git-ref main — tip если живой. Любой другой ref (sha) — только GitHub.
+want_pinned_github() {
+  [[ "$GIT_REF" != "main" && "$GIT_REF" != "master" ]]
+}
+
+field_dockerfile_ok() {
+  [[ -s "$1" ]] && grep -qE '^COPY runtime-rules-inventory\.mjs ' "$1"
+}
+
 ensure_agent_files() {
   if [[ -d "$AGENT_DIR/.git" ]]; then
     echo "[flos-edge-agent] обновляю $AGENT_DIR ($GIT_REF)…"
@@ -175,18 +184,20 @@ ensure_agent_files() {
     return
   fi
   mkdir -p "$AGENT_DIR/lib"
-  if cloud_tip_reachable; then
+  if want_pinned_github; then
+    echo "[flos-edge-agent] --git-ref $GIT_REF — беру GitHub, tip не подменяю"
+  elif cloud_tip_reachable; then
     echo "[flos-edge-agent] скачиваю файлы с tip/облака ($CLOUD_FILES)…"
     local ok=1
     for f in Dockerfile docker-compose.yml entrypoint.sh package.json reactor-edge-agent.mjs runtime-control-plane-http.mjs runtime-rules-inventory.mjs wb-rules-journal-incidents.mjs; do
       curl_get "$CLOUD_FILES/$f" -o "$AGENT_DIR/$f" || ok=0
     done
     curl_get "$CLOUD_FILES/lib/mark-shield-discoverable-device.mjs" -o "$AGENT_DIR/lib/mark-shield-discoverable-device.mjs" || ok=0
-    if [[ "$ok" == "1" ]] && grep -q 'wb_rules_export' "$AGENT_DIR/reactor-edge-agent.mjs" 2>/dev/null; then
+    if [[ "$ok" == "1" ]] && grep -q 'wb_rules_export' "$AGENT_DIR/reactor-edge-agent.mjs" 2>/dev/null && field_dockerfile_ok "$AGENT_DIR/Dockerfile"; then
       chmod +x "$AGENT_DIR/entrypoint.sh"
       return
     fi
-    echo "[flos-edge-agent] tip неполный/без wb_rules_export — беру GitHub"
+    echo "[flos-edge-agent] tip неполный или Dockerfile без field COPY — беру GitHub"
   else
     echo "[flos-edge-agent] tip недоступен с щита (таймаут) — беру GitHub"
   fi
@@ -207,7 +218,7 @@ assert_field_image_complete() {
       missing=1
     fi
   done
-  if ! grep -q "COPY runtime-rules-inventory.mjs" "$AGENT_DIR/Dockerfile"; then
+  if ! field_dockerfile_ok "$AGENT_DIR/Dockerfile"; then
     echo "[flos-edge-agent] ERROR: Dockerfile без COPY runtime-rules-inventory.mjs — GitHub не догнали." >&2
     missing=1
   fi
