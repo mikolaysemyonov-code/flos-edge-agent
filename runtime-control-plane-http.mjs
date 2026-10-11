@@ -1,9 +1,10 @@
 /**
  * Stage B: HTTP control-plane на edge (Wiren Board / gateway).
- * GET /runtime/health · POST /runtime/apply
+ * GET /runtime/health · POST /runtime/apply · POST /runtime/verify
  */
 
 import { execSync } from "node:child_process";
+import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { buildRulesInventory } from "./runtime-rules-inventory.mjs";
@@ -281,6 +282,11 @@ export function applyShardBundle(shards, loadOrder, revisionId, options = {}) {
   return { deployDir, ackCount, deployMode: "shards", restarted: restarted != null };
 }
 
+/** Heartbeat snapshot: ids on disk, no bodies. */
+export function snapshotRulesInventory() {
+  return buildRulesInventory(listIntegratorRuleFiles(), readAppliedRevisionId());
+}
+
 export function handleRuntimeHealth(_req, res) {
   const manifest = loadBackupManifest();
   const extra = typeof runtimeHealthExtraProvider === "function" ? runtimeHealthExtraProvider() : {};
@@ -299,6 +305,27 @@ export function handleRuntimeHealth(_req, res) {
   });
 }
 
+/** Пруф диска: revision + sha шардов. Не ack apply и не LAN health. */
+export function verifyIntegratorRulesOnDisk(expectedRevisionId) {
+  const expected =
+    typeof expectedRevisionId === "string" ? expectedRevisionId.trim() : "";
+  const appliedRevisionId = readAppliedRevisionId();
+  const files = listIntegratorRuleFiles().map((f) => ({
+    filename: f.filename,
+    bytes: Buffer.byteLength(f.content, "utf8"),
+    sha256: crypto.createHash("sha256").update(f.content, "utf8").digest("hex"),
+  }));
+  const revisionMatch = Boolean(expected && appliedRevisionId && appliedRevisionId === expected);
+  return {
+    expectedRevisionId: expected || null,
+    appliedRevisionId,
+    releaseHashValue: appliedRevisionId,
+    revisionMatch,
+    files,
+    source: "disk",
+  };
+}
+
 /** Тела 40_user* — HTTP export и команда агента wb_rules_export. */
 export function exportIntegratorUserRuleFiles() {
   const appliedRevisionId = readAppliedRevisionId();
@@ -311,6 +338,29 @@ export function exportIntegratorUserRuleFiles() {
       bytes: Buffer.byteLength(f.content, "utf8"),
     })),
   };
+}
+
+/** POST /runtime/verify — пруф revision+sha с диска (LAN). */
+export async function handleRuntimeVerify(req, res) {
+  if (!authorizeRuntimeRequest(req)) {
+    jsonWrite(res, 401, { ok: false, error: "AUTH: invalid or missing bearer token" });
+    return;
+  }
+  let body = {};
+  try {
+    body = await readJsonBody(req, 8_192);
+  } catch {
+    jsonWrite(res, 400, { ok: false, error: "Invalid JSON body" });
+    return;
+  }
+  const expected =
+    typeof body.expectedRevisionId === "string" ? body.expectedRevisionId.trim() : "";
+  if (!expected) {
+    jsonWrite(res, 400, { ok: false, error: "Missing expectedRevisionId" });
+    return;
+  }
+  const proof = verifyIntegratorRulesOnDisk(expected);
+  jsonWrite(res, 200, { ok: proof.revisionMatch && proof.files.length > 0, ...proof });
 }
 
 /** GET /runtime/rules-export — тела 40_user* для «Сверить с щитом» (preserve orphans). */
@@ -426,6 +476,13 @@ export function runtimeHttpPathHandler(req, res) {
   }
   if (method === "GET" && urlPath === "/runtime/rules-export") {
     handleRuntimeRulesExport(req, res);
+    return true;
+  }
+  if (method === "POST" && urlPath === "/runtime/verify") {
+    void handleRuntimeVerify(req, res).catch((err) => {
+      console.error("[runtime-control-plane] verify unhandled:", err?.message ?? err);
+      if (!res.headersSent) jsonWrite(res, 500, { ok: false, error: "INTERNAL" });
+    });
     return true;
   }
   if (method === "POST" && urlPath === "/runtime/apply") {

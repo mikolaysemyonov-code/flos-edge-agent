@@ -12,12 +12,21 @@ import {
   applyShardBundle,
   backupCurrentStateBeforeApply,
   exportIntegratorUserRuleFiles,
+  snapshotRulesInventory,
+  verifyIntegratorRulesOnDisk,
   loadBackupManifest,
   rollbackToPreviousBackup,
   restartWbRules,
   setRuntimeHealthExtraProvider,
 } from "./runtime-control-plane-http.mjs";
 import { isMarkShieldDiscoverableDeviceKey } from "./lib/mark-shield-discoverable-device.mjs";
+import {
+  classifyWbRulesJournalLines,
+  splitJournalText,
+} from "./wb-rules-journal-incidents.mjs";
+
+/** Одна строка в heartbeat и snapshot — иначе UI врёт версией. */
+const EDGE_AGENT_VERSION = "edge-pilot-v2.stability-2";
 
 /** Prefer `FLOS_*` (FL OS); fall back to legacy `REACTOR_*` for existing deployments. */
 function env(primary, legacy) {
@@ -85,9 +94,14 @@ let agentId = null;
 let agentAccessToken = null;
 let lastLowMemoryIncidentAt = 0;
 let activeCommandTraceId = null;
-/** After a fresh enroll, tolerate a few heartbeat 401s before wiping creds (token already burned). */
-let heartbeatAuthFailStreak = 0;
-const HEARTBEAT_AUTH_FAIL_CLEAR_AFTER = 5;
+/**
+ * 401 on heartbeat / commands/next. Never wipe on a single blip after SSH —
+ * burned enrollment token cannot re-bind the object.
+ */
+let authFailStreak = 0;
+let authFailFirstAtMs = 0;
+const AUTH_FAIL_CLEAR_STREAK = 8;
+const AUTH_FAIL_CLEAR_MIN_MS = 90_000;
 /** Exposed on GET /runtime/health for field diagnosis without docker logs. */
 let enrollmentHealth = {
   state: "starting",
@@ -201,11 +215,20 @@ function buildEdgeHostSnapshot() {
     loadAvg: /** @type {[number, number, number]} */ (os.loadavg()),
     mem: { totalBytes: total, freeBytes: free },
     /** Capabilities for SaaS UI gates (split marking/rules deploy). */
-    capabilities: ["preserve_other_shards", "agent_self_update", "partial_shard_apply", "rules_export"],
+    capabilities: [
+      "preserve_other_shards",
+      "agent_self_update",
+      "partial_shard_apply",
+      "rules_export",
+      "rules_verify",
+      "incidents_from_journal",
+    ],
     /** Same as heartbeat agentVersion — survives mqtt-ingest merges. */
-    agentVersion: "edge-pilot-v2",
+    agentVersion: EDGE_AGENT_VERSION,
     /** True when .integrator-backup has files — Comfort «Откатить» without HTTP probe. */
     canRollback: Boolean(loadBackupManifest()?.files?.length),
+    lastJournalScanAt: lastJournalScanAt > 0 ? new Date(lastJournalScanAt).toISOString() : null,
+    rulesInventory: snapshotRulesInventory(),
   };
   const rs485 = normalizeRs485BusMetrics(
     readOptionalJsonFromEnvPath("FLOS_RS485_BUS_METRICS_PATH", "REACTOR_RS485_BUS_METRICS_PATH"),
@@ -357,6 +380,46 @@ function persistCredentials() {
   }
 }
 
+function noteAuthSuccess() {
+  authFailStreak = 0;
+  authFailFirstAtMs = 0;
+}
+
+/** Pure: wipe on revoke, or after a long 401 window (dead token must not loop forever). */
+function shouldClearCredentialsOnAuthFail(input) {
+  const code = String(input.code ?? "").trim();
+  if (code === "agent_inactive" || code === "token_revoked") {
+    return { clear: true, reason: code };
+  }
+  if (input.streak >= AUTH_FAIL_CLEAR_STREAK && input.elapsedMs >= AUTH_FAIL_CLEAR_MIN_MS) {
+    return { clear: true, reason: `auth_fail_${input.streak}` };
+  }
+  if (!input.canReenroll) return { clear: false, reason: "keep_no_reenroll_token" };
+  return { clear: false, reason: "waiting" };
+}
+
+function applyAuthFailure(status, body, source) {
+  if (status !== 401) return;
+  const code = typeof body?.code === "string" ? body.code : typeof body?.error === "string" ? body.error : source;
+  if (!authFailFirstAtMs) authFailFirstAtMs = Date.now();
+  authFailStreak += 1;
+  const elapsedMs = Date.now() - authFailFirstAtMs;
+  const decision = shouldClearCredentialsOnAuthFail({
+    code,
+    streak: authFailStreak,
+    elapsedMs,
+    canReenroll: Boolean(enrollmentToken),
+  });
+  if (decision.clear) {
+    clearPersistedCredentials(`${source}_${decision.reason}`);
+    noteAuthSuccess();
+    return;
+  }
+  console.warn(
+    `[flos-edge-agent] keeping credentials after ${source} 401 (${authFailStreak}/${AUTH_FAIL_CLEAR_STREAK}, ${Math.round(elapsedMs / 1000)}s, ${decision.reason})`,
+  );
+}
+
 function clearPersistedCredentials(reason) {
   console.warn(`[flos-edge-agent] clearing credentials (${reason})`);
   agentId = null;
@@ -428,7 +491,7 @@ async function enroll() {
   }
   agentId = result.body.data.agentId;
   agentAccessToken = result.body.data.agentAccessToken;
-  heartbeatAuthFailStreak = 0;
+  noteAuthSuccess();
   enrollmentHealth = {
     state: "enrolled_awaiting_heartbeat",
     lastError: null,
@@ -450,7 +513,7 @@ async function heartbeat() {
     deviceId,
     agentAccessToken,
     controllerStatus: "online",
-    agentVersion: "edge-pilot-v2",
+    agentVersion: EDGE_AGENT_VERSION,
     observedAt,
     appliedSnapshotHash,
     edgeHostSnapshot,
@@ -467,20 +530,11 @@ async function heartbeat() {
       lastCode: result.body?.code ?? "heartbeat_failed",
       agentId,
     };
-    if (result.status === 401) {
-      heartbeatAuthFailStreak += 1;
-      if (heartbeatAuthFailStreak >= HEARTBEAT_AUTH_FAIL_CLEAR_AFTER) {
-        clearPersistedCredentials(`heartbeat_401_x${heartbeatAuthFailStreak}`);
-        heartbeatAuthFailStreak = 0;
-      } else {
-        console.warn(
-          `[flos-edge-agent] keeping credentials after heartbeat 401 (${heartbeatAuthFailStreak}/${HEARTBEAT_AUTH_FAIL_CLEAR_AFTER})`,
-        );
-      }
-    }
+    applyAuthFailure(result.status, result.body, "heartbeat");
     return;
   }
-  heartbeatAuthFailStreak = 0;
+  noteAuthSuccess();
+  persistCredentials();
   enrollmentHealth = {
     state: "online",
     lastError: null,
@@ -537,6 +591,52 @@ async function reportIncident(input) {
   if (!result.ok) {
     console.warn(`[flos-edge-agent] incident report failed (${result.status})`);
   }
+}
+
+/** Dedupe journal incidents across scans (TTL). */
+const journalIncidentSeenAt = new Map();
+const JOURNAL_INCIDENT_DEDUP_MS = 30 * 60 * 1000;
+let lastJournalScanAt = 0;
+const JOURNAL_SCAN_INTERVAL_MS = 5 * 60 * 1000;
+
+function readWbRulesJournalTail(lines = 80) {
+  const script = `journalctl -u wb-rules -n ${Number(lines) || 80} --no-pager -o cat 2>/dev/null || journalctl -u wb-rules@default -n ${Number(lines) || 80} --no-pager -o cat 2>/dev/null || true`;
+  try {
+    return execOnHostBash(script, 15_000);
+  } catch (err) {
+    console.warn(`[flos-edge-agent] journalctl wb-rules failed: ${err?.message ?? err}`);
+    return "";
+  }
+}
+
+async function scanWbRulesJournalIncidents(reason = "periodic") {
+  const text = readWbRulesJournalTail(80);
+  const hits = classifyWbRulesJournalLines(splitJournalText(text));
+  if (!hits.length) {
+    console.log(`[flos-edge-agent] journal incidents (${reason}): 0`);
+    return 0;
+  }
+  const now = Date.now();
+  let reported = 0;
+  for (const hit of hits) {
+    const key = `${hit.ruleId}|${hit.sampleLogLine.slice(0, 160)}`;
+    const prev = journalIncidentSeenAt.get(key) ?? 0;
+    if (now - prev < JOURNAL_INCIDENT_DEDUP_MS) continue;
+    journalIncidentSeenAt.set(key, now);
+    await reportIncident({
+      ruleId: hit.ruleId,
+      severity: hit.severity,
+      reason: hit.reason,
+      actionStep: hit.actionStep,
+      sampleLogLine: hit.sampleLogLine,
+    });
+    reported += 1;
+  }
+  for (const [k, at] of journalIncidentSeenAt) {
+    if (now - at > JOURNAL_INCIDENT_DEDUP_MS * 2) journalIncidentSeenAt.delete(k);
+  }
+  console.log(`[flos-edge-agent] journal incidents (${reason}): reported=${reported} matched=${hits.length}`);
+  return reported;
 }
 
 /**
@@ -1634,7 +1734,7 @@ source_ok=0
 if [[ -n "$CLOUD" ]]; then
   echo "[flos-edge-agent] pulling agent files from cloud tip…"
   set +e
-  for f in Dockerfile entrypoint.sh package.json reactor-edge-agent.mjs runtime-control-plane-http.mjs docker-compose.yml; do
+  for f in Dockerfile entrypoint.sh package.json reactor-edge-agent.mjs runtime-control-plane-http.mjs runtime-rules-inventory.mjs docker-compose.yml wb-rules-journal-incidents.mjs; do
     curl -fsSL "$CLOUD/api/edge-agent/files/$f" -o "$AGENT_DIR/$f" || { echo "fail $f"; source_ok=1; break; }
   done
   if [[ $source_ok -eq 0 ]]; then
@@ -1680,6 +1780,8 @@ echo "[flos-edge-agent] self-update ensure-up done"
       details: {
         agentSelfUpdate: {
           scheduled: true,
+          pending_restart: true,
+          phase: "pending_restart",
           gitRef,
           logPath,
           source: cloudBase ? "cloud" : "github",
@@ -1727,7 +1829,11 @@ function runWbRulesApplyCommand(payload) {
       `[flos-edge-agent] wb_rules_apply revision=${revisionId} mode=${applied.deployMode} acks=${applied.ackCount}`,
     );
     return {
-      ok: true,
+      ok: applied.restarted === true,
+      error:
+        applied.restarted === true
+          ? undefined
+          : "wb_rules_apply_restart_failed: files written but wb-rules did not restart",
       details: {
         wbRulesApplied: {
           revisionId,
@@ -1736,6 +1842,7 @@ function runWbRulesApplyCommand(payload) {
           deployPath: applied.deployPath ?? null,
           deployDir: applied.deployDir ?? null,
           restarted: applied.restarted,
+          releaseHashValue: revisionId,
         },
       },
     };
@@ -1754,10 +1861,60 @@ function runWbRulesExportCommand(_payload) {
     console.log(
       `[flos-edge-agent] wb_rules_export files=${exported.files.length} revision=${exported.revisionId ?? "none"}`,
     );
+    void scanWbRulesJournalIncidents("after_rules_export");
     return { ok: true, details: { rulesExport: exported } };
   } catch (err) {
     return { ok: false, error: `wb_rules_export_failed:${err?.message ?? err}` };
   }
+}
+
+/**
+ * Read-only disk proof after apply. Payload: { action: "wb_rules_verify", expectedRevisionId }
+ * Vercel cannot TCP to LAN — this is the field verify path.
+ */
+function runWbRulesVerifyCommand(payload) {
+  const expected =
+    typeof payload?.expectedRevisionId === "string" ? payload.expectedRevisionId.trim() : "";
+  if (!expected) {
+    return { ok: false, error: "wb_rules_verify_missing_revision" };
+  }
+  try {
+    const proof =
+      typeof verifyIntegratorRulesOnDisk === "function"
+        ? verifyIntegratorRulesOnDisk(expected)
+        : fallbackVerifyFromExport(expected);
+    const hasFiles = Array.isArray(proof.files) && proof.files.length > 0;
+    const hasSha = hasFiles && proof.files.every((f) => typeof f.sha256 === "string" && f.sha256.length === 64);
+    const proved = proof.revisionMatch === true && hasFiles && hasSha;
+    console.log(
+      `[flos-edge-agent] wb_rules_verify expected=${expected} applied=${proof.appliedRevisionId ?? "none"} match=${proof.revisionMatch} files=${proof.files?.length ?? 0}`,
+    );
+    return {
+      ok: proved,
+      error: proved ? undefined : "wb_rules_verify_disk_mismatch",
+      details: { wbRulesVerified: proof },
+    };
+  } catch (err) {
+    return { ok: false, error: `wb_rules_verify_failed:${err?.message ?? err}` };
+  }
+}
+
+function fallbackVerifyFromExport(expected) {
+  const exported = exportIntegratorUserRuleFiles();
+  const files = (exported.files ?? []).map((f) => ({
+    filename: f.filename,
+    bytes: f.bytes ?? Buffer.byteLength(f.content ?? "", "utf8"),
+    sha256: crypto.createHash("sha256").update(f.content ?? "", "utf8").digest("hex"),
+  }));
+  const applied = typeof exported.revisionId === "string" ? exported.revisionId : null;
+  return {
+    expectedRevisionId: expected,
+    appliedRevisionId: applied,
+    releaseHashValue: applied,
+    revisionMatch: Boolean(applied && applied === expected),
+    files,
+    source: "disk",
+  };
 }
 
 /**
@@ -1771,7 +1928,7 @@ function runWbRulesRollbackCommand(_payload) {
       `[flos-edge-agent] wb_rules_rollback revision=${rolled.appliedRevisionId} mode=${rolled.deployMode}`,
     );
     return {
-      ok: true,
+      ok: Boolean(rolled.restarted),
       details: {
         wbRulesRolledBack: {
           appliedRevisionId: rolled.appliedRevisionId,
@@ -1780,6 +1937,7 @@ function runWbRulesRollbackCommand(_payload) {
           restarted: rolled.restarted,
         },
       },
+      ...(rolled.restarted ? {} : { error: "wb_rules_rollback_restart_failed" }),
     };
   } catch (err) {
     return { ok: false, error: `wb_rules_rollback_failed:${err?.message ?? err}` };
@@ -1824,12 +1982,20 @@ async function executeCommand(command) {
     return { ok: false, error: "rotate_token payload missing new token" };
   }
   if (commandType === "collect_system_info") {
+    const total = os.totalmem();
+    const free = os.freemem();
+    const load = os.loadavg();
     return {
       ok: true,
       details: {
-        cpu: { loadPercent: 15, uptime: "pilot" },
-        ram: { usedMb: 128, totalMb: 512, usedPercent: 25 },
-        disk: { root: { usedPercent: 40, free: "3.2G" } },
+        collectedAt: new Date().toISOString(),
+        uptimeSec: Math.floor(os.uptime()),
+        cpu: { loadAvg: load, loadPercent: Math.round((Number(load[0]) || 0) * 100) / 100 },
+        ram: {
+          usedMb: Math.round((total - free) / 1024 / 1024),
+          totalMb: Math.round(total / 1024 / 1024),
+          usedPercent: total > 0 ? Math.round(((total - free) / total) * 100) : 0,
+        },
       },
     };
   }
@@ -1848,6 +2014,9 @@ async function executeCommand(command) {
     }
     if (command.payload?.action === "wb_rules_export") {
       return runWbRulesExportCommand(command.payload);
+    }
+    if (command.payload?.action === "wb_rules_verify") {
+      return runWbRulesVerifyCommand(command.payload);
     }
     if (command.payload?.action === "wb_rules_rollback") {
       return runWbRulesRollbackCommand(command.payload);
@@ -1959,7 +2128,7 @@ async function pollCommands() {
     console.warn(
       `[flos-edge-agent] commands/next failed (${result.status})${detail ? ` ${detail}` : ""}`,
     );
-    if (result.status === 401) clearPersistedCredentials("commands_next_401");
+    applyAuthFailure(result.status, result.body, "commands_next");
     return;
   }
   const pending = Number(result.body?.data?.pendingCommands ?? 0);
@@ -2875,16 +3044,25 @@ function startHandshakeHttpServerIfEnabled() {
       }
     });
   });
-  server.listen(port, bind, () => {
-    console.log(
-      `[flos-edge-agent] runtime http://${bind}:${port} (/runtime/health, /runtime/apply) + ${EDGE_HANDSHAKE_HELLO_PATH} + ${ROUTER_SETUP_PREFLIGHT_PATH} + ${ROUTER_SETUP_APPLY_PATH}`,
-    );
-  });
-  server.on("error", (err) => {
-    console.error("[flos-edge-agent] handshake http listen failed:", err?.message ?? err);
-    // Without :18081 field health and local apply are dead — fail loud for docker restart logs.
-    process.exit(1);
-  });
+  const tryListen = (attempt) => {
+    server.once("error", (err) => {
+      const busy = err && (err.code === "EADDRINUSE" || /EADDRINUSE/i.test(String(err.message ?? err)));
+      if (busy && attempt < 15) {
+        console.warn(
+          `[flos-edge-agent] :${port} busy after restart (${attempt + 1}/15) — retry, queue pour still works`,
+        );
+        setTimeout(() => tryListen(attempt + 1), 2_000);
+        return;
+      }
+      console.error("[flos-edge-agent] handshake http listen failed:", err?.message ?? err);
+    });
+    server.listen(port, bind, () => {
+      console.log(
+        `[flos-edge-agent] runtime http://${bind}:${port} (/runtime/health, /runtime/apply) + ${EDGE_HANDSHAKE_HELLO_PATH} + ${ROUTER_SETUP_PREFLIGHT_PATH} + ${ROUTER_SETUP_APPLY_PATH}`,
+      );
+    });
+  };
+  tryListen(0);
   handshakeHttpServer = server;
   return server;
 }
@@ -2911,30 +3089,40 @@ async function runAgentLoop() {
   let lastHeartbeatAt = 0;
   let lastSelfDiagnoseAt = 0;
   while (true) {
-    touchHealthState();
-    const now = Date.now();
-    if (!agentId || !agentAccessToken) {
-      const enrolled = await enroll();
-      if (enrolled) persistCredentials();
-      await sleep(pollIntervalMs);
-      continue;
+    try {
+      touchHealthState();
+      const now = Date.now();
+      if (!agentId || !agentAccessToken) {
+        const enrolled = await enroll();
+        if (enrolled) persistCredentials();
+        await sleep(pollIntervalMs);
+        continue;
+      }
+      const bootBurst = now - agentProcessStartedAtMs < 120_000;
+      const hbMs = bootBurst ? Math.min(10_000, heartbeatIntervalSec * 1000) : heartbeatIntervalSec * 1000;
+      if (now - lastHeartbeatAt >= hbMs) {
+        await heartbeat();
+        lastHeartbeatAt = now;
+      }
+      if (
+        now - lastMqttMirrorFlushAt >= MQTT_MIRROR_FLUSH_MS ||
+        mqttMirrorState.dirtyPaths.size >= MQTT_MIRROR_DELTA_BATCH ||
+        (!mqttMirrorState.bootstrapPushed && mqttMirrorState.entriesByPath.size >= 8)
+      ) {
+        await flushMqttMirrorDelta();
+      }
+      if (now - lastSelfDiagnoseAt >= selfDiagnoseIntervalMs) {
+        await selfDiagnose();
+        lastSelfDiagnoseAt = now;
+      }
+      if (now - lastJournalScanAt >= JOURNAL_SCAN_INTERVAL_MS) {
+        await scanWbRulesJournalIncidents("periodic");
+        lastJournalScanAt = now;
+      }
+      await pollCommands();
+    } catch (err) {
+      console.warn("[flos-edge-agent] loop tick failed:", err?.message ?? err);
     }
-    if (now - lastHeartbeatAt >= heartbeatIntervalSec * 1000) {
-      await heartbeat();
-      lastHeartbeatAt = now;
-    }
-    if (
-      now - lastMqttMirrorFlushAt >= MQTT_MIRROR_FLUSH_MS ||
-      mqttMirrorState.dirtyPaths.size >= MQTT_MIRROR_DELTA_BATCH ||
-      (!mqttMirrorState.bootstrapPushed && mqttMirrorState.entriesByPath.size >= 8)
-    ) {
-      await flushMqttMirrorDelta();
-    }
-    if (now - lastSelfDiagnoseAt >= selfDiagnoseIntervalMs) {
-      await selfDiagnose();
-      lastSelfDiagnoseAt = now;
-    }
-    await pollCommands();
     await sleep(pollIntervalMs);
   }
 }
@@ -2955,13 +3143,22 @@ async function main() {
   startMqttDiagnosticsBridge().catch((err) => console.warn("[flos-edge-agent] mqtt bridge failed:", err?.message ?? err));
   startMqttBusMirror().catch((err) => console.warn("[flos-edge-agent] mqtt mirror failed:", err?.message ?? err));
   startHandshakeHttpServerIfEnabled();
-  await runAgentLoop();
+  for (;;) {
+    try {
+      await runAgentLoop();
+    } catch (error) {
+      console.warn("[flos-edge-agent] agent loop stopped, restarting:", error?.message ?? error);
+      await sleep(Math.max(4_000, pollIntervalMs));
+    }
+  }
 }
 
 export const __test = {
   postJson,
   ackCommand,
+  shouldClearCredentialsOnAuthFail,
   reportIncident,
+  scanWbRulesJournalIncidents,
   executeCommand,
   digestCommandPayload,
   isMarkShieldDiscoverableDeviceKey,
@@ -3018,6 +3215,9 @@ export const __test = {
 };
 
 if (process.env.FLOS_EDGE_AGENT_DISABLE_MAIN !== "true") {
+  process.on("unhandledRejection", (reason) => {
+    console.warn("[flos-edge-agent] unhandledRejection:", reason);
+  });
   main().catch((error) => {
     console.warn("[flos-edge-agent] agent loop error, retrying without re-listen:", error);
     setTimeout(() => {

@@ -178,7 +178,7 @@ ensure_agent_files() {
   if cloud_tip_reachable; then
     echo "[flos-edge-agent] скачиваю файлы с tip/облака ($CLOUD_FILES)…"
     local ok=1
-    for f in Dockerfile docker-compose.yml entrypoint.sh package.json reactor-edge-agent.mjs runtime-control-plane-http.mjs; do
+    for f in Dockerfile docker-compose.yml entrypoint.sh package.json reactor-edge-agent.mjs runtime-control-plane-http.mjs runtime-rules-inventory.mjs wb-rules-journal-incidents.mjs; do
       curl_get "$CLOUD_FILES/$f" -o "$AGENT_DIR/$f" || ok=0
     done
     curl_get "$CLOUD_FILES/lib/mark-shield-discoverable-device.mjs" -o "$AGENT_DIR/lib/mark-shield-discoverable-device.mjs" || ok=0
@@ -191,14 +191,33 @@ ensure_agent_files() {
     echo "[flos-edge-agent] tip недоступен с щита (таймаут) — беру GitHub"
   fi
   echo "[flos-edge-agent] скачиваю файлы с GitHub ($RAW)…"
-  for f in Dockerfile docker-compose.yml entrypoint.sh package.json reactor-edge-agent.mjs runtime-control-plane-http.mjs; do
+  for f in Dockerfile docker-compose.yml entrypoint.sh package.json reactor-edge-agent.mjs runtime-control-plane-http.mjs runtime-rules-inventory.mjs wb-rules-journal-incidents.mjs; do
     curl_get "$RAW/$f" -o "$AGENT_DIR/$f"
   done
   curl_get "$RAW/lib/mark-shield-discoverable-device.mjs" -o "$AGENT_DIR/lib/mark-shield-discoverable-device.mjs"
   chmod +x "$AGENT_DIR/entrypoint.sh"
 }
 
+# Не поднимать Restarting-контейнер, если GitHub/tip отдал JS без модуля в образе.
+assert_field_image_complete() {
+  local missing=0
+  for f in runtime-rules-inventory.mjs wb-rules-journal-incidents.mjs runtime-control-plane-http.mjs reactor-edge-agent.mjs Dockerfile; do
+    if [[ ! -s "$AGENT_DIR/$f" ]]; then
+      echo "[flos-edge-agent] ERROR: нет $AGENT_DIR/$f — не собираю дырявый образ." >&2
+      missing=1
+    fi
+  done
+  if ! grep -q "COPY runtime-rules-inventory.mjs" "$AGENT_DIR/Dockerfile"; then
+    echo "[flos-edge-agent] ERROR: Dockerfile без COPY runtime-rules-inventory.mjs — GitHub не догнали." >&2
+    missing=1
+  fi
+  if [[ "$missing" != "0" ]]; then
+    exit 1
+  fi
+}
+
 ensure_agent_files
+assert_field_image_complete
 
 if [[ ! -f "$AGENT_DIR/docker-compose.yml" ]]; then
   echo "[flos-edge-agent] не найден docker-compose.yml в $AGENT_DIR" >&2
