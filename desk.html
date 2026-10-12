@@ -468,8 +468,22 @@
         ul.appendChild(p);
         return;
       }
-      rows.slice().sort((a, b) => Number(hasFeatured(b)) - Number(hasFeatured(a)))
-        .forEach((s) => ul.appendChild(moduleCard(s)));
+      const live = rows.filter(hasFeatured);
+      const idle = rows.filter((s) => !hasFeatured(s));
+      live.forEach((s) => ul.appendChild(moduleCard(s)));
+      if (id === "shelves-relays" && idle.length) {
+        const det = document.createElement("details");
+        det.className = "more";
+        const sum = document.createElement("summary");
+        sum.textContent = idle.length + " реле без линий в заливке";
+        det.appendChild(sum);
+        const inner = document.createElement("ul");
+        idle.forEach((s) => inner.appendChild(moduleCard(s)));
+        det.appendChild(inner);
+        ul.appendChild(det);
+        return;
+      }
+      idle.forEach((s) => ul.appendChild(moduleCard(s)));
     }
     function renderShelves(rows) {
       lastShelvesRows = rows || [];
