@@ -90,8 +90,8 @@
     }
     .loads { display: block; margin-top: .2rem; color: var(--mute); font-size: .72rem; }
     .orphan { color: rgb(var(--bad)); }
-    #poured li, #preview li { display: flex; justify-content: space-between; align-items: baseline; gap: 1rem; padding: .55rem 0; border-top: 1px solid rgb(255 255 255 / .08); }
-    #poured li:first-child, #preview li:first-child { border-top: 0; }
+    #poured li, #preview li, #pouredMarks li { display: flex; justify-content: space-between; align-items: baseline; gap: 1rem; padding: .55rem 0; border-top: 1px solid rgb(255 255 255 / .08); }
+    #poured li:first-child, #preview li:first-child, #pouredMarks li:first-child { border-top: 0; }
     details.more { margin: .1rem 0 .35rem; }
     details.more summary { color: var(--mute); font-size: .8rem; cursor: pointer; }
     .empty { margin: 2.5rem 1rem; text-align: center; color: var(--mute); }
@@ -159,6 +159,10 @@
       <ul id="preview"></ul>
       <p id="pouredHead" class="meta">Спрашиваю залитое…</p>
       <ul id="poured"></ul>
+      <details id="pouredMarksWrap" class="more" hidden>
+        <summary id="pouredMarksSum"></summary>
+        <ul id="pouredMarks"></ul>
+      </details>
     </section>
   </main>
   <nav class="dock" role="tablist" aria-label="Разделы пуска">
@@ -282,39 +286,50 @@
         $("previewHead").textContent = String(e.message || e);
       }
     }
+    function pouredRow(r) {
+      const li = document.createElement("li");
+      const left = document.createElement("div");
+      const title = document.createElement("div");
+      title.textContent = r.title || r.id;
+      const sub = document.createElement("div");
+      sub.className = "meta";
+      const bits = (r.contacts || []).map(contactLine);
+      const missing = (r.contacts || []).filter((c) => liveKeys.ready && !liveKeys[c.deviceTopicKey]);
+      sub.textContent = bits.join(", ") || "нет контакта на шине";
+      if (missing.length) {
+        sub.className = "meta orphan";
+        sub.textContent = bits.join(", ") + " · нет на этой шине";
+      }
+      left.appendChild(title);
+      left.appendChild(sub);
+      const kind = document.createElement("span");
+      kind.className = "kind";
+      kind.textContent = kindRu(r.kind);
+      li.appendChild(left);
+      li.appendChild(kind);
+      return li;
+    }
     function renderPoured() {
       const ul = $("poured");
+      const marksUl = $("pouredMarks");
+      const wrap = $("pouredMarksWrap");
       ul.innerHTML = "";
+      marksUl.innerHTML = "";
+      const scenarios = pouredRules.filter((r) => r.kind !== "marking");
+      const names = pouredRules.filter((r) => r.kind === "marking");
+      $("n-poured").textContent = scenarios.length || "";
       if (!pouredRules.length) {
+        wrap.hidden = true;
         const empty = document.createElement("p");
         empty.className = "empty";
         empty.textContent = "На диске пока нет user-правил.";
         ul.appendChild(empty);
         return;
       }
-      pouredRules.forEach((r) => {
-        const li = document.createElement("li");
-        const left = document.createElement("div");
-        const title = document.createElement("div");
-        title.textContent = r.title || r.id;
-        const sub = document.createElement("div");
-        sub.className = "meta";
-        const bits = (r.contacts || []).map(contactLine);
-        const missing = (r.contacts || []).filter((c) => liveKeys.ready && !liveKeys[c.deviceTopicKey]);
-        sub.textContent = bits.join(", ") || "нет контакта на шине";
-        if (missing.length) {
-          sub.className = "meta orphan";
-          sub.textContent = bits.join(", ") + " · нет на этой шине";
-        }
-        left.appendChild(title);
-        left.appendChild(sub);
-        const kind = document.createElement("span");
-        kind.className = "kind";
-        kind.textContent = kindRu(r.kind);
-        li.appendChild(left);
-        li.appendChild(kind);
-        ul.appendChild(li);
-      });
+      scenarios.forEach((r) => ul.appendChild(pouredRow(r)));
+      wrap.hidden = !names.length;
+      $("pouredMarksSum").textContent = names.length + " имён из разметки";
+      names.forEach((r) => marksUl.appendChild(pouredRow(r)));
     }
     async function loadHealth() {
       const box = $("health");
@@ -512,7 +527,6 @@
           return;
         }
         pouredRules = j.rules || [];
-        $("n-poured").textContent = pouredRules.length || "";
         const files = (j.files || []).map((f) => f.filename).join(", ");
         $("pouredHead").style.color = "";
         $("pouredHead").textContent = (j.ruleCount || pouredRules.length) + " правил" +
