@@ -94,36 +94,38 @@
         ul.appendChild(li);
       });
     }
-    $("scan").onclick = async () => {
+    async function scanNow() {
       $("scan").disabled = true;
-      $("bus").textContent = "Снимаю шину…";
-      $("bus").className = "muted";
       try {
         const r = await fetch("/runtime/mqtt-scan", {
           method: "POST",
           headers: { "content-type": "application/json" },
-          body: JSON.stringify({ scanMs: 8000 }),
+          body: JSON.stringify({ instant: true }),
         });
         const j = await r.json();
         if (!j.ok) {
-          $("bus").className = "bad";
-          $("bus").textContent = j.error || "Скан не вышел";
+          if (!$("shelves").children.length) {
+            $("bus").className = "bad";
+            $("bus").textContent = j.error || "Скан не вышел";
+          }
           return;
         }
-        showShelves(j, false);
+        if (j.shelves && j.shelves.length) showShelves(j);
       } catch (e) {
-        $("bus").className = "bad";
-        $("bus").textContent = String(e.message || e);
+        if (!$("shelves").children.length) {
+          $("bus").className = "bad";
+          $("bus").textContent = String(e.message || e);
+        }
       } finally {
         $("scan").disabled = false;
       }
-    };
-    function showShelves(j, cached) {
+    }
+    $("scan").onclick = () => { void scanNow(); };
+    function showShelves(j) {
       const shelves = j.shelves || [];
       $("bus").className = "ok";
       $("bus").textContent = "На шине " + shelves.length + " модулей" +
-        (j.brokerLabel ? " · " + j.brokerLabel : "") +
-        (cached ? " · с щита" : "");
+        (j.brokerLabel ? " · " + j.brokerLabel : "");
       renderShelves(shelves);
       if (shelves.length) $("scan").textContent = "Обновить шину";
     }
@@ -131,8 +133,9 @@
       try {
         const r = await fetch("/runtime/mqtt-scan");
         const j = await r.json();
-        if (j.ok && j.shelves && j.shelves.length) showShelves(j, true);
-      } catch (_) { /* first open — пусто, жмут «Снять шину» */ }
+        if (j.ok && j.shelves && j.shelves.length) showShelves(j);
+      } catch (_) { /* зеркало ниже */ }
+      await scanNow();
     }
     loadHealth();
     loadLast();

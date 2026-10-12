@@ -109,10 +109,12 @@ export async function handleRuntimeMqttScan(req, res) {
     const out = await mqttScanHandler(body);
     if (out?.ok && Array.isArray(out.snapshot?.entries)) {
       out.shelves = applyMarksToShelves(groupDeskShelves(out.snapshot.entries));
-      writeLastDeskShelves(
-        out.shelves.map(({ name: _n, room: _r, ...row }) => row),
-        out.brokerLabel,
-      );
+      if (out.shelves.length) {
+        writeLastDeskShelves(
+          out.shelves.map(({ name: _n, room: _r, ...row }) => row),
+          out.brokerLabel,
+        );
+      }
     }
     res.statusCode = out?.ok ? 200 : 409;
     res.setHeader("content-type", "application/json; charset=utf-8");

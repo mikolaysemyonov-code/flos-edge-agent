@@ -31,7 +31,7 @@ import {
 } from "./wb-rules-journal-incidents.mjs";
 
 /** Одна строка в heartbeat и snapshot — иначе UI врёт версией. */
-const EDGE_AGENT_VERSION = "edge-pilot-v2.lan-desk-7";
+const EDGE_AGENT_VERSION = "edge-pilot-v2.lan-desk-8";
 
 /** Prefer `FLOS_*` (FL OS); fall back to legacy `REACTOR_*` for existing deployments. */
 function env(primary, legacy) {
@@ -984,7 +984,23 @@ async function runMqttTopicScanCommand(payload) {
         : markShield
           ? false
           : true;
-  const mirrorWarm = preferMirror && isMqttMirrorSettledForScan();
+  const hasMirrorNow = mqttMirrorState.connected === true && mqttMirrorState.entriesByPath.size > 0;
+  const instantMirror = payload?.allowUnsettledMirror === true;
+  const mirrorWarm = preferMirror && (isMqttMirrorSettledForScan() || (instantMirror && hasMirrorNow));
+  if (preferMirror && instantMirror && !mirrorWarm) {
+    return {
+      ok: true,
+      details: {
+        mqttTopicScan: {
+          entries: [],
+          brokerLabel: `${host}:${port}`,
+          scanMs: 0,
+          source: "wb_mqtt_mirror",
+          mqttMirror: mqttMirrorHealth(),
+        },
+      },
+    };
+  }
   if (mirrorWarm) {
     const allEntries = [...mqttMirrorState.entriesByPath.values()];
     if (markShield) {
@@ -3154,10 +3170,12 @@ async function main() {
     mqttMirror: mqttMirrorHealth(),
   }));
   setRuntimeMqttScanHandler(async (body) => {
+    const instant = body?.instant === true;
     const ack = await runMqttTopicScanCommand({
       markShield: true,
       preferMirror: true,
-      scanMs: Number(body?.scanMs) || 8000,
+      allowUnsettledMirror: instant,
+      scanMs: instant ? 0 : Number(body?.scanMs) || 8000,
     });
     const scan = ack?.details?.mqttTopicScan;
     if (!Array.isArray(scan?.entries)) {
