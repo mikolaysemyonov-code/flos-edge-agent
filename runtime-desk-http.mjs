@@ -12,6 +12,12 @@ import {
   upsertDeskShelfMark,
 } from "./runtime-desk-marking.mjs";
 import {
+  DESK_SOLUTION_CARDS,
+  deleteDeskSolution,
+  listDeskSolutions,
+  upsertDeskSolution,
+} from "./runtime-desk-solutions.mjs";
+import {
   cardsFromHints,
   pouredHintsForContact,
   pouredButtonsForContact,
@@ -222,6 +228,34 @@ export function handleRuntimeDeskPourPreview(_req, res) {
   const snap = readPouredDeskSnapshot();
   const out = buildDeskPourPreview(readDeskMarking(), readPouredChannelMarks(), snap.rules || []);
   jsonEnd(res, 200, { ok: true, ...out });
+}
+
+export async function handleRuntimeDeskSolutions(req, res) {
+  const method = (req.method ?? "GET").toUpperCase();
+  if (method === "GET") {
+    jsonEnd(res, 200, { ok: true, catalog: DESK_SOLUTION_CARDS, solutions: listDeskSolutions() });
+    return;
+  }
+  const chunks = [];
+  for await (const c of req) chunks.push(c);
+  let body = {};
+  try {
+    const raw = Buffer.concat(chunks).toString("utf8");
+    if (raw.trim()) body = JSON.parse(raw);
+  } catch {
+    jsonEnd(res, 400, { ok: false, error: "invalid_json" });
+    return;
+  }
+  if (method === "DELETE" || body.delete) {
+    jsonEnd(res, 200, deleteDeskSolution(body.delete || body.id));
+    return;
+  }
+  if (method !== "PUT" && method !== "POST") {
+    jsonEnd(res, 405, { ok: false, error: "method" });
+    return;
+  }
+  const out = upsertDeskSolution(body);
+  jsonEnd(res, out.ok ? 200 : 400, out);
 }
 
 export function handleRuntimeDeskPoured(_req, res) {

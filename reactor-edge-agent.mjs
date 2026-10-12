@@ -31,7 +31,7 @@ import {
 } from "./wb-rules-journal-incidents.mjs";
 
 /** Одна строка в heartbeat и snapshot — иначе UI врёт версией. */
-const EDGE_AGENT_VERSION = "edge-pilot-v2.lan-desk-72";
+const EDGE_AGENT_VERSION = "edge-pilot-v2.lan-desk-73";
 
 /** Prefer `FLOS_*` (FL OS); fall back to legacy `REACTOR_*` for existing deployments. */
 function env(primary, legacy) {
@@ -1762,7 +1762,7 @@ source_ok=0
 if [[ -n "$CLOUD" ]]; then
   echo "[flos-edge-agent] pulling agent files from cloud tip…"
   set +e
-  for f in Dockerfile entrypoint.sh package.json reactor-edge-agent.mjs runtime-control-plane-http.mjs runtime-desk-http.mjs runtime-desk-shelves.mjs runtime-desk-marking.mjs runtime-desk-rules-marks.mjs desk.html runtime-rules-inventory.mjs docker-compose.yml wb-rules-journal-incidents.mjs; do
+  for f in Dockerfile entrypoint.sh package.json reactor-edge-agent.mjs runtime-control-plane-http.mjs runtime-desk-http.mjs runtime-desk-shelves.mjs runtime-desk-marking.mjs runtime-desk-solutions.mjs runtime-desk-rules-marks.mjs desk.html runtime-rules-inventory.mjs docker-compose.yml wb-rules-journal-incidents.mjs; do
     curl -fsSL "$CLOUD/api/edge-agent/files/$f" -o "$AGENT_DIR/$f" || { echo "fail $f"; source_ok=1; break; }
   done
   if [[ $source_ok -eq 0 ]]; then

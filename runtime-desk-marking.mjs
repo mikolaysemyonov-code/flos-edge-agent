@@ -23,18 +23,24 @@ export function deskMarkingPath() {
 }
 
 function emptyDoc() {
-  return { version: 2, shelves: {} };
+  return { version: 3, shelves: {}, solutions: [] };
 }
 
-export function readDeskMarking() {
+export function readDeskDocument() {
   try {
     const raw = fs.readFileSync(deskMarkingPath(), "utf8");
     const json = JSON.parse(raw);
     const shelves = json?.shelves && typeof json.shelves === "object" ? json.shelves : {};
-    return { version: 2, shelves };
+    const solutions = Array.isArray(json?.solutions) ? json.solutions : [];
+    return { version: 3, shelves, solutions };
   } catch {
     return emptyDoc();
   }
+}
+
+export function readDeskMarking() {
+  const doc = readDeskDocument();
+  return { version: 2, shelves: doc.shelves };
 }
 
 function cleanName(value) {
@@ -47,7 +53,14 @@ function cleanName(value) {
 function writeDoc(doc) {
   const file = deskMarkingPath();
   fs.mkdirSync(path.dirname(file), { recursive: true });
-  fs.writeFileSync(file, JSON.stringify(doc, null, 2) + "\n", "utf8");
+  const prev = readDeskDocument();
+  const shelves = doc?.shelves && typeof doc.shelves === "object" ? doc.shelves : {};
+  const solutions = Array.isArray(doc?.solutions) ? doc.solutions : prev.solutions;
+  fs.writeFileSync(
+    file,
+    JSON.stringify({ version: 3, shelves, solutions }, null, 2) + "\n",
+    "utf8",
+  );
 }
 
 function cleanCards(value) {
