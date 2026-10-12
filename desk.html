@@ -682,7 +682,10 @@
         det.appendChild(sum);
         const spare = document.createElement("p");
         spare.className = "meta";
-        spare.textContent = rest.map((ch) => ch.controlId).join(" · ");
+        spare.textContent = rest.map((ch) => {
+          const m = /^(?:Input|Channel)\s+(\d+)$/i.exec(String(ch.controlId || "").trim());
+          return m ? m[1] : ch.controlId;
+        }).join(" · ");
         det.appendChild(spare);
         li.appendChild(det);
       }
