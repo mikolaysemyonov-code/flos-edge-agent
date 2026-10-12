@@ -598,20 +598,38 @@
       }).catch(() => {});
     }
     function namedLoads() {
-      const out = [];
+      const raw = [];
       (lastShelvesRows || []).forEach((s) => {
         (s.channels || []).forEach((ch) => {
           if (!/^(Channel\s+\d+|K\d+)$/i.test(ch.controlId)) return;
           const name = String(ch.name || "").trim();
           if (!name) return;
-          out.push({
+          raw.push({
             deviceTopicKey: s.deviceTopicKey,
             controlId: ch.controlId,
-            label: prettyContactName(name) + " · " + (s.label || "") + " · " + ch.controlId,
+            name: prettyContactName(name),
+            room: nameRoom(name),
+            slave: Number((/_(\d+)$/.exec(s.deviceTopicKey) || [])[1] || 0),
+            ch: Number((/(\d+)\s*$/.exec(ch.controlId) || [])[1] || 0),
           });
         });
       });
-      return out;
+      const counts = {};
+      raw.forEach((r) => { counts[r.name] = (counts[r.name] || 0) + 1; });
+      raw.sort((a, b) => {
+        const d = a.slave - b.slave;
+        if (d) return d;
+        const rr = (a.room || a.name).localeCompare(b.room || b.name, "ru");
+        if (rr) return rr;
+        return a.ch - b.ch;
+      });
+      return raw.map((r) => ({
+        deviceTopicKey: r.deviceTopicKey,
+        controlId: r.controlId,
+        label: counts[r.name] > 1
+          ? r.name + " · " + r.controlId.replace(/^Channel\s+/i, "Ch")
+          : r.name,
+      }));
     }
     function makeBindSelect(s, ch, pouredLoads) {
       const sel = document.createElement("select");
@@ -619,7 +637,9 @@
       sel.setAttribute("aria-label", "Линия света");
       const empty = document.createElement("option");
       empty.value = "";
-      empty.textContent = pouredLoads.length ? "на диске — оставить" : "Привязать линию";
+      empty.textContent = pouredLoads.length
+        ? pouredLoads.map(prettyContactName).join(" · ")
+        : "Привязать линию";
       sel.appendChild(empty);
       const cur = (Array.isArray(ch.binds) && ch.binds[0])
         ? contactKey(ch.binds[0].deviceTopicKey, ch.binds[0].controlId)
@@ -721,12 +741,7 @@
       const deskDiverged = poured && [...selected].sort().join(",") !== diskIds.slice().sort().join(",");
       if (showChips) grow.appendChild(makeLoadChips(s.deviceTopicKey, ch.controlId, selected));
       if (!isLoad) grow.appendChild(makeBindSelect(s, ch, loads));
-      if (loads.length) {
-        const sub = document.createElement("span");
-        sub.className = "loads";
-        sub.textContent = "линия · " + loads.map(prettyContactName).join(" · ");
-        grow.appendChild(sub);
-      } else if (buttons.length) {
+      else if (buttons.length) {
         const sub = document.createElement("span");
         sub.className = "loads";
         sub.textContent = "кнопка · " + buttons.map(prettyContactName).join(" · ");
