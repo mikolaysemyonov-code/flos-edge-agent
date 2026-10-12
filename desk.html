@@ -275,7 +275,7 @@
       <ul id="shelves-buttons"></ul>
     </section>
     <section id="panel-relays" class="panel glass" hidden data-tab="relays">
-      <p id="relaysHead" class="meta">Силовые K.</p>
+      <p id="relaysHead" class="meta">Силовые K — свет 220 В, розетка, ёлка, гирлянда.</p>
       <ul id="shelves-relays"></ul>
     </section>
     <section id="panel-cards" class="panel glass" hidden data-tab="cards">
@@ -339,7 +339,15 @@
       "Бра", "Торшер", "Подсветка", "Подсветка ниши", "Лента",
       "DALI", "Ночной свет", "Гирлянда", "Ёлка",
     ];
+    const RELAY_TYPES = [
+      "Свет 220 В", "Люстра", "Бра", "Торшер",
+      "Управляемая розетка", "Ёлка", "Гирлянда",
+    ];
     const BUTTON_TYPES = ["Кнопка", "Клавиша", "Геркон", "Датчик движения", "Сценарий"];
+    function markTypes(ch, isLoad) {
+      if (/^K\d+$/i.test(ch.controlId)) return RELAY_TYPES;
+      return isLoad ? LOAD_TYPES : BUTTON_TYPES;
+    }
     const CARDS = [
       { id: "light_button_toggle", ru: "Переключение" },
       { id: "light_dim_hold_mcm", ru: "Дим-удержание" },
@@ -1247,9 +1255,9 @@
       roomSel.setAttribute("aria-label", "Комната");
       const typeSel = document.createElement("select");
       typeSel.className = "bind";
-      typeSel.setAttribute("aria-label", isLoad ? "Тип линии" : "Тип входа");
+      typeSel.setAttribute("aria-label", /^K\d+$/i.test(ch.controlId) ? "Тип реле" : isLoad ? "Тип линии" : "Тип входа");
       const current = splitMark(ch.name);
-      fillRoomTypeSelects(roomSel, typeSel, isLoad ? LOAD_TYPES : BUTTON_TYPES, current);
+      fillRoomTypeSelects(roomSel, typeSel, markTypes(ch, isLoad), current);
       const persist = () => {
         if (roomSel.value === "__add__") {
           const typed = window.prompt("Комната");
@@ -1266,7 +1274,7 @@
             if (next) saveName(s.deviceTopicKey, ch.controlId, next).then(() => loadLast());
             else {
               renderRoomBars();
-              fillRoomTypeSelects(roomSel, typeSel, isLoad ? LOAD_TYPES : BUTTON_TYPES, {
+              fillRoomTypeSelects(roomSel, typeSel, markTypes(ch, isLoad), {
                 room: prettyRoom(typed),
                 type: typeSel.value,
               });
