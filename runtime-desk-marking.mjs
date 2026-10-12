@@ -3,7 +3,15 @@
  */
 import fs from "node:fs";
 import path from "node:path";
-import { DESK_CARD_IDS, liveDeskDeviceKey, readPouredChannelMarks } from "./runtime-desk-rules-marks.mjs";
+import {
+  cardsFromHints,
+  DESK_CARD_IDS,
+  DESK_CARD_RU,
+  liveDeskDeviceKey,
+  pouredHintsForContact,
+  readPouredChannelMarks,
+  readPouredDeskSnapshot,
+} from "./runtime-desk-rules-marks.mjs";
 
 const MAX_NAME = 80;
 
@@ -99,4 +107,52 @@ export function applyMarksToShelves(shelves, doc = readDeskMarking(), poured = r
     });
     return { ...s, channels, name: "" };
   });
+}
+
+function sameCards(a, b) {
+  return [...(a || [])].sort().join(",") === [...(b || [])].sort().join(",");
+}
+
+function cardRu(ids) {
+  return (ids || []).map((id) => DESK_CARD_RU[id] || id);
+}
+
+/** Стол vs диск. Никогда не пишет wb-rules. */
+export function buildDeskPourPreview(doc = readDeskMarking(), poured = readPouredChannelMarks(), rules) {
+  const ruleRows = rules || readPouredDeskSnapshot().rules || [];
+  const rows = [];
+  const deskShelves = doc?.shelves && typeof doc.shelves === "object" ? doc.shelves : {};
+  const keys = new Set([...Object.keys(deskShelves), ...Object.keys(poured || {})]);
+  for (const deviceTopicKey of keys) {
+    const deskCh = deskShelves[deviceTopicKey]?.channels || {};
+    const pouredCh = poured?.[deviceTopicKey] || poured?.[liveDeskDeviceKey(deviceTopicKey)] || {};
+    const cids = new Set([...Object.keys(deskCh), ...Object.keys(typeof pouredCh === "object" ? pouredCh : {})]);
+    for (const controlId of cids) {
+      const deskName = typeof deskCh[controlId]?.name === "string" ? deskCh[controlId].name : "";
+      const deskCards = Array.isArray(deskCh[controlId]?.cards) ? deskCh[controlId].cards : [];
+      const pouredName = typeof pouredCh[controlId] === "string" ? pouredCh[controlId] : "";
+      const pouredCards = cardsFromHints(pouredHintsForContact(ruleRows, deviceTopicKey, controlId));
+      if (!deskName && !deskCards.length) continue;
+      let status = "same";
+      if (!deskName && deskCards.length) status = "blocked";
+      else if (deskName && pouredName && deskName !== pouredName) status = "name";
+      else if (deskName && !pouredName) status = "new_name";
+      else if (deskCards.length && !sameCards(deskCards, pouredCards)) status = "card";
+      if (status === "same") continue;
+      rows.push({
+        deviceTopicKey,
+        controlId,
+        name: deskName,
+        pouredName,
+        cards: cardRu(deskCards),
+        pouredCards: cardRu(pouredCards),
+        status,
+      });
+    }
+  }
+  return {
+    canPour: false,
+    reason: "Превью. Диск не трогаем.",
+    rows,
+  };
 }

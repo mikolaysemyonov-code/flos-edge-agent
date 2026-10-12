@@ -6,6 +6,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   applyMarksToShelves,
+  buildDeskPourPreview,
   deskMarkingPath,
   readDeskMarking,
   upsertDeskShelfMark,
@@ -188,6 +189,12 @@ export async function handleRuntimeDeskMarking(req, res) {
   }
   const out = upsertDeskShelfMark(body);
   jsonEnd(res, out.ok ? 200 : 400, out);
+}
+
+export function handleRuntimeDeskPourPreview(_req, res) {
+  const snap = readPouredDeskSnapshot();
+  const out = buildDeskPourPreview(readDeskMarking(), readPouredChannelMarks(), snap.rules || []);
+  jsonEnd(res, 200, { ok: true, ...out });
 }
 
 export function handleRuntimeDeskPoured(_req, res) {

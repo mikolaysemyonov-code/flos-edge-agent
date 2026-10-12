@@ -90,8 +90,8 @@
     }
     .loads { display: block; margin-top: .2rem; color: var(--mute); font-size: .72rem; }
     .orphan { color: rgb(var(--bad)); }
-    #poured li { display: flex; justify-content: space-between; align-items: baseline; gap: 1rem; padding: .55rem 0; border-top: 1px solid rgb(255 255 255 / .08); }
-    #poured li:first-child { border-top: 0; }
+    #poured li, #preview li { display: flex; justify-content: space-between; align-items: baseline; gap: 1rem; padding: .55rem 0; border-top: 1px solid rgb(255 255 255 / .08); }
+    #poured li:first-child, #preview li:first-child { border-top: 0; }
     details.more { margin: .1rem 0 .35rem; }
     details.more summary { color: var(--mute); font-size: .8rem; cursor: pointer; }
     .empty { margin: 2.5rem 1rem; text-align: center; color: var(--mute); }
@@ -154,6 +154,9 @@
       <ul id="shelves-relays"></ul>
     </section>
     <section id="panel-poured" class="panel glass" hidden data-tab="poured">
+      <p id="previewHead" class="meta">Сравниваю стол с диском…</p>
+      <p style="margin:0 0 .75rem"><button id="pour" class="ghost" type="button" disabled>Залить</button></p>
+      <ul id="preview"></ul>
       <p id="pouredHead" class="meta">Спрашиваю залитое…</p>
       <ul id="poured"></ul>
     </section>
@@ -222,6 +225,63 @@
       });
       if (location.hash.replace("#", "") !== tab) history.replaceState(null, "", "#" + tab);
     }
+    function previewStatusRu(s) {
+      if (s === "blocked") return "без имени — не зальём";
+      if (s === "name") return "имя";
+      if (s === "new_name") return "новое имя";
+      if (s === "card") return "карточка";
+      return s;
+    }
+    function shelfLabel(key) {
+      const s = lastShelvesRows.find((r) => r.deviceTopicKey === key);
+      return (s && s.label) || key;
+    }
+    function renderPreview(j) {
+      const ul = $("preview");
+      ul.innerHTML = "";
+      const rows = j.rows || [];
+      $("pour").disabled = true;
+      $("previewHead").style.color = "";
+      if (!rows.length) {
+        $("previewHead").textContent = (j.reason || "Превью. Диск не трогаем.") + " · стол совпадает с диском";
+        return;
+      }
+      $("previewHead").textContent = (j.reason || "Превью. Диск не трогаем.") + " · " + rows.length + " отличий";
+      rows.forEach((r) => {
+        const li = document.createElement("li");
+        const left = document.createElement("div");
+        const title = document.createElement("div");
+        title.textContent = (r.name || "без имени") + (r.cards && r.cards.length ? " · " + r.cards.join(" · ") : "");
+        const sub = document.createElement("div");
+        sub.className = "meta";
+        sub.textContent = shelfLabel(r.deviceTopicKey) + " · " + r.controlId +
+          (r.pouredName && r.pouredName !== r.name ? " · на диске " + r.pouredName : "");
+        if (r.status === "blocked") sub.className = "meta orphan";
+        left.appendChild(title);
+        left.appendChild(sub);
+        const kind = document.createElement("span");
+        kind.className = "kind";
+        kind.textContent = previewStatusRu(r.status);
+        li.appendChild(left);
+        li.appendChild(kind);
+        ul.appendChild(li);
+      });
+    }
+    async function loadPreview() {
+      try {
+        const r = await fetch("/runtime/desk-pour-preview");
+        const j = await r.json();
+        if (!j.ok) {
+          $("previewHead").style.color = "rgb(var(--bad))";
+          $("previewHead").textContent = j.error || "Нет превью";
+          return;
+        }
+        renderPreview(j);
+      } catch (e) {
+        $("previewHead").style.color = "rgb(var(--bad))";
+        $("previewHead").textContent = String(e.message || e);
+      }
+    }
     function renderPoured() {
       const ul = $("poured");
       ul.innerHTML = "";
@@ -280,6 +340,7 @@
         headers: { "content-type": "application/json" },
         body: JSON.stringify(body),
       });
+      loadPreview();
     }
     async function saveName(key, controlId, name) {
       await saveMark({ deviceTopicKey: key, controlId: controlId, name: name });
@@ -458,6 +519,7 @@
           (j.revisionId ? " · " + String(j.revisionId).slice(0, 12) : "") +
           (files ? " · " + files : "");
         renderPoured();
+        loadPreview();
       } catch (e) {
         $("pouredHead").style.color = "rgb(var(--bad))";
         $("pouredHead").textContent = String(e.message || e);
