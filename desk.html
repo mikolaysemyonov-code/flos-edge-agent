@@ -90,6 +90,16 @@
     }
     .loads { display: block; margin-top: .2rem; color: var(--mute); font-size: .72rem; }
     .orphan { color: rgb(var(--bad)); }
+    #gaps li { cursor: pointer; }
+    #gaps li:focus { outline: 1px solid rgb(var(--sky) / .45); border-radius: .4rem; }
+    .channels li.jump {
+      outline: 1px solid rgb(var(--sky) / .5);
+      border-radius: .45rem;
+    }
+    #poured li.roomh {
+      display: block; border-top: 0; padding: .85rem 0 .15rem;
+      color: var(--mute); font-size: .72rem; letter-spacing: .04em; text-transform: uppercase;
+    }
     #poured li, #preview li, #pouredMarks li, #gaps li { display: flex; justify-content: space-between; align-items: baseline; gap: 1rem; padding: .55rem 0; border-top: 1px solid rgb(255 255 255 / .08); }
     #poured li:first-child, #preview li:first-child, #pouredMarks li:first-child, #gaps li:first-child { border-top: 0; }
     details.more { margin: .1rem 0 .35rem; }
@@ -260,6 +270,18 @@
       kind.textContent = previewStatusRu(r.status);
       li.appendChild(left);
       li.appendChild(kind);
+      if (r.status === "no_card") {
+        li.tabIndex = 0;
+        li.setAttribute("role", "button");
+        const go = () => jumpToContact(r.deviceTopicKey, r.controlId);
+        li.addEventListener("click", go);
+        li.addEventListener("keydown", (e) => {
+          if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault();
+            go();
+          }
+        });
+      }
       return li;
     }
     function renderPreview(j) {
@@ -280,6 +302,11 @@
       $("gapsHead").hidden = !gaps.length;
       $("gapsHead").textContent = gaps.length ? gaps.length + " линий без карточки" : "";
       gaps.forEach((r) => gapsUl.appendChild(previewRow(r)));
+      const bus = $("bus");
+      if (bus && /модулей/.test(bus.textContent || "")) {
+        bus.textContent = bus.textContent.replace(/\s·\s\d+ без карточки/, "") +
+          (gaps.length ? " · " + gaps.length + " без карточки" : "");
+      }
     }
     async function loadPreview() {
       try {
@@ -336,7 +363,24 @@
         ul.appendChild(empty);
         return;
       }
-      scenarios.forEach((r) => ul.appendChild(pouredRow(r)));
+      const roomOf = (title) => String(title || "").split(/\s*·\s*/)[1] || "";
+      scenarios.sort((a, b) => {
+        const ra = roomOf(a.title);
+        const rb = roomOf(b.title);
+        return ra.localeCompare(rb, "ru") || String(a.title).localeCompare(String(b.title), "ru");
+      });
+      let lastRoom = "";
+      scenarios.forEach((r) => {
+        const room = roomOf(r.title);
+        if (room && room !== lastRoom) {
+          const h = document.createElement("li");
+          h.className = "roomh";
+          h.textContent = room;
+          ul.appendChild(h);
+          lastRoom = room;
+        }
+        ul.appendChild(pouredRow(r));
+      });
       wrap.hidden = !names.length;
       $("pouredMarksSum").textContent = names.length + " имён из разметки";
       names.forEach((r) => marksUl.appendChild(pouredRow(r)));
@@ -373,8 +417,24 @@
     async function saveCards(key, controlId, cards) {
       await saveMark({ deviceTopicKey: key, controlId: controlId, cards: cards });
     }
+    function jumpToContact(key, cid) {
+      setTab(familyOf({ deviceTopicKey: key }));
+      const go = () => {
+        const el = document.querySelector("[data-contact=\"" + key + "|" + cid + "\"]");
+        if (!el) return;
+        const det = el.closest("details");
+        if (det) det.open = true;
+        el.scrollIntoView({ block: "center" });
+        el.classList.add("jump");
+        const chip = el.querySelector(".chip");
+        if (chip) chip.focus();
+        setTimeout(() => el.classList.remove("jump"), 1400);
+      };
+      requestAnimationFrame(() => requestAnimationFrame(go));
+    }
     function channelRow(s, ch) {
       const row = document.createElement("li");
+      row.dataset.contact = s.deviceTopicKey + "|" + ch.controlId;
       const knob = document.createElement("span");
       knob.className = "knob";
       knob.textContent = ch.controlId;
@@ -410,6 +470,15 @@
           if (selected.has(card.id)) selected.delete(card.id);
           else selected.add(card.id);
           btn.setAttribute("aria-pressed", selected.has(card.id) ? "true" : "false");
+          const hint = grow.querySelector(".loads");
+          if (hint && hint.textContent === "на диске нет карточки") {
+            if (selected.size) hint.remove();
+          } else if (!selected.size && original && !loads.length && (!hint || hint.textContent !== "на диске нет карточки")) {
+            const sub = document.createElement("span");
+            sub.className = "loads";
+            sub.textContent = "на диске нет карточки";
+            grow.appendChild(sub);
+          }
           saveCards(s.deviceTopicKey, ch.controlId, [...selected]).catch(() => {});
         });
         chips.appendChild(btn);

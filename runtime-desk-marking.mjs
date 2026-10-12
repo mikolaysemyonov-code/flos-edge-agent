@@ -12,6 +12,7 @@ import {
   readPouredChannelMarks,
   readPouredDeskSnapshot,
 } from "./runtime-desk-rules-marks.mjs";
+import { parseDeskDeviceKey } from "./runtime-desk-shelves.mjs";
 
 const MAX_NAME = 80;
 
@@ -156,6 +157,16 @@ export function buildDeskPourPreview(doc = readDeskMarking(), poured = readPoure
       });
     }
   }
+  gaps.sort((a, b) => {
+    const sa = parseDeskDeviceKey(a.deviceTopicKey)?.slave ?? 0;
+    const sb = parseDeskDeviceKey(b.deviceTopicKey)?.slave ?? 0;
+    if (sa !== sb) return sa - sb;
+    const d = String(a.deviceTopicKey).localeCompare(String(b.deviceTopicKey));
+    if (d) return d;
+    const na = Number(/(\d+)\s*$/.exec(a.controlId)?.[1] || 0);
+    const nb = Number(/(\d+)\s*$/.exec(b.controlId)?.[1] || 0);
+    return na - nb;
+  });
   return {
     canPour: false,
     reason: "Превью. Диск не трогаем.",
