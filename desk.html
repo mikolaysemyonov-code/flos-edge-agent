@@ -639,6 +639,9 @@
       });
     }
     function moduleCard(s, flat) {
+      const featured = (s.channels || []).filter((c) => c.name || (c.hints && c.hints.length) || (c.cards && c.cards.length));
+      const rest = (s.channels || []).filter((c) => !c.name && !(c.hints && c.hints.length) && !(c.cards && c.cards.length));
+      const idle = flat && !featured.length;
       const li = document.createElement("li");
       li.className = "mod";
       const head = document.createElement("div");
@@ -648,13 +651,11 @@
       sku.textContent = s.label || s.deviceTopicKey;
       const meta = document.createElement("span");
       meta.className = "ch";
-      meta.textContent = s.hint || (s.channelCount ? s.channelCount + " кан." : "");
+      meta.textContent = idle ? "не в заливке" : (s.hint || (s.channelCount ? s.channelCount + " кан." : ""));
       head.appendChild(sku);
       head.appendChild(meta);
       li.appendChild(head);
-      const featured = (s.channels || []).filter((c) => c.name || (c.hints && c.hints.length) || (c.cards && c.cards.length));
-      const rest = (s.channels || []).filter((c) => !c.name && !(c.hints && c.hints.length) && !(c.cards && c.cards.length));
-      if (flat && !featured.length) return li;
+      if (idle) return li;
       const chs = document.createElement("ul");
       chs.className = "channels";
       appendNamedChannels(chs, s, featured);
