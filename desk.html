@@ -2,62 +2,168 @@
 <html lang="ru">
 <head>
   <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <title>Пуск · щит</title>
   <style>
-    :root { color-scheme: dark; }
-    body { margin: 0; font: 15px/1.45 system-ui, sans-serif; background: #0c0c0e; color: #eee; }
-    main { max-width: 40rem; margin: 0 auto; padding: 1.5rem 1.25rem 3rem; }
-    h1 { font-size: 1.25rem; font-weight: 600; margin: 0 0 .35rem; }
-    .muted { color: #9a9aa3; font-size: .85rem; }
-    button { appearance: none; border: 0; border-radius: 999px; padding: .55rem 1rem; background: #f4f4f5; color: #111; font-weight: 600; cursor: pointer; }
-    button:disabled { opacity: .45; cursor: wait; }
-    .card { margin-top: 1rem; padding: 1rem 1.1rem; border-radius: 1rem; background: #16161a; border: 1px solid #2a2a30; }
-    .ok { color: #8ee0b0; }
-    .bad { color: #f0a0a0; }
-    ul { list-style: none; margin: .75rem 0 0; padding: 0; }
-    li.mod { padding: .85rem 0 0.35rem; border-top: 1px solid #2a2a30; }
-    li.mod:first-child { border-top: 0; padding-top: 0; }
-    .head { display: flex; justify-content: space-between; gap: 1rem; margin-bottom: .35rem; }
-    .sku { font-weight: 600; }
-    .ch { color: #9a9aa3; font-size: .8rem; white-space: nowrap; }
-    .channels { margin: 0; }
-    .channels li { display: flex; align-items: center; gap: .75rem; padding: .35rem 0; border-top: 0; }
-    .knob { color: #9a9aa3; font-size: .8rem; min-width: 4.5rem; flex: none; }
-    input[type="text"] { width: 100%; box-sizing: border-box; border: 0; border-bottom: 1px solid #3a3a42; background: transparent; color: #eee; font: inherit; font-weight: 600; padding: 0 0 .15rem; outline: none; }
-    input[type="text"]::placeholder { color: #6e6e78; font-weight: 500; }
-    input[type="text"]:focus { border-bottom-color: #8ee0b0; color: #fff; }
-    .from-rules { color: #6e6e78; font-size: .7rem; }
-    .kind { color: #6e6e78; font-size: .7rem; white-space: nowrap; }
-    .orphan { color: #f0a0a0; }
-    #poured li { display: flex; justify-content: space-between; align-items: baseline; gap: 1rem; padding: .4rem 0; border-top: 1px solid #2a2a30; }
+    :root {
+      color-scheme: dark;
+      --sky: 56 189 248;
+      --sky-strong: 14 165 233;
+      --ok: 52 211 153;
+      --bad: 248 113 113;
+      --ink: 245 245 247;
+      --mute: 161 161 170;
+    }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; min-height: 100%; }
+    body {
+      font: 15px/1.45 -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", system-ui, sans-serif;
+      background:
+        radial-gradient(1200px 480px at 50% -80px, rgb(var(--sky) / .14), transparent 60%),
+        #000;
+      color: var(--ink);
+      -webkit-font-smoothing: antialiased;
+    }
+    main { max-width: 42rem; margin: 0 auto; padding: 1.25rem 1.15rem 7.25rem; }
+    .kicker { margin: 0; color: var(--mute); font-size: .72rem; letter-spacing: .08em; text-transform: uppercase; }
+    .top { display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; margin: .35rem 0 1rem; }
+    h1 { font-size: 1.85rem; font-weight: 650; letter-spacing: -.03em; margin: 0; }
+    .ghost {
+      appearance: none; border: 0; cursor: pointer;
+      padding: .45rem .9rem; border-radius: 999px; font: inherit; font-weight: 600; font-size: .85rem;
+      color: rgb(var(--sky-strong));
+      background: rgb(var(--sky) / .12);
+      box-shadow: inset 0 1px 0 rgb(255 255 255 / .14);
+    }
+    .ghost:disabled { opacity: .45; cursor: wait; }
+    .glass {
+      border-radius: 1.15rem;
+      background: linear-gradient(180deg, rgb(255 255 255 / .09), rgb(255 255 255 / .03));
+      border: 1px solid rgb(255 255 255 / .1);
+      box-shadow: inset 0 1px 0 rgb(255 255 255 / .14), 0 12px 40px -18px rgb(0 0 0 / .55);
+      backdrop-filter: blur(24px);
+    }
+    .status { display: flex; align-items: center; gap: .65rem; padding: .7rem .95rem; margin-bottom: 1rem; }
+    .dot { width: .55rem; height: .55rem; border-radius: 99px; background: #52525b; flex: none; }
+    .ok .dot { background: rgb(var(--ok)); box-shadow: 0 0 12px rgb(var(--ok) / .7); }
+    .bad .dot { background: rgb(var(--bad)); box-shadow: 0 0 12px rgb(var(--bad) / .55); }
+    .status p { margin: 0; font-size: .82rem; color: var(--mute); }
+    .ok p { color: rgb(var(--ok)); }
+    .bad p { color: rgb(var(--bad)); }
+    .panel[hidden] { display: none; }
+    .meta { margin: 0 0 .65rem; color: var(--mute); font-size: .82rem; }
+    ul { list-style: none; margin: 0; padding: 0; }
+    li.mod { padding: .95rem 0 .4rem; border-top: 1px solid rgb(255 255 255 / .08); }
+    li.mod:first-child { border-top: 0; padding-top: .15rem; }
+    .head { display: flex; justify-content: space-between; gap: 1rem; margin-bottom: .4rem; }
+    .sku { font-weight: 600; letter-spacing: -.01em; }
+    .ch { color: var(--mute); font-size: .78rem; white-space: nowrap; }
+    .channels li { display: flex; align-items: center; gap: .7rem; padding: .42rem 0; }
+    .knob { color: var(--mute); font-size: .78rem; min-width: 4.6rem; flex: none; }
+    input[type="text"] {
+      width: 100%; border: 0; border-bottom: 1px solid rgb(255 255 255 / .12);
+      background: transparent; color: var(--ink); font: inherit; font-weight: 600;
+      padding: .1rem 0 .2rem; outline: none;
+    }
+    input[type="text"]::placeholder { color: #71717a; font-weight: 500; }
+    input[type="text"]:focus {
+      border-bottom-color: rgb(var(--sky));
+      box-shadow: 0 8px 18px -12px rgb(var(--sky) / .8);
+    }
+    .from-rules, .kind { color: rgb(var(--sky) / .85); font-size: .68rem; white-space: nowrap; }
+    .orphan { color: rgb(var(--bad)); }
+    #poured li { display: flex; justify-content: space-between; align-items: baseline; gap: 1rem; padding: .55rem 0; border-top: 1px solid rgb(255 255 255 / .08); }
     #poured li:first-child { border-top: 0; }
-    details.more { margin: .15rem 0 .4rem; }
-    details.more summary { color: #6e6e78; font-size: .8rem; cursor: pointer; }
+    details.more { margin: .1rem 0 .35rem; }
+    details.more summary { color: var(--mute); font-size: .8rem; cursor: pointer; }
+    .empty { margin: 2.5rem 1rem; text-align: center; color: var(--mute); }
+    .dock {
+      position: fixed; left: 50%; bottom: 0; transform: translateX(-50%);
+      width: min(42rem, 100%);
+      padding: .45rem .7rem calc(.55rem + env(safe-area-inset-bottom));
+      background: rgb(10 10 12 / .78);
+      border-top: 1px solid rgb(255 255 255 / .08);
+      backdrop-filter: blur(28px);
+      display: grid; grid-template-columns: repeat(4, 1fr); gap: .2rem;
+    }
+    .tab {
+      appearance: none; border: 0; background: transparent; color: #8e8e96;
+      cursor: pointer; padding: .35rem .2rem .25rem; border-radius: .85rem;
+      display: flex; flex-direction: column; align-items: center; gap: .22rem;
+      font: inherit; font-size: .62rem; font-weight: 600; letter-spacing: .01em;
+    }
+    .tab .ico {
+      width: 1.85rem; height: 1.85rem; border-radius: .55rem;
+      display: grid; place-items: center;
+      background: linear-gradient(180deg, rgb(255 255 255 / .14), rgb(255 255 255 / .04));
+      border: 1px solid rgb(255 255 255 / .1);
+      box-shadow: inset 0 1px 0 rgb(255 255 255 / .22);
+    }
+    .tab svg { width: 15px; height: 15px; stroke: currentColor; fill: none; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
+    .tab .n { font-variant-numeric: tabular-nums; }
+    .tab[aria-selected="true"] { color: #fff; }
+    .tab[aria-selected="true"] .ico {
+      color: rgb(186 230 253);
+      border-color: rgb(var(--sky) / .45);
+      box-shadow: inset 0 1px 0 rgb(255 255 255 / .3), 0 0 16px rgb(var(--sky) / .35);
+    }
+    @media (prefers-reduced-motion: reduce) {
+      .ghost, .tab .ico, input[type="text"] { box-shadow: none; }
+    }
   </style>
 </head>
 <body>
   <main>
-    <p class="muted">Локальный стол · как HA на :8123</p>
-    <h1>Пусконаладка щита</h1>
-    <p class="muted">Имя — на контакте. Залитое с щита видно ниже: что есть и что поправить. Новую заливку не делаем.</p>
-    <p style="margin-top:1rem"><button id="scan" type="button">Снять шину</button></p>
-    <div class="card">
-      <p id="health" class="muted">Спрашиваю агента…</p>
+    <p class="kicker">Локальный стол</p>
+    <div class="top">
+      <h1>Пуск щита</h1>
+      <button id="scan" class="ghost" type="button">Обновить</button>
     </div>
-    <div class="card">
-      <p id="bus" class="muted">Шина ещё не снимали.</p>
-      <ul id="shelves"></ul>
+    <div id="health" class="glass status">
+      <span class="dot" aria-hidden="true"></span>
+      <p>Спрашиваю агента…</p>
     </div>
-    <div class="card">
-      <p id="pouredHead" class="muted">Спрашиваю залитое…</p>
+    <section id="panel-light" class="panel glass" style="padding: 1rem 1.1rem 1.05rem" data-tab="light">
+      <p id="bus" class="meta">Шина ещё не снимали.</p>
+      <ul id="shelves-light"></ul>
+    </section>
+    <section id="panel-buttons" class="panel glass" hidden style="padding: 1rem 1.1rem 1.05rem" data-tab="buttons">
+      <p class="meta">Входы MCM и GPIO — кнопки сценариев.</p>
+      <ul id="shelves-buttons"></ul>
+    </section>
+    <section id="panel-relays" class="panel glass" hidden style="padding: 1rem 1.1rem 1.05rem" data-tab="relays">
+      <p class="meta">Силовые K. Имена появятся, когда линия попадёт в заливку.</p>
+      <ul id="shelves-relays"></ul>
+    </section>
+    <section id="panel-poured" class="panel glass" hidden style="padding: 1rem 1.1rem 1.05rem" data-tab="poured">
+      <p id="pouredHead" class="meta">Спрашиваю залитое…</p>
       <ul id="poured"></ul>
-    </div>
+    </section>
   </main>
+  <nav class="dock" role="tablist" aria-label="Разделы пуска">
+    <button class="tab" type="button" role="tab" data-tab="light" aria-selected="true">
+      <span class="ico"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"/></svg></span>
+      <span>Свет <span class="n" id="n-light"></span></span>
+    </button>
+    <button class="tab" type="button" role="tab" data-tab="buttons" aria-selected="false">
+      <span class="ico"><svg viewBox="0 0 24 24"><rect x="2" y="6" width="20" height="12" rx="3"/><circle cx="8" cy="12" r="2"/><path d="M14 10h4M14 14h2"/></svg></span>
+      <span>Кнопки <span class="n" id="n-buttons"></span></span>
+    </button>
+    <button class="tab" type="button" role="tab" data-tab="relays" aria-selected="false">
+      <span class="ico"><svg viewBox="0 0 24 24"><path d="M12 3v3M8 8H5a2 2 0 0 0-2 2v7h18v-7a2 2 0 0 0-2-2h-3"/><rect x="8" y="3" width="8" height="5" rx="1"/><path d="M8 21h8"/></svg></span>
+      <span>Реле <span class="n" id="n-relays"></span></span>
+    </button>
+    <button class="tab" type="button" role="tab" data-tab="poured" aria-selected="false">
+      <span class="ico"><svg viewBox="0 0 24 24"><path d="M12 20V8"/><path d="m6 14 6 6 6-6"/><path d="M4 4h16"/></svg></span>
+      <span>Залито <span class="n" id="n-poured"></span></span>
+    </button>
+  </nav>
   <script>
     const $ = (id) => document.getElementById(id);
     let liveKeys = {};
     let pouredRules = [];
+    let lastShelvesRows = [];
+    let activeTab = "light";
     function kindRu(k) {
       if (k === "marking") return "разметка";
       if (k === "user") return "сценарий";
@@ -66,21 +172,49 @@
     function contactLine(c) {
       return (c.label || c.deviceTopicKey) + " · " + c.controlId;
     }
+    function familyOf(s) {
+      const k = String(s.deviceTopicKey || "");
+      if (/led|ampled|dali|mdm/i.test(k)) return "light";
+      if (/mcm|gpio|mdi/i.test(k)) return "buttons";
+      return "relays";
+    }
+    function splitShelves(rows) {
+      const out = { light: [], buttons: [], relays: [] };
+      (rows || []).forEach((s) => out[familyOf(s)].push(s));
+      return out;
+    }
+    function setTab(tab) {
+      activeTab = tab;
+      document.querySelectorAll(".tab").forEach((btn) => {
+        btn.setAttribute("aria-selected", btn.dataset.tab === tab ? "true" : "false");
+      });
+      document.querySelectorAll(".panel").forEach((p) => {
+        p.hidden = p.dataset.tab !== tab;
+      });
+      if (location.hash.replace("#", "") !== tab) history.replaceState(null, "", "#" + tab);
+    }
     function renderPoured() {
       const ul = $("poured");
       ul.innerHTML = "";
+      if (!pouredRules.length) {
+        const empty = document.createElement("p");
+        empty.className = "empty";
+        empty.textContent = "На диске пока нет user-правил.";
+        ul.appendChild(empty);
+        return;
+      }
       pouredRules.forEach((r) => {
         const li = document.createElement("li");
         const left = document.createElement("div");
         const title = document.createElement("div");
         title.textContent = r.title || r.id;
         const sub = document.createElement("div");
-        sub.className = "muted";
+        sub.className = "meta";
         const bits = (r.contacts || []).map(contactLine);
         const missing = (r.contacts || []).filter((c) => liveKeys.ready && !liveKeys[c.deviceTopicKey]);
         sub.textContent = bits.join(", ") || "нет контакта на шине";
         if (missing.length) {
-          sub.className = "muted orphan";
+          sub.className = "meta orphan";
           sub.textContent = bits.join(", ") + " · нет на этой шине";
         }
         left.appendChild(title);
@@ -94,6 +228,8 @@
       });
     }
     async function loadHealth() {
+      const box = $("health");
+      const line = box.querySelector("p");
       try {
         const r = await fetch("/runtime/health");
         const j = await r.json();
@@ -101,13 +237,13 @@
         const topics = j.mqttMirror && j.mqttMirror.topicCount;
         const ver = String(j.agentVersion || "").replace(/^.*\./, "");
         const rules = j.rulesInventory && j.rulesInventory.userDefineRuleCount;
-        $("health").className = j.ok ? "ok" : "bad";
-        $("health").textContent = j.ok
-          ? "Агент на щите · enroll " + en + (ver ? " · " + ver : "") + (topics != null ? " · зеркало " + topics + " топиков" : "") + (rules ? " · rules " + rules : "")
+        box.className = "glass status " + (j.ok ? "ok" : "bad");
+        line.textContent = j.ok
+          ? "Агент · " + en + (ver ? " · " + ver : "") + (topics != null ? " · " + topics + " топиков" : "") + (rules ? " · rules " + rules : "")
           : "Агент не ответил";
       } catch (e) {
-        $("health").className = "bad";
-        $("health").textContent = "Нет /runtime/health — откройте этот адрес с машины в сети щита.";
+        box.className = "glass status bad";
+        line.textContent = "Нет /runtime/health — откройте этот адрес с машины в сети щита.";
       }
     }
     async function saveName(key, controlId, name) {
@@ -141,10 +277,6 @@
         row.appendChild(tag);
       }
       return row;
-    }
-    function isBareRelay(s) {
-      const ch = s.channels || [];
-      return ch.length > 0 && ch.every((c) => /^K\d+$/i.test(c.controlId)) && !ch.some((c) => c.name);
     }
     function moduleCard(s) {
       const li = document.createElement("li");
@@ -181,40 +313,27 @@
       }
       return li;
     }
-    function renderShelves(rows) {
-      const ul = $("shelves");
+    function fillList(id, rows, emptyText) {
+      const ul = $(id);
       ul.innerHTML = "";
-      const named = [];
-      const other = [];
-      const relays = [];
-      (rows || []).forEach((s) => {
-        if ((s.channels || []).some((c) => c.name)) named.push(s);
-        else if (isBareRelay(s)) relays.push(s);
-        else other.push(s);
-      });
-      other.sort((a, b) => {
-        const ia = /mcm|gpio|mdi/i.test(a.deviceTopicKey) ? 0 : 1;
-        const ib = /mcm|gpio|mdi/i.test(b.deviceTopicKey) ? 0 : 1;
-        return ia - ib;
-      });
-      named.concat(other).forEach((s) => ul.appendChild(moduleCard(s)));
-      if (relays.length) {
-        const wrap = document.createElement("li");
-        wrap.className = "mod";
-        const det = document.createElement("details");
-        det.className = "more";
-        const sum = document.createElement("summary");
-        sum.textContent = "ещё " + relays.length + " реле без имён";
-        det.appendChild(sum);
-        const inner = document.createElement("ul");
-        inner.style.listStyle = "none";
-        inner.style.margin = ".5rem 0 0";
-        inner.style.padding = "0";
-        relays.forEach((s) => inner.appendChild(moduleCard(s)));
-        det.appendChild(inner);
-        wrap.appendChild(det);
-        ul.appendChild(wrap);
+      if (!rows.length) {
+        const p = document.createElement("p");
+        p.className = "empty";
+        p.textContent = emptyText;
+        ul.appendChild(p);
+        return;
       }
+      rows.forEach((s) => ul.appendChild(moduleCard(s)));
+    }
+    function renderShelves(rows) {
+      lastShelvesRows = rows || [];
+      const split = splitShelves(lastShelvesRows);
+      fillList("shelves-light", split.light, "Света на шине нет.");
+      fillList("shelves-buttons", split.buttons, "Кнопок на шине нет.");
+      fillList("shelves-relays", split.relays, "Реле на шине нет.");
+      $("n-light").textContent = split.light.length || "";
+      $("n-buttons").textContent = split.buttons.length || "";
+      $("n-relays").textContent = split.relays.length || "";
     }
     async function scanNow() {
       $("scan").disabled = true;
@@ -226,16 +345,18 @@
         });
         const j = await r.json();
         if (!j.ok) {
-          if (!$("shelves").children.length) {
-            $("bus").className = "bad";
+          if (!lastShelvesRows.length) {
+            $("bus").className = "meta bad";
+            $("bus").style.color = "rgb(var(--bad))";
             $("bus").textContent = j.error || "Скан не вышел";
           }
           return;
         }
         if (j.shelves && j.shelves.length) showShelves(j);
       } catch (e) {
-        if (!$("shelves").children.length) {
-          $("bus").className = "bad";
+        if (!lastShelvesRows.length) {
+          $("bus").className = "meta";
+          $("bus").style.color = "rgb(var(--bad))";
           $("bus").textContent = String(e.message || e);
         }
       } finally {
@@ -245,37 +366,39 @@
     $("scan").onclick = () => { void scanNow(); };
     function showShelves(j) {
       const shelves = j.shelves || [];
-      $("bus").className = "ok";
+      $("bus").className = "meta";
+      $("bus").style.color = "";
       const named = shelves.reduce(function (n, s) {
         return n + (s.channels || []).filter(function (c) { return c.source === "rules" && c.name; }).length;
       }, 0);
-      $("bus").textContent = "На шине " + shelves.length + " модулей" +
+      $("bus").textContent = shelves.length + " модулей" +
         (j.brokerLabel ? " · " + j.brokerLabel : "") +
         (named ? " · " + named + " имён из rules" : "");
       renderShelves(shelves);
       liveKeys = { ready: true };
       shelves.forEach((s) => { liveKeys[s.deviceTopicKey] = true; });
       renderPoured();
-      if (shelves.length) $("scan").textContent = "Обновить шину";
+      if (shelves.length) $("scan").textContent = "Обновить";
     }
     async function loadPoured() {
       try {
         const r = await fetch("/runtime/desk-poured");
         const j = await r.json();
         if (!j.ok) {
-          $("pouredHead").className = "bad";
+          $("pouredHead").style.color = "rgb(var(--bad))";
           $("pouredHead").textContent = j.error || "Не прочитал залитое";
           return;
         }
         pouredRules = j.rules || [];
+        $("n-poured").textContent = pouredRules.length || "";
         const files = (j.files || []).map((f) => f.filename).join(", ");
-        $("pouredHead").className = "ok";
-        $("pouredHead").textContent = "Залито на щит · " + (j.ruleCount || pouredRules.length) + " правил" +
+        $("pouredHead").style.color = "";
+        $("pouredHead").textContent = (j.ruleCount || pouredRules.length) + " правил" +
           (j.revisionId ? " · " + String(j.revisionId).slice(0, 12) : "") +
           (files ? " · " + files : "");
         renderPoured();
       } catch (e) {
-        $("pouredHead").className = "bad";
+        $("pouredHead").style.color = "rgb(var(--bad))";
         $("pouredHead").textContent = String(e.message || e);
       }
     }
@@ -287,6 +410,11 @@
       } catch (_) { /* зеркало ниже */ }
       await scanNow();
     }
+    document.querySelectorAll(".tab").forEach((btn) => {
+      btn.addEventListener("click", () => setTab(btn.dataset.tab));
+    });
+    const fromHash = location.hash.replace("#", "");
+    if (/^(light|buttons|relays|poured)$/.test(fromHash)) setTab(fromHash);
     loadHealth();
     loadPoured();
     loadLast();
