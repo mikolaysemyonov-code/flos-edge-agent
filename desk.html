@@ -370,14 +370,20 @@
           ul.appendChild(h);
           last = room;
         }
-        ul.appendChild(pouredRow(r));
+        ul.appendChild(pouredRow(r, room));
       });
     }
-    function pouredRow(r) {
+    function titleUnderRoom(title, room) {
+      const parts = String(title || "").split(/\s*·\s*/).filter(Boolean);
+      const roomLc = String(room || "").toLowerCase();
+      const out = parts.filter((p) => p.toLowerCase() !== roomLc);
+      return out.join(" · ") || title;
+    }
+    function pouredRow(r, room) {
       const li = document.createElement("li");
       const left = document.createElement("div");
       const title = document.createElement("div");
-      title.textContent = r.title || r.id;
+      title.textContent = room ? titleUnderRoom(r.title || r.id, room) : (r.title || r.id);
       const sub = document.createElement("div");
       sub.className = "meta";
       const bits = (r.contacts || []).map(contactLine);
