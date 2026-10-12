@@ -147,7 +147,30 @@ function scenarioFamilyId(id) {
 function humanScenarioTitle(id) {
   if (/dim_hold/i.test(id)) return "Дим-удержание";
   if (/all_off/i.test(id)) return "Все выкл";
-  return "";
+  if (/button_toggle/i.test(id)) return "Переключение";
+  return "Сценарий";
+}
+
+function decorateScenarioTitles(rows) {
+  const names = new Map();
+  for (const r of rows) {
+    if (r.kind !== "marking" || !r.title) continue;
+    for (const c of r.contacts || []) names.set(`${c.deviceTopicKey}|${c.controlId}`, r.title);
+  }
+  return rows.map((r) => {
+    if (r.kind === "marking") return r;
+    const loads = [];
+    const seen = new Set();
+    for (const c of r.contacts || []) {
+      if (!/^(K\d+|Channel \d+)$/i.test(c.controlId)) continue;
+      const n = names.get(`${c.deviceTopicKey}|${c.controlId}`);
+      if (!n || seen.has(n)) continue;
+      seen.add(n);
+      loads.push(n);
+    }
+    const base = r.title || "Сценарий";
+    return { ...r, title: loads.length ? `${base} · ${loads.slice(0, 2).join(", ")}` : base };
+  });
 }
 
 export function collapsePouredRuleRows(rows) {
@@ -162,13 +185,14 @@ export function collapsePouredRuleRows(rows) {
     const prev = groups.get(fam);
     groups.set(fam, {
       id: fam,
-      title: humanScenarioTitle(r.id) || r.title || prev?.title || "",
+      title: humanScenarioTitle(r.id),
       kind: "user",
       file: r.file,
       contacts: uniqueContacts([...(prev?.contacts || []), ...(r.contacts || [])]),
     });
   }
-  return [...marking, ...groups.values()];
+  marking.sort((a, b) => String(a.title).localeCompare(String(b.title), "ru"));
+  return decorateScenarioTitles([...marking, ...groups.values()]);
 }
 
 export function readPouredDeskSnapshot() {
