@@ -98,7 +98,7 @@
     }
     #poured li.roomh {
       display: block; border-top: 0; padding: .85rem 0 .15rem;
-      color: var(--mute); font-size: .72rem; letter-spacing: .04em; text-transform: uppercase;
+      color: var(--mute); font-size: .72rem;
     }
     #poured li, #preview li, #pouredMarks li, #gaps li { display: flex; justify-content: space-between; align-items: baseline; gap: 1rem; padding: .55rem 0; border-top: 1px solid rgb(255 255 255 / .08); }
     #poured li:first-child, #preview li:first-child, #pouredMarks li:first-child, #gaps li:first-child { border-top: 0; }
@@ -200,6 +200,7 @@
     let liveKeys = {};
     let pouredRules = [];
     let lastShelvesRows = [];
+    let lastGapCount = 0;
     let activeTab = "light";
     const CARDS = [
       { id: "light_button_toggle", ru: "Переключение" },
@@ -302,11 +303,15 @@
       $("gapsHead").hidden = !gaps.length;
       $("gapsHead").textContent = gaps.length ? gaps.length + " линий без карточки" : "";
       gaps.forEach((r) => gapsUl.appendChild(previewRow(r)));
+      lastGapCount = gaps.length;
+      stampBusGaps();
+    }
+    function stampBusGaps() {
       const bus = $("bus");
-      if (bus && /модулей/.test(bus.textContent || "")) {
-        bus.textContent = bus.textContent.replace(/\s·\s\d+ без карточки/, "") +
-          (gaps.length ? " · " + gaps.length + " без карточки" : "");
-      }
+      if (!bus) return;
+      const base = (bus.textContent || "").replace(/\s·\s\d+ без карточки/, "");
+      if (!/модулей/.test(base)) return;
+      bus.textContent = base + (lastGapCount ? " · " + lastGapCount + " без карточки" : "");
     }
     async function loadPreview() {
       try {
@@ -417,10 +422,14 @@
     async function saveCards(key, controlId, cards) {
       await saveMark({ deviceTopicKey: key, controlId: controlId, cards: cards });
     }
+    function contactKey(key, cid) {
+      return String(key) + "::" + String(cid);
+    }
     function jumpToContact(key, cid) {
       setTab(familyOf({ deviceTopicKey: key }));
+      const want = contactKey(key, cid);
       const go = () => {
-        const el = document.querySelector("[data-contact=\"" + key + "|" + cid + "\"]");
+        const el = [...document.querySelectorAll("[data-contact]")].find((n) => n.dataset.contact === want);
         if (!el) return;
         const det = el.closest("details");
         if (det) det.open = true;
@@ -434,7 +443,7 @@
     }
     function channelRow(s, ch) {
       const row = document.createElement("li");
-      row.dataset.contact = s.deviceTopicKey + "|" + ch.controlId;
+      row.dataset.contact = contactKey(s.deviceTopicKey, ch.controlId);
       const knob = document.createElement("span");
       knob.className = "knob";
       knob.textContent = ch.controlId;
@@ -550,11 +559,13 @@
       const live = rows.filter(hasFeatured);
       const idle = rows.filter((s) => !hasFeatured(s));
       live.forEach((s) => ul.appendChild(moduleCard(s)));
-      if (id === "shelves-relays" && idle.length) {
+      if ((id === "shelves-relays" || id === "shelves-light") && idle.length) {
         const det = document.createElement("details");
         det.className = "more";
         const sum = document.createElement("summary");
-        sum.textContent = idle.length + " реле без линий в заливке";
+        sum.textContent = id === "shelves-relays"
+          ? idle.length + " реле без линий в заливке"
+          : idle.length + " модуля без разметки";
         det.appendChild(sum);
         const inner = document.createElement("ul");
         idle.forEach((s) => inner.appendChild(moduleCard(s)));
@@ -614,9 +625,11 @@
         (j.brokerLabel ? " · " + j.brokerLabel : "") +
         (named ? " · " + named + " имён из разметки" : "");
       renderShelves(shelves);
+      stampBusGaps();
       liveKeys = { ready: true };
       shelves.forEach((s) => { liveKeys[s.deviceTopicKey] = true; });
       renderPoured();
+      loadPreview();
       if (shelves.length) $("scan").textContent = "Обновить";
     }
     async function loadPoured() {
