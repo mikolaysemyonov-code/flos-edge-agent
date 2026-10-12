@@ -10,7 +10,7 @@ import {
   readDeskMarking,
   upsertDeskShelfMark,
 } from "./runtime-desk-marking.mjs";
-import { pouredHintsForContact, readPouredDeskSnapshot } from "./runtime-desk-rules-marks.mjs";
+import { cardsFromHints, pouredHintsForContact, readPouredDeskSnapshot } from "./runtime-desk-rules-marks.mjs";
 import { formatDeskShelfLabel, groupDeskShelves, rememberDeskShelves } from "./runtime-desk-shelves.mjs";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
@@ -61,10 +61,17 @@ function withPouredHints(shelves) {
   const rules = readPouredDeskSnapshot().rules || [];
   return (Array.isArray(shelves) ? shelves : []).map((s) => ({
     ...s,
-    channels: (Array.isArray(s.channels) ? s.channels : []).map((ch) => ({
-      ...ch,
-      hints: pouredHintsForContact(rules, s.deviceTopicKey, ch.controlId),
-    })),
+    channels: (Array.isArray(s.channels) ? s.channels : []).map((ch) => {
+      const hints = pouredHintsForContact(rules, s.deviceTopicKey, ch.controlId);
+      const deskCards = Array.isArray(ch.cards) && ch.cards.length ? ch.cards : [];
+      const cards = deskCards.length ? deskCards : cardsFromHints(hints);
+      return {
+        ...ch,
+        hints,
+        cards,
+        cardsSource: deskCards.length ? "desk" : cards.length ? "rules" : "",
+      };
+    }),
   }));
 }
 

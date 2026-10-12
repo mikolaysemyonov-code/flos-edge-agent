@@ -73,6 +73,19 @@
     }
     .from-rules, .kind { color: rgb(var(--sky) / .85); font-size: .68rem; }
     .from-rules { display: block; margin-top: .12rem; }
+    .chips { display: flex; flex-wrap: wrap; gap: .3rem; margin-top: .35rem; }
+    .chip {
+      appearance: none; border: 0; cursor: pointer;
+      padding: .18rem .55rem; border-radius: 999px;
+      font: inherit; font-size: .68rem; font-weight: 600;
+      color: var(--mute);
+      background: rgb(255 255 255 / .05);
+    }
+    .chip[aria-pressed="true"] {
+      color: rgb(186 230 253);
+      background: rgb(var(--sky) / .16);
+      box-shadow: 0 0 12px rgb(var(--sky) / .22);
+    }
     .orphan { color: rgb(var(--bad)); }
     #poured li { display: flex; justify-content: space-between; align-items: baseline; gap: 1rem; padding: .55rem 0; border-top: 1px solid rgb(255 255 255 / .08); }
     #poured li:first-child { border-top: 0; }
@@ -166,6 +179,11 @@
     let pouredRules = [];
     let lastShelvesRows = [];
     let activeTab = "light";
+    const CARDS = [
+      { id: "light_button_toggle", ru: "Переключение" },
+      { id: "light_dim_hold_mcm", ru: "Дим-удержание" },
+      { id: "light_all_off", ru: "Все выкл" },
+    ];
     function enrollRu(s) {
       if (s === "restored" || s === "online" || s === "enrolled_awaiting_heartbeat") return "на связи";
       if (s === "enrolling") return "подключаюсь";
@@ -253,12 +271,18 @@
         line.textContent = "Нет /runtime/health — откройте этот адрес с машины в сети щита.";
       }
     }
-    async function saveName(key, controlId, name) {
+    async function saveMark(body) {
       await fetch("/runtime/desk-marking", {
         method: "PUT",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ deviceTopicKey: key, controlId: controlId, name: name }),
+        body: JSON.stringify(body),
       });
+    }
+    async function saveName(key, controlId, name) {
+      await saveMark({ deviceTopicKey: key, controlId: controlId, name: name });
+    }
+    async function saveCards(key, controlId, cards) {
+      await saveMark({ deviceTopicKey: key, controlId: controlId, cards: cards });
     }
     function channelRow(s, ch) {
       const row = document.createElement("li");
@@ -277,13 +301,26 @@
       row.appendChild(knob);
       const grow = document.createElement("div");
       grow.appendChild(input);
-      const hints = Array.isArray(ch.hints) ? ch.hints.filter(Boolean) : [];
-      if (hints.length || (ch.source === "rules" && ch.name)) {
-        const tag = document.createElement("span");
-        tag.className = "from-rules";
-        tag.textContent = hints.length ? hints.join(" · ") : "разметка";
-        grow.appendChild(tag);
-      }
+      const selected = new Set(Array.isArray(ch.cards) ? ch.cards : []);
+      const chips = document.createElement("div");
+      chips.className = "chips";
+      chips.setAttribute("role", "group");
+      chips.setAttribute("aria-label", "Типовая карточка");
+      CARDS.forEach((card) => {
+        const btn = document.createElement("button");
+        btn.type = "button";
+        btn.className = "chip";
+        btn.textContent = card.ru;
+        btn.setAttribute("aria-pressed", selected.has(card.id) ? "true" : "false");
+        btn.addEventListener("click", () => {
+          if (selected.has(card.id)) selected.delete(card.id);
+          else selected.add(card.id);
+          btn.setAttribute("aria-pressed", selected.has(card.id) ? "true" : "false");
+          saveCards(s.deviceTopicKey, ch.controlId, [...selected]).catch(() => {});
+        });
+        chips.appendChild(btn);
+      });
+      grow.appendChild(chips);
       row.appendChild(grow);
       return row;
     }
@@ -301,8 +338,8 @@
       head.appendChild(sku);
       head.appendChild(meta);
       li.appendChild(head);
-      const featured = (s.channels || []).filter((c) => c.name || (c.hints && c.hints.length));
-      const rest = (s.channels || []).filter((c) => !c.name && !(c.hints && c.hints.length));
+      const featured = (s.channels || []).filter((c) => c.name || (c.hints && c.hints.length) || (c.cards && c.cards.length));
+      const rest = (s.channels || []).filter((c) => !c.name && !(c.hints && c.hints.length) && !(c.cards && c.cards.length));
       const chs = document.createElement("ul");
       chs.className = "channels";
       featured.forEach((ch) => chs.appendChild(channelRow(s, ch)));
@@ -324,7 +361,7 @@
       return li;
     }
     function hasFeatured(s) {
-      return (s.channels || []).some((c) => c.name || (c.hints && c.hints.length));
+      return (s.channels || []).some((c) => c.name || (c.hints && c.hints.length) || (c.cards && c.cards.length));
     }
     function fillList(id, rows, emptyText) {
       const ul = $(id);

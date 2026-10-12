@@ -208,6 +208,18 @@ function disambiguateMarkingTitles(rows) {
   });
 }
 
+export const DESK_CARD_IDS = ["light_button_toggle", "light_dim_hold_mcm", "light_all_off"];
+export const DESK_CARD_RU = {
+  light_button_toggle: "Переключение",
+  light_dim_hold_mcm: "Дим-удержание",
+  light_all_off: "Все выкл",
+};
+
+export function cardsFromHints(hints) {
+  const set = new Set(Array.isArray(hints) ? hints : []);
+  return DESK_CARD_IDS.filter((id) => set.has(DESK_CARD_RU[id]));
+}
+
 /** На полке — имя карточки, без «· Channel 3 · MCM8». */
 export function shortPouredHint(title) {
   return String(title || "")

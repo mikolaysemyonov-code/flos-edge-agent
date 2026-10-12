@@ -3,7 +3,7 @@
  */
 import fs from "node:fs";
 import path from "node:path";
-import { liveDeskDeviceKey, readPouredChannelMarks } from "./runtime-desk-rules-marks.mjs";
+import { DESK_CARD_IDS, liveDeskDeviceKey, readPouredChannelMarks } from "./runtime-desk-rules-marks.mjs";
 
 const MAX_NAME = 80;
 
@@ -40,6 +40,12 @@ function writeDoc(doc) {
   fs.writeFileSync(file, JSON.stringify(doc, null, 2) + "\n", "utf8");
 }
 
+function cleanCards(value) {
+  if (!Array.isArray(value)) return null;
+  const allow = new Set(DESK_CARD_IDS);
+  return [...new Set(value.map((id) => String(id)).filter((id) => allow.has(id)))];
+}
+
 /** Merge one contact. Never deletes sibling channels. Never writes wb-rules. */
 export function upsertDeskShelfMark(input) {
   const key = String(input?.deviceTopicKey ?? "").trim();
@@ -48,12 +54,22 @@ export function upsertDeskShelfMark(input) {
   if (!controlId || controlId.length > 40 || /\/devices\//i.test(controlId)) {
     return { ok: false, error: "need_control" };
   }
-  const name = cleanName(input?.name);
   const doc = readDeskMarking();
   const prev = doc.shelves[key] && typeof doc.shelves[key] === "object" ? doc.shelves[key] : {};
   const channels = prev.channels && typeof prev.channels === "object" ? { ...prev.channels } : {};
-  if (!name) delete channels[controlId];
-  else channels[controlId] = { name };
+  const cur = channels[controlId] && typeof channels[controlId] === "object" ? { ...channels[controlId] } : {};
+  if (input?.name !== undefined) {
+    const name = cleanName(input.name);
+    if (!name) delete cur.name;
+    else cur.name = name;
+  }
+  if (input?.cards !== undefined) {
+    const cards = cleanCards(input.cards);
+    if (!cards || cards.length === 0) delete cur.cards;
+    else cur.cards = cards;
+  }
+  if (!cur.name && !(cur.cards && cur.cards.length)) delete channels[controlId];
+  else channels[controlId] = cur;
   if (Object.keys(channels).length === 0) delete doc.shelves[key];
   else doc.shelves[key] = { ...prev, channels };
   writeDoc(doc);
@@ -72,7 +88,14 @@ export function applyMarksToShelves(shelves, doc = readDeskMarking(), poured = r
       const typed = typeof local?.[ch.controlId]?.name === "string" ? local[ch.controlId].name : "";
       const pouredName = typeof fromRules[ch.controlId] === "string" ? fromRules[ch.controlId] : "";
       const name = typed || pouredName;
-      return { ...ch, name, source: typed ? "desk" : pouredName ? "rules" : "" };
+      const deskCards = Array.isArray(local?.[ch.controlId]?.cards) ? local[ch.controlId].cards : [];
+      return {
+        ...ch,
+        name,
+        source: typed ? "desk" : pouredName ? "rules" : "",
+        cards: deskCards,
+        cardsSource: deskCards.length ? "desk" : "",
+      };
     });
     return { ...s, channels, name: "" };
   });
