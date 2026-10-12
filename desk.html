@@ -141,48 +141,74 @@
       }
       return row;
     }
+    function isBareRelay(s) {
+      const ch = s.channels || [];
+      return ch.length > 0 && ch.every((c) => /^K\d+$/i.test(c.controlId)) && !ch.some((c) => c.name);
+    }
+    function moduleCard(s) {
+      const li = document.createElement("li");
+      li.className = "mod";
+      const head = document.createElement("div");
+      head.className = "head";
+      const sku = document.createElement("span");
+      sku.className = "sku";
+      sku.textContent = s.label || s.deviceTopicKey;
+      const meta = document.createElement("span");
+      meta.className = "ch";
+      meta.textContent = s.hint || (s.channelCount ? s.channelCount + " кан." : "");
+      head.appendChild(sku);
+      head.appendChild(meta);
+      li.appendChild(head);
+      const named = (s.channels || []).filter((c) => c.name);
+      const rest = (s.channels || []).filter((c) => !c.name);
+      const chs = document.createElement("ul");
+      chs.className = "channels";
+      named.forEach((ch) => chs.appendChild(channelRow(s, ch)));
+      if (!named.length) rest.forEach((ch) => chs.appendChild(channelRow(s, ch)));
+      li.appendChild(chs);
+      if (named.length && rest.length) {
+        const det = document.createElement("details");
+        det.className = "more";
+        const sum = document.createElement("summary");
+        sum.textContent = "ещё " + rest.length + " без имени";
+        det.appendChild(sum);
+        const inner = document.createElement("ul");
+        inner.className = "channels";
+        rest.forEach((ch) => inner.appendChild(channelRow(s, ch)));
+        det.appendChild(inner);
+        li.appendChild(det);
+      }
+      return li;
+    }
     function renderShelves(rows) {
       const ul = $("shelves");
       ul.innerHTML = "";
-      const list = (rows || []).slice().sort((a, b) => {
-        const na = (a.channels || []).some((c) => c.name) ? 0 : 1;
-        const nb = (b.channels || []).some((c) => c.name) ? 0 : 1;
-        return na - nb;
+      const named = [];
+      const other = [];
+      const relays = [];
+      (rows || []).forEach((s) => {
+        if ((s.channels || []).some((c) => c.name)) named.push(s);
+        else if (isBareRelay(s)) relays.push(s);
+        else other.push(s);
       });
-      list.forEach((s) => {
-        const li = document.createElement("li");
-        li.className = "mod";
-        const head = document.createElement("div");
-        head.className = "head";
-        const sku = document.createElement("span");
-        sku.className = "sku";
-        sku.textContent = s.label || s.deviceTopicKey;
-        const meta = document.createElement("span");
-        meta.className = "ch";
-        meta.textContent = s.hint || (s.channelCount ? s.channelCount + " кан." : "");
-        head.appendChild(sku);
-        head.appendChild(meta);
-        li.appendChild(head);
-        const named = (s.channels || []).filter((c) => c.name);
-        const rest = (s.channels || []).filter((c) => !c.name);
-        const chs = document.createElement("ul");
-        chs.className = "channels";
-        named.forEach((ch) => chs.appendChild(channelRow(s, ch)));
-        li.appendChild(chs);
-        if (rest.length) {
-          const det = document.createElement("details");
-          det.className = "more";
-          const sum = document.createElement("summary");
-          sum.textContent = named.length ? "ещё " + rest.length + " без имени" : rest.length + " контактов без имени";
-          det.appendChild(sum);
-          const inner = document.createElement("ul");
-          inner.className = "channels";
-          rest.forEach((ch) => inner.appendChild(channelRow(s, ch)));
-          det.appendChild(inner);
-          li.appendChild(det);
-        }
-        ul.appendChild(li);
-      });
+      named.concat(other).forEach((s) => ul.appendChild(moduleCard(s)));
+      if (relays.length) {
+        const wrap = document.createElement("li");
+        wrap.className = "mod";
+        const det = document.createElement("details");
+        det.className = "more";
+        const sum = document.createElement("summary");
+        sum.textContent = "ещё " + relays.length + " реле без имён";
+        det.appendChild(sum);
+        const inner = document.createElement("ul");
+        inner.style.listStyle = "none";
+        inner.style.margin = ".5rem 0 0";
+        inner.style.padding = "0";
+        relays.forEach((s) => inner.appendChild(moduleCard(s)));
+        det.appendChild(inner);
+        wrap.appendChild(det);
+        ul.appendChild(wrap);
+      }
     }
     async function scanNow() {
       $("scan").disabled = true;

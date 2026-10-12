@@ -70,7 +70,11 @@ function isRelayFamily(type) {
   return /^(mr6c|mr6cu|mr6cv3|mr6c-v3|mr12|mr6lv|mrm)/i.test(String(type ?? ""));
 }
 
-/** Силовой/входной канал. У реле только K1… — не Input/Safety. */
+function isLedFamily(type) {
+  return /^(led|ampled)$/i.test(String(type ?? ""));
+}
+
+/** Силовой/входной канал. У реле только K1… — не Input/Safety. У LED — Channel, не CCT/RGB. */
 export function isDeskShelfChannelControl(controlId, deviceTopicKey) {
   const c = String(controlId ?? "").trim();
   if (!c) return false;
@@ -79,6 +83,7 @@ export function isDeskShelfChannelControl(controlId, deviceTopicKey) {
   }
   const type = parseDeskDeviceKey(deviceTopicKey)?.type ?? "";
   if (isRelayFamily(type)) return /^K\d+$/i.test(c);
+  if (isLedFamily(type)) return /^Channel \d+$/i.test(c);
   if (/^K\d+$/i.test(c)) return true;
   if (/^Channel \d+$/i.test(c)) return true;
   if (/^(CCT|RGB)\d+$/i.test(c)) return true;
