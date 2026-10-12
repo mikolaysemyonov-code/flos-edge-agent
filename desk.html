@@ -24,7 +24,7 @@
       color: var(--ink);
       -webkit-font-smoothing: antialiased;
     }
-    main { max-width: 42rem; margin: 0 auto; padding: 1.25rem 1.15rem 9.5rem; }
+    main { max-width: 42rem; margin: 0 auto; padding: 1.25rem 1.15rem 11rem; }
     .kicker { margin: 0; color: var(--mute); font-size: .72rem; letter-spacing: .08em; text-transform: uppercase; }
     .top { display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; margin: .35rem 0 1rem; }
     h1 { font-size: 1.85rem; font-weight: 650; letter-spacing: -.03em; margin: 0; }
@@ -50,7 +50,7 @@
     .status p { margin: 0; font-size: .82rem; color: var(--mute); }
     .ok p { color: rgb(var(--ok)); }
     .bad p { color: rgb(var(--bad)); }
-    .panel { padding: 1rem 1.1rem 5.75rem; }
+    .panel { padding: 1rem 1.1rem 8.75rem; }
     .panel[hidden] { display: none; }
     .meta { margin: 0 0 .65rem; color: var(--mute); font-size: .82rem; }
     ul { list-style: none; margin: 0; padding: 0; }
@@ -201,18 +201,28 @@
     }
     #cardMask[hidden], .sheet[hidden] { display: none; }
     .sheet {
-      position: fixed; left: 50%; bottom: calc(4.9rem + env(safe-area-inset-bottom));
+      position: fixed; left: 50%;
+      top: 5.25rem; bottom: calc(4.9rem + env(safe-area-inset-bottom));
       transform: translateX(-50%); z-index: 25;
       width: min(40rem, calc(100% - 1.4rem));
-      max-height: min(72vh, 36rem); overflow: auto;
-      padding: 1rem 1.05rem 1.15rem;
+      display: flex; flex-direction: column;
+      overflow: hidden;
+      padding: 1rem 1.05rem 1.05rem;
       border: 1px solid rgb(var(--sky) / .32); border-radius: 1.15rem;
-      background: rgb(18 18 22 / .96);
+      background: #121216;
       box-shadow: 0 18px 50px -16px rgb(0 0 0 / .7);
     }
-    .sheet h3 { margin: 0 0 .35rem; font-size: 1.05rem; }
+    .sheet-head { flex: none; }
+    .sheet-body { flex: 1; min-height: 0; overflow: auto; padding-right: .15rem; }
+    .sheet h3 { margin: 0 0 .3rem; font-size: 1.05rem; }
     .sheet .fld { display: block; margin: .7rem 0 .2rem; font-size: .68rem; letter-spacing: .07em; text-transform: uppercase; color: var(--mute); }
-    .sheet .actions { display: flex; gap: .5rem; margin-top: .85rem; }
+    .sheet .actions { flex: none; display: flex; gap: .5rem; margin-top: .75rem; }
+    .sheet select.bind {
+      background: rgb(255 255 255 / .06);
+      border: 1px solid rgb(255 255 255 / .12);
+      border-radius: .55rem;
+      padding: .45rem .6rem;
+    }
     .picks { display: flex; flex-direction: column; gap: .4rem; margin: .35rem 0 .15rem; }
     .picks label { display: flex; align-items: center; gap: .55rem; font-size: .86rem; }
     .picks input { width: 1rem; height: 1rem; accent-color: rgb(56 189 248); }
@@ -646,19 +656,22 @@
       return (name || (s && s.label) || c.deviceTopicKey) + " · " + c.controlId;
     }
     function namedTriggers() {
-      const out = [];
+      const named = [];
+      const rest = [];
       (lastShelvesRows || []).forEach((s) => {
         (s.channels || []).forEach((ch) => {
           if (/^(Channel\s+\d+|K\d+)$/i.test(ch.controlId)) return;
           const name = String(ch.name || "").trim();
-          out.push({
+          const row = {
             deviceTopicKey: s.deviceTopicKey,
             controlId: ch.controlId,
             label: name ? prettyContactName(name) : (s.label || "вход") + " · " + ch.controlId,
-          });
+          };
+          if (name) named.push(row);
+          else rest.push(row);
         });
       });
-      return out;
+      return named.concat(rest);
     }
     function fillSelect(sel, rows, placeholder) {
       sel.replaceChildren();
@@ -799,7 +812,13 @@
       cancel.textContent = "Закрыть";
       cancel.addEventListener("click", closeCardSheet);
       actions.append(save, cancel);
-      box.append(h, p, trigLab, trig, tgtLab, tgtNode, err, actions);
+      const head = document.createElement("div");
+      head.className = "sheet-head";
+      head.append(h, p);
+      const body = document.createElement("div");
+      body.className = "sheet-body";
+      body.append(trigLab, trig, tgtLab, tgtNode, err);
+      box.append(head, body, actions);
     }
     const CARD_ICO = {
       light_button_toggle: "<svg viewBox='0 0 24 24'><rect x='2' y='7' width='20' height='10' rx='5'/><circle cx='16' cy='12' r='3'/></svg>",
@@ -890,6 +909,15 @@
         if (j.ok && j.shelves) showShelves(j);
       }).catch(() => {});
     }
+    function shortLoadName(name, controlId) {
+      const pretty = prettyContactName(name);
+      const ch = String(controlId || "").replace(/^Channel\s+/i, "Ch");
+      const parts = pretty.split(/\s*·\s*/).filter(Boolean);
+      if (parts.length < 2) return pretty || ch;
+      const rest = parts.slice(1).join(" · ").replace(/светов(ая|ой)?\s*лини[яи](\s*\d+)?/gi, "").replace(/\s+/g, " ").trim();
+      if (!rest) return parts[0] + " · " + ch;
+      return parts[0] + " · " + rest;
+    }
     function namedLoads() {
       const raw = [];
       (lastShelvesRows || []).forEach((s) => {
@@ -900,7 +928,7 @@
           raw.push({
             deviceTopicKey: s.deviceTopicKey,
             controlId: ch.controlId,
-            name: prettyContactName(name),
+            name: shortLoadName(name, ch.controlId),
             room: nameRoom(name),
             slave: Number((/_(\d+)$/.exec(s.deviceTopicKey) || [])[1] || 0),
             ch: Number((/(\d+)\s*$/.exec(ch.controlId) || [])[1] || 0),
