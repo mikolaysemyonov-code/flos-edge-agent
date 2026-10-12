@@ -50,6 +50,7 @@
     .status p { margin: 0; font-size: .82rem; color: var(--mute); }
     .ok p { color: rgb(var(--ok)); }
     .bad p { color: rgb(var(--bad)); }
+    .panel { padding: 1rem 1.1rem 1.5rem; }
     .panel[hidden] { display: none; }
     .meta { margin: 0 0 .65rem; color: var(--mute); font-size: .82rem; }
     ul { list-style: none; margin: 0; padding: 0; }
@@ -124,19 +125,19 @@
       <span class="dot" aria-hidden="true"></span>
       <p>Спрашиваю агента…</p>
     </div>
-    <section id="panel-light" class="panel glass" style="padding: 1rem 1.1rem 1.05rem" data-tab="light">
+    <section id="panel-light" class="panel glass" data-tab="light">
       <p id="bus" class="meta">Шина ещё не снимали.</p>
       <ul id="shelves-light"></ul>
     </section>
-    <section id="panel-buttons" class="panel glass" hidden style="padding: 1rem 1.1rem 1.05rem" data-tab="buttons">
+    <section id="panel-buttons" class="panel glass" hidden data-tab="buttons">
       <p class="meta">Входы MCM и GPIO — кнопки сценариев.</p>
       <ul id="shelves-buttons"></ul>
     </section>
-    <section id="panel-relays" class="panel glass" hidden style="padding: 1rem 1.1rem 1.05rem" data-tab="relays">
+    <section id="panel-relays" class="panel glass" hidden data-tab="relays">
       <p class="meta">Силовые K. Имена появятся, когда линия попадёт в заливку.</p>
       <ul id="shelves-relays"></ul>
     </section>
-    <section id="panel-poured" class="panel glass" hidden style="padding: 1rem 1.1rem 1.05rem" data-tab="poured">
+    <section id="panel-poured" class="panel glass" hidden data-tab="poured">
       <p id="pouredHead" class="meta">Спрашиваю залитое…</p>
       <ul id="poured"></ul>
     </section>
@@ -165,6 +166,12 @@
     let pouredRules = [];
     let lastShelvesRows = [];
     let activeTab = "light";
+    function enrollRu(s) {
+      if (s === "restored" || s === "online" || s === "enrolled_awaiting_heartbeat") return "на связи";
+      if (s === "enrolling") return "подключаюсь";
+      if (s === "enroll_failed" || s === "enroll_transient") return "нет связи";
+      return s || "—";
+    }
     function kindRu(k) {
       if (k === "marking") return "разметка";
       if (k === "user") return "сценарий";
@@ -234,13 +241,12 @@
       try {
         const r = await fetch("/runtime/health");
         const j = await r.json();
-        const en = j.enrollment && j.enrollment.state ? j.enrollment.state : "—";
+        const en = enrollRu(j.enrollment && j.enrollment.state);
         const topics = j.mqttMirror && j.mqttMirror.topicCount;
         const ver = String(j.agentVersion || "").replace(/^.*\./, "");
-        const rules = j.rulesInventory && j.rulesInventory.userDefineRuleCount;
         box.className = "glass status " + (j.ok ? "ok" : "bad");
         line.textContent = j.ok
-          ? "Агент · " + en + (ver ? " · " + ver : "") + (topics != null ? " · " + topics + " топиков" : "") + (rules ? " · rules " + rules : "")
+          ? "Агент · " + en + (ver ? " · " + ver : "") + (topics != null ? " · " + topics + " топиков" : "")
           : "Агент не ответил";
       } catch (e) {
         box.className = "glass status bad";
@@ -381,7 +387,7 @@
       }, 0);
       $("bus").textContent = shelves.length + " модулей" +
         (j.brokerLabel ? " · " + j.brokerLabel : "") +
-        (named ? " · " + named + " имён из rules" : "");
+        (named ? " · " + named + " имён из разметки" : "");
       renderShelves(shelves);
       liveKeys = { ready: true };
       shelves.forEach((s) => { liveKeys[s.deviceTopicKey] = true; });
