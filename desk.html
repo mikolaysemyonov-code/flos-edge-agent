@@ -61,7 +61,7 @@
         name.textContent = s.label || s.deviceTopicKey;
         const ch = document.createElement("span");
         ch.className = "ch";
-        ch.textContent = s.channelCount ? s.channelCount + " кан." : "";
+        ch.textContent = s.hint || (s.channelCount ? s.channelCount + " кан." : "");
         li.appendChild(name);
         li.appendChild(ch);
         ul.appendChild(li);
