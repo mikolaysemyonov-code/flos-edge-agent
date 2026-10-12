@@ -121,6 +121,7 @@ function cardRu(ids) {
 export function buildDeskPourPreview(doc = readDeskMarking(), poured = readPouredChannelMarks(), rules) {
   const ruleRows = rules || readPouredDeskSnapshot().rules || [];
   const rows = [];
+  const gaps = [];
   const deskShelves = doc?.shelves && typeof doc.shelves === "object" ? doc.shelves : {};
   const keys = new Set([...Object.keys(deskShelves), ...Object.keys(poured || {})]);
   for (const deviceTopicKey of keys) {
@@ -132,13 +133,17 @@ export function buildDeskPourPreview(doc = readDeskMarking(), poured = readPoure
       const deskCards = Array.isArray(deskCh[controlId]?.cards) ? deskCh[controlId].cards : [];
       const pouredName = typeof pouredCh[controlId] === "string" ? pouredCh[controlId] : "";
       const pouredCards = cardsFromHints(pouredHintsForContact(ruleRows, deviceTopicKey, controlId));
-      if (!deskName && !deskCards.length) continue;
       const name = deskName || pouredName;
+      if (!name && !deskCards.length) continue;
       let status = "same";
       if (!name && deskCards.length) status = "blocked";
       else if (deskName && pouredName && deskName !== pouredName) status = "name";
       else if (deskName && !pouredName) status = "new_name";
       else if (deskCards.length && !sameCards(deskCards, pouredCards)) status = "card";
+      else if (name && !deskCards.length && !pouredCards.length) {
+        gaps.push({ deviceTopicKey, controlId, name, status: "no_card" });
+        continue;
+      }
       if (status === "same") continue;
       rows.push({
         deviceTopicKey,
@@ -155,5 +160,6 @@ export function buildDeskPourPreview(doc = readDeskMarking(), poured = readPoure
     canPour: false,
     reason: "Превью. Диск не трогаем.",
     rows,
+    gaps,
   };
 }

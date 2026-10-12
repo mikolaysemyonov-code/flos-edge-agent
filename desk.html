@@ -90,8 +90,8 @@
     }
     .loads { display: block; margin-top: .2rem; color: var(--mute); font-size: .72rem; }
     .orphan { color: rgb(var(--bad)); }
-    #poured li, #preview li, #pouredMarks li { display: flex; justify-content: space-between; align-items: baseline; gap: 1rem; padding: .55rem 0; border-top: 1px solid rgb(255 255 255 / .08); }
-    #poured li:first-child, #preview li:first-child, #pouredMarks li:first-child { border-top: 0; }
+    #poured li, #preview li, #pouredMarks li, #gaps li { display: flex; justify-content: space-between; align-items: baseline; gap: 1rem; padding: .55rem 0; border-top: 1px solid rgb(255 255 255 / .08); }
+    #poured li:first-child, #preview li:first-child, #pouredMarks li:first-child, #gaps li:first-child { border-top: 0; }
     details.more { margin: .1rem 0 .35rem; }
     details.more summary { color: var(--mute); font-size: .8rem; cursor: pointer; }
     .empty { margin: 2.5rem 1rem; text-align: center; color: var(--mute); }
@@ -157,6 +157,8 @@
       <p id="previewHead" class="meta">Сравниваю стол с диском…</p>
       <p style="margin:0 0 .75rem"><button id="pour" class="ghost" type="button" disabled>Залить</button></p>
       <ul id="preview"></ul>
+      <p id="gapsHead" class="meta" hidden></p>
+      <ul id="gaps"></ul>
       <p id="pouredHead" class="meta">Спрашиваю залитое…</p>
       <ul id="poured"></ul>
       <details id="pouredMarksWrap" class="more" hidden>
@@ -234,42 +236,50 @@
       if (s === "name") return "имя";
       if (s === "new_name") return "новое имя";
       if (s === "card") return "карточка";
+      if (s === "no_card") return "нет карточки";
       return s;
     }
     function shelfLabel(key) {
       const s = lastShelvesRows.find((r) => r.deviceTopicKey === key);
       return (s && s.label) || key;
     }
+    function previewRow(r) {
+      const li = document.createElement("li");
+      const left = document.createElement("div");
+      const title = document.createElement("div");
+      title.textContent = (r.name || "без имени") + (r.cards && r.cards.length ? " · " + r.cards.join(" · ") : "");
+      const sub = document.createElement("div");
+      sub.className = "meta";
+      sub.textContent = shelfLabel(r.deviceTopicKey) + " · " + r.controlId +
+        (r.pouredName && r.pouredName !== r.name ? " · на диске " + r.pouredName : "");
+      if (r.status === "blocked") sub.className = "meta orphan";
+      left.appendChild(title);
+      left.appendChild(sub);
+      const kind = document.createElement("span");
+      kind.className = "kind";
+      kind.textContent = previewStatusRu(r.status);
+      li.appendChild(left);
+      li.appendChild(kind);
+      return li;
+    }
     function renderPreview(j) {
       const ul = $("preview");
+      const gapsUl = $("gaps");
       ul.innerHTML = "";
+      gapsUl.innerHTML = "";
       const rows = j.rows || [];
+      const gaps = j.gaps || [];
       $("pour").disabled = true;
       $("previewHead").style.color = "";
       if (!rows.length) {
         $("previewHead").textContent = (j.reason || "Превью. Диск не трогаем.") + " · стол совпадает с диском";
-        return;
+      } else {
+        $("previewHead").textContent = (j.reason || "Превью. Диск не трогаем.") + " · " + rows.length + " отличий";
+        rows.forEach((r) => ul.appendChild(previewRow(r)));
       }
-      $("previewHead").textContent = (j.reason || "Превью. Диск не трогаем.") + " · " + rows.length + " отличий";
-      rows.forEach((r) => {
-        const li = document.createElement("li");
-        const left = document.createElement("div");
-        const title = document.createElement("div");
-        title.textContent = (r.name || "без имени") + (r.cards && r.cards.length ? " · " + r.cards.join(" · ") : "");
-        const sub = document.createElement("div");
-        sub.className = "meta";
-        sub.textContent = shelfLabel(r.deviceTopicKey) + " · " + r.controlId +
-          (r.pouredName && r.pouredName !== r.name ? " · на диске " + r.pouredName : "");
-        if (r.status === "blocked") sub.className = "meta orphan";
-        left.appendChild(title);
-        left.appendChild(sub);
-        const kind = document.createElement("span");
-        kind.className = "kind";
-        kind.textContent = previewStatusRu(r.status);
-        li.appendChild(left);
-        li.appendChild(kind);
-        ul.appendChild(li);
-      });
+      $("gapsHead").hidden = !gaps.length;
+      $("gapsHead").textContent = gaps.length ? gaps.length + " линий без карточки" : "";
+      gaps.forEach((r) => gapsUl.appendChild(previewRow(r)));
     }
     async function loadPreview() {
       try {
