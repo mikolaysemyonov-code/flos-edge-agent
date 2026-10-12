@@ -192,7 +192,21 @@ export function collapsePouredRuleRows(rows) {
     });
   }
   marking.sort((a, b) => String(a.title).localeCompare(String(b.title), "ru"));
-  return decorateScenarioTitles([...marking, ...groups.values()]);
+  return decorateScenarioTitles(disambiguateMarkingTitles([...marking, ...groups.values()]));
+}
+
+function disambiguateMarkingTitles(rows) {
+  const counts = new Map();
+  for (const r of rows) {
+    if (r.kind !== "marking") continue;
+    const t = String(r.title ?? "");
+    counts.set(t, (counts.get(t) || 0) + 1);
+  }
+  return rows.map((r) => {
+    if (r.kind !== "marking" || (counts.get(r.title) || 0) < 2) return r;
+    const knob = r.contacts?.[0]?.controlId;
+    return knob ? { ...r, title: `${r.title} · ${knob}` } : r;
+  });
 }
 
 export function readPouredDeskSnapshot() {
