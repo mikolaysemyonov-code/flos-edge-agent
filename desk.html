@@ -147,8 +147,12 @@
     function showShelves(j) {
       const shelves = j.shelves || [];
       $("bus").className = "ok";
+      const named = shelves.reduce(function (n, s) {
+        return n + (s.channels || []).filter(function (c) { return c.source === "rules" && c.name; }).length;
+      }, 0);
       $("bus").textContent = "На шине " + shelves.length + " модулей" +
-        (j.brokerLabel ? " · " + j.brokerLabel : "");
+        (j.brokerLabel ? " · " + j.brokerLabel : "") +
+        (named ? " · " + named + " имён из rules" : "");
       renderShelves(shelves);
       if (shelves.length) $("scan").textContent = "Обновить шину";
     }

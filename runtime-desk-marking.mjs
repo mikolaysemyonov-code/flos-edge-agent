@@ -3,7 +3,7 @@
  */
 import fs from "node:fs";
 import path from "node:path";
-import { readPouredChannelMarks } from "./runtime-desk-rules-marks.mjs";
+import { liveDeskDeviceKey, readPouredChannelMarks } from "./runtime-desk-rules-marks.mjs";
 
 const MAX_NAME = 80;
 
@@ -64,7 +64,10 @@ export function applyMarksToShelves(shelves, doc = readDeskMarking(), poured = r
   const marks = doc?.shelves ?? {};
   return (Array.isArray(shelves) ? shelves : []).map((s) => {
     const local = marks[s.deviceTopicKey]?.channels;
-    const fromRules = poured?.[s.deviceTopicKey] ?? {};
+    const fromRules =
+      poured?.[s.deviceTopicKey] ??
+      poured?.[liveDeskDeviceKey(s.deviceTopicKey)] ??
+      {};
     const channels = (Array.isArray(s.channels) ? s.channels : []).map((ch) => {
       const typed = typeof local?.[ch.controlId]?.name === "string" ? local[ch.controlId].name : "";
       const pouredName = typeof fromRules[ch.controlId] === "string" ? fromRules[ch.controlId] : "";

@@ -26,8 +26,19 @@ export function parseCellTitles(source) {
   return titles;
 }
 
+/** Live MQTT id: desk/rules often write wb-mr6c-v3_* / wb-mr6c_*. */
+export function liveDeskDeviceKey(raw) {
+  let s = String(raw ?? "").trim().toLowerCase();
+  if (/^wb-mr6c_\d/.test(s)) s = `wb-mr6cu_${s.slice("wb-mr6c_".length)}`;
+  if (/^wb-mr6c-v3_/.test(s)) s = `wb-mr6cv3_${s.slice("wb-mr6c-v3_".length)}`;
+  if (s.startsWith("wb-mrm2_") && !s.startsWith("wb-mrm2-mini_")) {
+    s = `wb-mrm2-mini_${s.slice("wb-mrm2_".length)}`;
+  }
+  return canonicalDeskShelfKey(s);
+}
+
 function putMark(out, deviceKey, controlId, name) {
-  const key = canonicalDeskShelfKey(deviceKey);
+  const key = liveDeskDeviceKey(deviceKey);
   const cid = String(controlId ?? "").trim();
   const n = String(name ?? "").trim();
   if (!key || !cid || !n) return;
@@ -41,12 +52,12 @@ export function parseChannelMarksFromRules(source) {
   const titles = parseCellTitles(text);
   const out = {};
   const ruleRe =
-    /defineRule\s*\(\s*"(fl_rt_(?:cmd|mir)_)([^"]+)"[\s\S]*?(?=defineRule\s*\(|$)/g;
+    /defineRule\s*\(\s*['"](fl_rt_(?:cmd|mir)_)([^'"]+)['"][\s\S]*?(?=defineRule\s*\(|$)/g;
   let m;
   while ((m = ruleRe.exec(text))) {
     const controlId = m[2];
     const chunk = m[0];
-    const cell = /"(wb-[a-z0-9-]+_\d+(?:_\d+)?)\/([^"]+)"/i.exec(chunk);
+    const cell = /['"](wb-[a-z0-9-]+_\d+(?:_\d+)?)\/([^'"]+)['"]/i.exec(chunk);
     if (!cell) continue;
     const title = titles[controlId] || titles[controlId.replace(/_+$/, "")];
     if (title) putMark(out, cell[1], cell[2], title.replace(/\s*·\s*яркость$/i, ""));
@@ -64,7 +75,7 @@ export function readPouredChannelMarks() {
     return out;
   }
   for (const name of files) {
-    if (!/^40_rules.*\.js$/i.test(name) && name !== "40_rules_integrator.js") continue;
+    if (!/^(00_|15_|20_|30_|40_rules).*\.js$/i.test(name) && name !== "40_rules_integrator.js") continue;
     try {
       const parsed = parseChannelMarksFromRules(fs.readFileSync(path.join(dir, name), "utf8"));
       for (const [dev, ch] of Object.entries(parsed)) {
