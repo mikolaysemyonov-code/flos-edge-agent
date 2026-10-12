@@ -10,8 +10,8 @@ import {
   readDeskMarking,
   upsertDeskShelfMark,
 } from "./runtime-desk-marking.mjs";
-import { readPouredDeskSnapshot } from "./runtime-desk-rules-marks.mjs";
-import { formatDeskShelfLabel, groupDeskShelves } from "./runtime-desk-shelves.mjs";
+import { pouredHintsForContact, readPouredDeskSnapshot } from "./runtime-desk-rules-marks.mjs";
+import { formatDeskShelfLabel, groupDeskShelves, rememberDeskShelves } from "./runtime-desk-shelves.mjs";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 
@@ -57,6 +57,17 @@ export function readLastDeskShelves() {
   }
 }
 
+function withPouredHints(shelves) {
+  const rules = readPouredDeskSnapshot().rules || [];
+  return (Array.isArray(shelves) ? shelves : []).map((s) => ({
+    ...s,
+    channels: (Array.isArray(s.channels) ? s.channels : []).map((ch) => ({
+      ...ch,
+      hints: pouredHintsForContact(rules, s.deviceTopicKey, ch.controlId),
+    })),
+  }));
+}
+
 export function writeLastDeskShelves(shelves, brokerLabel) {
   const file = lastShelvesPath();
   fs.mkdirSync(path.dirname(file), { recursive: true });
@@ -80,7 +91,7 @@ export async function handleRuntimeMqttScan(req, res) {
   const method = (req.method ?? "GET").toUpperCase();
   if (method === "GET") {
     const last = readLastDeskShelves();
-    last.shelves = applyMarksToShelves(last.shelves);
+    last.shelves = withPouredHints(applyMarksToShelves(last.shelves));
     jsonEnd(res, 200, last);
     return;
   }
@@ -109,7 +120,9 @@ export async function handleRuntimeMqttScan(req, res) {
   try {
     const out = await mqttScanHandler(body);
     if (out?.ok && Array.isArray(out.snapshot?.entries)) {
-      out.shelves = applyMarksToShelves(groupDeskShelves(out.snapshot.entries));
+      const grouped = groupDeskShelves(out.snapshot.entries);
+      const merged = rememberDeskShelves(readLastDeskShelves().shelves, grouped);
+      out.shelves = withPouredHints(applyMarksToShelves(merged));
       if (out.shelves.length) {
         writeLastDeskShelves(
           out.shelves.map(({ name: _n, room: _r, channels, ...row }) => ({

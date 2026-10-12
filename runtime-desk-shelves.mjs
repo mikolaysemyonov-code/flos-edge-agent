@@ -164,3 +164,19 @@ export function groupDeskShelves(entries) {
       return (pa?.slave ?? 0) - (pb?.slave ?? 0);
     });
 }
+
+/** Обрезанный скан (подмножество) не выкидывает уже виденные полки. */
+export function rememberDeskShelves(prev, next) {
+  const prevArr = Array.isArray(prev) ? prev : [];
+  const nextArr = Array.isArray(next) ? next : [];
+  if (!nextArr.length) return prevArr;
+  if (!prevArr.length) return nextArr;
+  const prevKeys = new Set(prevArr.map((s) => s.deviceTopicKey));
+  const nextKeys = new Set(nextArr.map((s) => s.deviceTopicKey));
+  let missing = 0;
+  for (const k of prevKeys) if (!nextKeys.has(k)) missing += 1;
+  let extra = 0;
+  for (const k of nextKeys) if (!prevKeys.has(k)) extra += 1;
+  if (!(missing > 0 && extra === 0 && nextKeys.size < prevKeys.size)) return nextArr;
+  return nextArr.concat(prevArr.filter((s) => !nextKeys.has(s.deviceTopicKey)));
+}

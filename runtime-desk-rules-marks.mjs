@@ -208,6 +208,27 @@ function disambiguateMarkingTitles(rows) {
   });
 }
 
+/** Сценарии на контакте: что поправить, без тел rules. */
+export function pouredHintsForContact(rules, deviceTopicKey, controlId) {
+  const key = liveDeskDeviceKey(deviceTopicKey);
+  const cid = String(controlId ?? "").trim();
+  if (!key || !cid) return [];
+  const titles = [];
+  const seen = new Set();
+  for (const r of Array.isArray(rules) ? rules : []) {
+    if (r.kind === "marking") continue;
+    const hit = (r.contacts || []).some(
+      (c) => liveDeskDeviceKey(c.deviceTopicKey) === key && String(c.controlId) === cid,
+    );
+    if (!hit) continue;
+    const t = String(r.title || "").trim();
+    if (!t || seen.has(t)) continue;
+    seen.add(t);
+    titles.push(t);
+  }
+  return titles;
+}
+
 export function readPouredDeskSnapshot() {
   const files = listShardFiles();
   const rules = [];

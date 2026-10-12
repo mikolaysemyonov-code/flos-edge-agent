@@ -133,10 +133,11 @@
       input.addEventListener("blur", persist);
       row.appendChild(knob);
       row.appendChild(input);
-      if (ch.source === "rules" && ch.name) {
+      const hints = Array.isArray(ch.hints) ? ch.hints.filter(Boolean) : [];
+      if (hints.length || (ch.source === "rules" && ch.name)) {
         const tag = document.createElement("span");
         tag.className = "from-rules";
-        tag.textContent = "rules";
+        tag.textContent = hints.length ? hints.join(" · ") : "rules";
         row.appendChild(tag);
       }
       return row;
@@ -190,6 +191,11 @@
         if ((s.channels || []).some((c) => c.name)) named.push(s);
         else if (isBareRelay(s)) relays.push(s);
         else other.push(s);
+      });
+      other.sort((a, b) => {
+        const ia = /mcm|gpio|mdi/i.test(a.deviceTopicKey) ? 0 : 1;
+        const ib = /mcm|gpio|mdi/i.test(b.deviceTopicKey) ? 0 : 1;
+        return ia - ib;
       });
       named.concat(other).forEach((s) => ul.appendChild(moduleCard(s)));
       if (relays.length) {
