@@ -50,7 +50,7 @@
     .status p { margin: 0; font-size: .82rem; color: var(--mute); }
     .ok p { color: rgb(var(--ok)); }
     .bad p { color: rgb(var(--bad)); }
-    .panel { padding: 1rem 1.1rem 1.5rem; }
+    .panel { padding: 1rem 1.1rem 5.75rem; }
     .panel[hidden] { display: none; }
     .meta { margin: 0 0 .65rem; color: var(--mute); font-size: .82rem; }
     ul { list-style: none; margin: 0; padding: 0; }
@@ -175,24 +175,54 @@
     @media (min-width: 640px) { .vitrine { grid-template-columns: 1fr 1fr; } }
     button.vcard {
       appearance: none; border: 1px solid rgb(255 255 255 / .12);
-      background: linear-gradient(180deg, rgb(24 24 27 / .95), rgb(9 9 11 / .92));
+      background: linear-gradient(180deg, rgb(255 255 255 / .07), rgb(255 255 255 / .025));
       color: inherit; font: inherit; text-align: left; cursor: pointer;
-      min-height: 7.2rem; border-radius: 1.25rem; padding: .9rem 1rem 1rem;
-      display: flex; flex-direction: column; justify-content: space-between; gap: .55rem;
+      min-height: 8.1rem; border-radius: 1.15rem; padding: .85rem .9rem .95rem;
+      display: flex; flex-direction: column; gap: .55rem;
     }
-    button.vcard:hover { border-color: rgb(var(--sky) / .4); }
+    button.vcard:hover {
+      border-color: rgb(var(--sky) / .38);
+      background: linear-gradient(180deg, rgb(var(--sky) / .09), rgb(255 255 255 / .03));
+    }
+    .vcard .vtop { display: flex; align-items: center; justify-content: space-between; gap: .5rem; }
+    .vcard .ico {
+      width: 2.15rem; height: 2.15rem; border-radius: .7rem; flex: none;
+      display: grid; place-items: center;
+      border: 1px solid rgb(255 255 255 / .12);
+      background: rgb(255 255 255 / .06);
+    }
+    .vcard .ico svg { width: 16px; height: 16px; stroke: currentColor; fill: none; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
     .vcard .cat { font-size: .62rem; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--mute); }
-    .vcard .vt { font-size: .95rem; font-weight: 650; letter-spacing: -.02em; }
-    .vcard .vs { font-size: .75rem; line-height: 1.4; color: var(--mute); }
+    .vcard .vt { font-size: .86rem; font-weight: 650; letter-spacing: -.02em; line-height: 1.25; }
+    .vcard .vs { font-size: .72rem; line-height: 1.4; color: var(--mute); }
+    #cardMask {
+      position: fixed; inset: 0; z-index: 24; border: 0; padding: 0; margin: 0;
+      background: rgb(0 0 0 / .55); cursor: pointer;
+    }
+    #cardMask[hidden], .sheet[hidden] { display: none; }
     .sheet {
-      margin-top: 1rem; padding: .9rem 1rem 1.1rem;
-      border: 1px solid rgb(var(--sky) / .28); border-radius: 1rem;
-      background: rgb(var(--sky) / .06);
+      position: fixed; left: 50%; bottom: calc(4.9rem + env(safe-area-inset-bottom));
+      transform: translateX(-50%); z-index: 25;
+      width: min(40rem, calc(100% - 1.4rem));
+      max-height: min(72vh, 36rem); overflow: auto;
+      padding: 1rem 1.05rem 1.15rem;
+      border: 1px solid rgb(var(--sky) / .32); border-radius: 1.15rem;
+      background: rgb(18 18 22 / .96);
+      box-shadow: 0 18px 50px -16px rgb(0 0 0 / .7);
     }
     .sheet h3 { margin: 0 0 .35rem; font-size: 1.05rem; }
+    .sheet .fld { display: block; margin: .7rem 0 .2rem; font-size: .68rem; letter-spacing: .07em; text-transform: uppercase; color: var(--mute); }
     .sheet .actions { display: flex; gap: .5rem; margin-top: .85rem; }
-    #deskSols li { display: flex; justify-content: space-between; align-items: start; gap: 1rem; padding: .45rem 0; border-top: 1px solid rgb(255 255 255 / .08); }
-    #deskSols li:first-child { border-top: 0; }
+    .picks { display: flex; flex-direction: column; gap: .4rem; margin: .35rem 0 .15rem; }
+    .picks label { display: flex; align-items: center; gap: .55rem; font-size: .86rem; }
+    .picks input { width: 1rem; height: 1rem; accent-color: rgb(56 189 248); }
+    #deskSols { margin: 0 0 .85rem; }
+    #deskSols:empty { display: none; }
+    #deskSols li {
+      display: flex; justify-content: space-between; align-items: start; gap: 1rem;
+      padding: .7rem .15rem; border-top: 1px solid rgb(255 255 255 / .08);
+    }
+    #deskSols li:first-child { border-top: 0; padding-top: 0; }
     @media (prefers-reduced-motion: reduce) {
       .ghost, .tab .ico, input[type="text"] { box-shadow: none; }
     }
@@ -227,8 +257,9 @@
       <ul id="deskSols"></ul>
       <div class="filters" id="cardFilters" role="tablist" aria-label="Фильтр карточек"></div>
       <div id="vitrine" class="vitrine"></div>
-      <div id="cardSheet" class="sheet" hidden></div>
     </section>
+    <button id="cardMask" type="button" hidden aria-label="Закрыть карточку"></button>
+    <div id="cardSheet" class="sheet" hidden></div>
     <section id="panel-poured" class="panel glass" hidden data-tab="poured">
       <p id="previewHead" class="meta">Сравниваю стол с диском…</p>
       <p style="margin:0 0 .75rem"><button id="pour" class="ghost" type="button" disabled>Залить</button></p>
@@ -353,6 +384,7 @@
     }
     function setTab(tab) {
       activeTab = tab;
+      closeCardSheet();
       document.querySelectorAll(".tab").forEach((btn) => {
         btn.setAttribute("aria-selected", btn.dataset.tab === tab ? "true" : "false");
       });
@@ -622,7 +654,7 @@
           out.push({
             deviceTopicKey: s.deviceTopicKey,
             controlId: ch.controlId,
-            label: (name ? prettyContactName(name) + " · " : "") + (s.label || "") + " · " + ch.controlId,
+            label: name ? prettyContactName(name) : (s.label || "вход") + " · " + ch.controlId,
           });
         });
       });
@@ -682,26 +714,63 @@
         ? n + " сценариев уже на диске — вкладка Залито. Новые карточки пока только на столе."
         : "На диске пользовательских сценариев нет.";
     }
+    function closeCardSheet() {
+      $("cardSheet").hidden = true;
+      $("cardMask").hidden = true;
+    }
     function openCardSheet(card) {
       const box = $("cardSheet");
+      const mask = $("cardMask");
       box.hidden = false;
+      mask.hidden = false;
       box.replaceChildren();
       const h = document.createElement("h3");
       h.textContent = card.title;
       const p = document.createElement("p");
       p.className = "meta";
       p.textContent = card.summary;
+      const trigLab = document.createElement("span");
+      trigLab.className = "fld";
+      trigLab.textContent = "Кнопка / датчик";
       const trig = document.createElement("select");
       trig.className = "bind";
       trig.setAttribute("aria-label", "Кнопка или датчик");
-      fillSelect(trig, namedTriggers(), "Кнопка / датчик с этой шины");
-      const tgt = document.createElement("select");
-      tgt.className = "bind";
-      tgt.setAttribute("aria-label", "Линия");
-      if (card.multi) tgt.multiple = true;
-      fillSelect(tgt, namedLoads(), card.multi ? "" : "Линия с этой разметки");
+      fillSelect(trig, namedTriggers(), "С этой шины");
+      const tgtLab = document.createElement("span");
+      tgtLab.className = "fld";
+      tgtLab.textContent = card.multi ? "Линии" : "Линия";
+      const loads = namedLoads();
       const err = document.createElement("p");
       err.className = "meta orphan";
+      let collectTargets;
+      let tgtNode;
+      if (card.multi) {
+        const picks = document.createElement("div");
+        picks.className = "picks";
+        if (!loads.length) {
+          const empty = document.createElement("p");
+          empty.className = "meta";
+          empty.textContent = "Сначала имя линии на вкладке Свет.";
+          picks.appendChild(empty);
+        }
+        loads.forEach((load) => {
+          const lab = document.createElement("label");
+          const cb = document.createElement("input");
+          cb.type = "checkbox";
+          cb.value = contactKey(load.deviceTopicKey, load.controlId);
+          lab.append(cb, document.createTextNode(load.label));
+          picks.appendChild(lab);
+        });
+        tgtNode = picks;
+        collectTargets = () => [...picks.querySelectorAll("input:checked")].map((o) => parseBindValue(o.value)).filter(Boolean);
+      } else {
+        const tgt = document.createElement("select");
+        tgt.className = "bind";
+        tgt.setAttribute("aria-label", "Линия");
+        fillSelect(tgt, loads, "Из этой разметки");
+        tgtNode = tgt;
+        collectTargets = () => [parseBindValue(tgt.value)].filter(Boolean);
+      }
       const actions = document.createElement("div");
       actions.className = "actions";
       const save = document.createElement("button");
@@ -709,14 +778,10 @@
       save.className = "ghost";
       save.textContent = "На стол";
       save.addEventListener("click", () => {
-        const trigger = parseBindValue(trig.value);
-        const targets = card.multi
-          ? [...tgt.selectedOptions].map((o) => parseBindValue(o.value)).filter(Boolean)
-          : [parseBindValue(tgt.value)].filter(Boolean);
         fetch("/runtime/desk-solutions", {
           method: "PUT",
           headers: { "content-type": "application/json" },
-          body: JSON.stringify({ solutionId: card.id, trigger, targets }),
+          body: JSON.stringify({ solutionId: card.id, trigger: parseBindValue(trig.value), targets: collectTargets() }),
         }).then((r) => r.json()).then((j) => {
           if (!j.ok) {
             err.textContent = j.error === "need_trigger" ? "Нужна кнопка с шины"
@@ -724,7 +789,7 @@
               : (j.error || "Не сохранил");
             return;
           }
-          box.hidden = true;
+          closeCardSheet();
           loadSolutions();
         }).catch(() => { err.textContent = "Нет связи с агентом"; });
       });
@@ -732,11 +797,22 @@
       cancel.type = "button";
       cancel.className = "ghost";
       cancel.textContent = "Закрыть";
-      cancel.addEventListener("click", () => { box.hidden = true; });
+      cancel.addEventListener("click", closeCardSheet);
       actions.append(save, cancel);
-      box.append(h, p, trig, tgt, err, actions);
-      box.scrollIntoView({ block: "nearest" });
+      box.append(h, p, trigLab, trig, tgtLab, tgtNode, err, actions);
     }
+    const CARD_ICO = {
+      light_button_toggle: "<svg viewBox='0 0 24 24'><rect x='2' y='7' width='20' height='10' rx='5'/><circle cx='16' cy='12' r='3'/></svg>",
+      light_dim_hold_mcm: "<svg viewBox='0 0 24 24'><circle cx='12' cy='12' r='4'/><path d='M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41'/></svg>",
+      light_all_off: "<svg viewBox='0 0 24 24'><path d='M12 2v10'/><path d='M8.5 4.2a8 8 0 1 0 7 0'/></svg>",
+      light_motion: "<svg viewBox='0 0 24 24'><circle cx='12' cy='5' r='2'/><path d='M8 22l2-8 2 3 2-3 2 8M9 10h6'/></svg>",
+      light_night_path: "<svg viewBox='0 0 24 24'><path d='M21 14a8 8 0 1 1-9-11 7 7 0 0 0 9 11z'/></svg>",
+      light_reed_on: "<svg viewBox='0 0 24 24'><path d='M14 3h5v18H5V3h5'/><path d='M12 3v18'/></svg>",
+      socket_button_toggle: "<svg viewBox='0 0 24 24'><path d='M9 7v4M15 7v4M8 15h8'/><rect x='5' y='4' width='14' height='16' rx='3'/></svg>",
+      scene_away: "<svg viewBox='0 0 24 24'><path d='M3 11l9-8 9 8'/><path d='M5 10v10h14V10'/></svg>",
+      scene_vacation: "<svg viewBox='0 0 24 24'><path d='M4 20l7-16 3 7 6 2z'/></svg>",
+      scene_home: "<svg viewBox='0 0 24 24'><path d='M3 11l9-8 9 8'/><path d='M9 21V12h6v9'/></svg>",
+    };
     function renderVitrine() {
       const filters = $("cardFilters");
       const cats = ["Все", ...[...new Set(deskCatalog.map((c) => c.cat))]];
@@ -755,7 +831,8 @@
         const btn = document.createElement("button");
         btn.type = "button";
         btn.className = "vcard";
-        btn.innerHTML = "<span class=\"cat\"></span><span class=\"vt\"></span><span class=\"vs\"></span>";
+        btn.innerHTML = "<span class=\"vtop\"><span class=\"ico\"></span><span class=\"cat\"></span></span><span class=\"vt\"></span><span class=\"vs\"></span>";
+        btn.querySelector(".ico").innerHTML = CARD_ICO[card.id] || CARD_ICO.light_button_toggle;
         btn.querySelector(".cat").textContent = card.cat;
         btn.querySelector(".vt").textContent = card.title;
         btn.querySelector(".vs").textContent = card.summary;
@@ -1150,6 +1227,10 @@
       }
     }
     $("scan").onclick = () => { void scanNow(); };
+    $("cardMask").addEventListener("click", closeCardSheet);
+    document.addEventListener("keydown", (e) => {
+      if (e.key === "Escape" && !$("cardSheet").hidden) closeCardSheet();
+    });
     function showShelves(j) {
       const shelves = j.shelves || [];
       $("bus").className = "meta";
