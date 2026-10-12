@@ -133,8 +133,9 @@ export function buildDeskPourPreview(doc = readDeskMarking(), poured = readPoure
       const pouredName = typeof pouredCh[controlId] === "string" ? pouredCh[controlId] : "";
       const pouredCards = cardsFromHints(pouredHintsForContact(ruleRows, deviceTopicKey, controlId));
       if (!deskName && !deskCards.length) continue;
+      const name = deskName || pouredName;
       let status = "same";
-      if (!deskName && deskCards.length) status = "blocked";
+      if (!name && deskCards.length) status = "blocked";
       else if (deskName && pouredName && deskName !== pouredName) status = "name";
       else if (deskName && !pouredName) status = "new_name";
       else if (deskCards.length && !sameCards(deskCards, pouredCards)) status = "card";
@@ -142,7 +143,7 @@ export function buildDeskPourPreview(doc = readDeskMarking(), poured = readPoure
       rows.push({
         deviceTopicKey,
         controlId,
-        name: deskName,
+        name,
         pouredName,
         cards: cardRu(deskCards),
         pouredCards: cardRu(pouredCards),
