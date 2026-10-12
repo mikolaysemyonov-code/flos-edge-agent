@@ -96,7 +96,7 @@
       outline: 1px solid rgb(var(--sky) / .5);
       border-radius: .45rem;
     }
-    #poured li.roomh {
+    #poured li.roomh, #gaps li.roomh {
       display: block; border-top: 0; padding: .85rem 0 .15rem;
       color: var(--mute); font-size: .72rem;
     }
@@ -254,11 +254,12 @@
       const s = lastShelvesRows.find((r) => r.deviceTopicKey === key);
       return (s && s.label) || key;
     }
-    function previewRow(r) {
+    function previewRow(r, room) {
       const li = document.createElement("li");
       const left = document.createElement("div");
       const title = document.createElement("div");
-      title.textContent = (r.name || "без имени") + (r.cards && r.cards.length ? " · " + r.cards.join(" · ") : "");
+      const label = room ? titleUnderRoom(r.name || "без имени", room) : (r.name || "без имени");
+      title.textContent = label + (r.cards && r.cards.length ? " · " + r.cards.join(" · ") : "");
       const sub = document.createElement("div");
       sub.className = "meta";
       sub.textContent = shelfLabel(r.deviceTopicKey) + " · " + r.controlId +
@@ -302,7 +303,12 @@
       }
       $("gapsHead").hidden = !gaps.length;
       $("gapsHead").textContent = gaps.length ? gaps.length + " линий без карточки" : "";
-      gaps.forEach((r) => gapsUl.appendChild(previewRow(r)));
+      const gapRows = gaps.map((g) => ({
+        ...g,
+        title: g.name,
+        contacts: [{ deviceTopicKey: g.deviceTopicKey, controlId: g.controlId }],
+      }));
+      appendRoomList(gapsUl, gapRows, (r) => prettyRoom(String(r.name || "").split(/\s*·\s*/)[0] || ""), previewRow);
       lastGapCount = gaps.length;
       stampBusGaps();
     }
@@ -337,7 +343,7 @@
       const c = (r.contacts && r.contacts[0] && r.contacts[0].controlId) || "";
       return Number((/(\d+)\s*$/.exec(c) || [])[1] || 0);
     }
-    function appendRoomList(ul, rows, roomFn) {
+    function appendRoomList(ul, rows, roomFn, makeRow) {
       const minSlave = {};
       const minCh = {};
       rows.forEach((r) => {
@@ -370,7 +376,7 @@
           ul.appendChild(h);
           last = room;
         }
-        ul.appendChild(pouredRow(r, room));
+        ul.appendChild(makeRow(r, room));
       });
     }
     function titleUnderRoom(title, room) {
@@ -419,10 +425,10 @@
         ul.appendChild(empty);
         return;
       }
-      appendRoomList(ul, scenarios, (r) => prettyRoom(String(r.title || "").split(/\s*·\s*/)[1] || ""));
+      appendRoomList(ul, scenarios, (r) => prettyRoom(String(r.title || "").split(/\s*·\s*/)[1] || ""), pouredRow);
       wrap.hidden = !names.length;
       $("pouredMarksSum").textContent = names.length + " имён из разметки";
-      appendRoomList(marksUl, names, (r) => prettyRoom(String(r.title || "").split(/\s*·\s*/)[0] || ""));
+      appendRoomList(marksUl, names, (r) => prettyRoom(String(r.title || "").split(/\s*·\s*/)[0] || ""), pouredRow);
     }
     async function loadHealth() {
       const box = $("health");
