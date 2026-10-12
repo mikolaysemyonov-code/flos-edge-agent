@@ -382,7 +382,9 @@
     function titleUnderRoom(title, room) {
       const parts = String(title || "").split(/\s*·\s*/).filter(Boolean);
       const roomLc = String(room || "").toLowerCase();
-      const out = parts.filter((p) => p.toLowerCase() !== roomLc);
+      const out = parts.filter(
+        (p) => p.toLowerCase() !== roomLc && !/^(Channel|Input|K)\s*\d+$/i.test(p),
+      );
       return out.join(" · ") || title;
     }
     function pouredRow(r, room) {

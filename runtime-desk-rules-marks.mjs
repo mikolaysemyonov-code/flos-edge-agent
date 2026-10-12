@@ -226,9 +226,8 @@ export function collapsePouredRuleRows(rows) {
     });
   }
   const users = disambiguateScenarioTitles([...groups.values()], marksFromMarking(marking));
-  const titled = disambiguateMarkingTitles([...marking, ...users]);
-  const marks = titled.filter((r) => r.kind === "marking").sort(contactSort);
-  return [...marks, ...titled.filter((r) => r.kind !== "marking")];
+  const marks = marking.sort(contactSort);
+  return [...marks, ...users];
 }
 
 function contactSort(a, b) {
@@ -242,20 +241,6 @@ function contactSort(a, b) {
   const na = Number(/(\d+)\s*$/.exec(ca.controlId)?.[1] || 0);
   const nb = Number(/(\d+)\s*$/.exec(cb.controlId)?.[1] || 0);
   return na - nb;
-}
-
-function disambiguateMarkingTitles(rows) {
-  const counts = new Map();
-  for (const r of rows) {
-    if (r.kind !== "marking") continue;
-    const t = String(r.title ?? "");
-    counts.set(t, (counts.get(t) || 0) + 1);
-  }
-  return rows.map((r) => {
-    if (r.kind !== "marking" || (counts.get(r.title) || 0) < 2) return r;
-    const knob = r.contacts?.[0]?.controlId;
-    return knob ? { ...r, title: `${r.title} · ${knob}` } : r;
-  });
 }
 
 export const DESK_CARD_IDS = ["light_button_toggle", "light_dim_hold_mcm", "light_all_off"];
