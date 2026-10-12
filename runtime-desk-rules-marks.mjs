@@ -3,7 +3,7 @@
  */
 import fs from "node:fs";
 import path from "node:path";
-import { canonicalDeskShelfKey, isDeskShelfChannelControl } from "./runtime-desk-shelves.mjs";
+import { canonicalDeskShelfKey, formatDeskShelfLabel, isDeskShelfChannelControl } from "./runtime-desk-shelves.mjs";
 
 function deployDir() {
   return (
@@ -151,25 +151,24 @@ function humanScenarioTitle(id) {
   return "Сценарий";
 }
 
-function decorateScenarioTitles(rows) {
-  const names = new Map();
+function scenarioHint(r) {
+  const di = (r.contacts || []).find((c) => /^Input /i.test(c.controlId));
+  const c = di || (r.contacts || [])[0];
+  if (!c) return "";
+  const sku = formatDeskShelfLabel(c.deviceTopicKey);
+  return sku ? `${sku} · ${c.controlId}` : c.controlId;
+}
+
+function disambiguateScenarioTitles(rows) {
+  const counts = new Map();
   for (const r of rows) {
-    if (r.kind !== "marking" || !r.title) continue;
-    for (const c of r.contacts || []) names.set(`${c.deviceTopicKey}|${c.controlId}`, r.title);
+    if (r.kind !== "user") continue;
+    counts.set(r.title, (counts.get(r.title) || 0) + 1);
   }
   return rows.map((r) => {
-    if (r.kind === "marking") return r;
-    const loads = [];
-    const seen = new Set();
-    for (const c of r.contacts || []) {
-      if (!/^(K\d+|Channel \d+)$/i.test(c.controlId)) continue;
-      const n = names.get(`${c.deviceTopicKey}|${c.controlId}`);
-      if (!n || seen.has(n)) continue;
-      seen.add(n);
-      loads.push(n);
-    }
-    const base = r.title || "Сценарий";
-    return { ...r, title: loads.length ? `${base} · ${loads.slice(0, 2).join(", ")}` : base };
+    if (r.kind !== "user" || (counts.get(r.title) || 0) < 2) return r;
+    const hint = scenarioHint(r);
+    return hint ? { ...r, title: `${r.title} · ${hint}` } : r;
   });
 }
 
@@ -192,7 +191,7 @@ export function collapsePouredRuleRows(rows) {
     });
   }
   marking.sort((a, b) => String(a.title).localeCompare(String(b.title), "ru"));
-  return decorateScenarioTitles(disambiguateMarkingTitles([...marking, ...groups.values()]));
+  return disambiguateScenarioTitles(disambiguateMarkingTitles([...marking, ...groups.values()]));
 }
 
 function disambiguateMarkingTitles(rows) {
