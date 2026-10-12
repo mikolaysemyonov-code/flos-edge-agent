@@ -504,11 +504,15 @@
         el.classList.add("jump");
         const chip = el.querySelector(".chip");
         if (chip) chip.focus();
+        else {
+          const inp = el.querySelector("input");
+          if (inp) inp.focus();
+        }
         setTimeout(() => el.classList.remove("jump"), 1400);
       };
       requestAnimationFrame(() => requestAnimationFrame(go));
     }
-    function channelRow(s, ch, room) {
+    function channelRow(s, ch, room, spare) {
       const row = document.createElement("li");
       row.dataset.contact = contactKey(s.deviceTopicKey, ch.controlId);
       const knob = document.createElement("span");
@@ -542,44 +546,46 @@
       const grow = document.createElement("div");
       grow.appendChild(input);
       const selected = new Set(Array.isArray(ch.cards) ? ch.cards : []);
-      const chips = document.createElement("div");
-      chips.className = "chips";
-      chips.setAttribute("role", "group");
-      chips.setAttribute("aria-label", "Типовая карточка");
-      CARDS.forEach((card) => {
-        const btn = document.createElement("button");
-        btn.type = "button";
-        btn.className = "chip";
-        btn.textContent = card.ru;
-        btn.setAttribute("aria-pressed", selected.has(card.id) ? "true" : "false");
-        btn.addEventListener("click", () => {
-          if (selected.has(card.id)) selected.delete(card.id);
-          else selected.add(card.id);
+      if (!spare) {
+        const chips = document.createElement("div");
+        chips.className = "chips";
+        chips.setAttribute("role", "group");
+        chips.setAttribute("aria-label", "Типовая карточка");
+        CARDS.forEach((card) => {
+          const btn = document.createElement("button");
+          btn.type = "button";
+          btn.className = "chip";
+          btn.textContent = card.ru;
           btn.setAttribute("aria-pressed", selected.has(card.id) ? "true" : "false");
-          const hint = grow.querySelector(".loads");
-          if (hint && hint.textContent === "на диске нет карточки") {
-            if (selected.size) hint.remove();
-          } else if (!selected.size && original && !loads.length && (!hint || hint.textContent !== "на диске нет карточки")) {
-            const sub = document.createElement("span");
-            sub.className = "loads";
-            sub.textContent = "на диске нет карточки";
-            grow.appendChild(sub);
-          }
-          saveCards(s.deviceTopicKey, ch.controlId, [...selected]).catch(() => {});
+          btn.addEventListener("click", () => {
+            if (selected.has(card.id)) selected.delete(card.id);
+            else selected.add(card.id);
+            btn.setAttribute("aria-pressed", selected.has(card.id) ? "true" : "false");
+            const hint = grow.querySelector(".loads");
+            if (hint && hint.textContent === "на диске нет карточки") {
+              if (selected.size) hint.remove();
+            } else if (!selected.size && original && !loads.length && (!hint || hint.textContent !== "на диске нет карточки")) {
+              const sub = document.createElement("span");
+              sub.className = "loads";
+              sub.textContent = "на диске нет карточки";
+              grow.appendChild(sub);
+            }
+            saveCards(s.deviceTopicKey, ch.controlId, [...selected]).catch(() => {});
+          });
+          chips.appendChild(btn);
         });
-        chips.appendChild(btn);
-      });
-      grow.appendChild(chips);
-      if (loads.length) {
-        const sub = document.createElement("span");
-        sub.className = "loads";
-        sub.textContent = loads.map(prettyContactName).join(" · ");
-        grow.appendChild(sub);
-      } else if (ch.name && selected.size === 0) {
-        const sub = document.createElement("span");
-        sub.className = "loads";
-        sub.textContent = "на диске нет карточки";
-        grow.appendChild(sub);
+        grow.appendChild(chips);
+        if (loads.length) {
+          const sub = document.createElement("span");
+          sub.className = "loads";
+          sub.textContent = loads.map(prettyContactName).join(" · ");
+          grow.appendChild(sub);
+        } else if (ch.name && selected.size === 0) {
+          const sub = document.createElement("span");
+          sub.className = "loads";
+          sub.textContent = "на диске нет карточки";
+          grow.appendChild(sub);
+        }
       }
       row.appendChild(grow);
       return row;
@@ -670,7 +676,7 @@
         det.appendChild(sum);
         const inner = document.createElement("ul");
         inner.className = "channels";
-        rest.forEach((ch) => inner.appendChild(channelRow(s, ch)));
+        rest.forEach((ch) => inner.appendChild(channelRow(s, ch, "", true)));
         det.appendChild(inner);
         li.appendChild(det);
       }
