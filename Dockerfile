@@ -8,6 +8,7 @@ RUN npm install --omit=dev
 COPY reactor-edge-agent.mjs /app/reactor-edge-agent.mjs
 COPY runtime-control-plane-http.mjs /app/runtime-control-plane-http.mjs
 COPY runtime-desk-http.mjs /app/runtime-desk-http.mjs
+COPY runtime-desk-shelves.mjs /app/runtime-desk-shelves.mjs
 COPY desk.html /app/desk.html
 COPY runtime-rules-inventory.mjs /app/runtime-rules-inventory.mjs
 COPY wb-rules-journal-incidents.mjs /app/wb-rules-journal-incidents.mjs

@@ -4,6 +4,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { groupDeskShelves } from "./runtime-desk-shelves.mjs";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 
@@ -55,6 +56,9 @@ export async function handleRuntimeMqttScan(req, res) {
   }
   try {
     const out = await mqttScanHandler(body);
+    if (out?.ok && Array.isArray(out.snapshot?.entries)) {
+      out.shelves = groupDeskShelves(out.snapshot.entries);
+    }
     res.statusCode = out?.ok ? 200 : 409;
     res.setHeader("content-type", "application/json; charset=utf-8");
     res.end(JSON.stringify(out ?? { ok: false, error: "empty_scan" }));

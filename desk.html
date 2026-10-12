@@ -15,21 +15,24 @@
     .card { margin-top: 1rem; padding: 1rem 1.1rem; border-radius: 1rem; background: #16161a; border: 1px solid #2a2a30; }
     .ok { color: #8ee0b0; }
     .bad { color: #f0a0a0; }
-    pre { white-space: pre-wrap; word-break: break-word; font-size: .78rem; color: #c8c8d0; }
+    ul { list-style: none; margin: .75rem 0 0; padding: 0; }
+    li { display: flex; justify-content: space-between; gap: 1rem; padding: .55rem 0; border-top: 1px solid #2a2a30; font-size: .92rem; }
+    li:first-child { border-top: 0; }
+    .ch { color: #9a9aa3; font-size: .8rem; white-space: nowrap; }
   </style>
 </head>
 <body>
   <main>
     <p class="muted">Локальный стол · как HA на :8123</p>
     <h1>Пусконаладка щита</h1>
-    <p class="muted">Браузер в сети контроллера. Кабинет (бриф, КП) — в облачном сервисе. Этот стол снимает шину здесь, на щите.</p>
+    <p class="muted">Смотрим шину. Имена и заливка — следующими неделями. Кабинет остаётся в сервисе.</p>
     <p style="margin-top:1rem"><button id="scan" type="button">Снять шину</button></p>
     <div class="card">
       <p id="health" class="muted">Спрашиваю агента…</p>
     </div>
     <div class="card">
       <p id="bus" class="muted">Шина ещё не снимали.</p>
-      <pre id="log"></pre>
+      <ul id="shelves"></ul>
     </div>
   </main>
   <script>
@@ -49,10 +52,26 @@
         $("health").textContent = "Нет /runtime/health — откройте этот адрес с машины в сети щита.";
       }
     }
+    function renderShelves(rows) {
+      const ul = $("shelves");
+      ul.innerHTML = "";
+      (rows || []).forEach((s) => {
+        const li = document.createElement("li");
+        const name = document.createElement("span");
+        name.textContent = s.label || s.deviceTopicKey;
+        const ch = document.createElement("span");
+        ch.className = "ch";
+        ch.textContent = s.channelCount ? s.channelCount + " кан." : "";
+        li.appendChild(name);
+        li.appendChild(ch);
+        ul.appendChild(li);
+      });
+    }
     $("scan").onclick = async () => {
       $("scan").disabled = true;
       $("bus").textContent = "Снимаю шину…";
-      $("log").textContent = "";
+      $("bus").className = "muted";
+      $("shelves").innerHTML = "";
       try {
         const r = await fetch("/runtime/mqtt-scan", {
           method: "POST",
@@ -65,12 +84,11 @@
           $("bus").textContent = j.error || "Скан не вышел";
           return;
         }
-        const n = (j.snapshot && j.snapshot.entries && j.snapshot.entries.length) || 0;
-        const d = j.snapshot && j.snapshot.discoverableDeviceCount;
+        const shelves = j.shelves || [];
         $("bus").className = "ok";
-        $("bus").textContent = "Шина снята · " + n + " топиков" + (d != null ? " · устройств " + d : "") +
+        $("bus").textContent = "На шине " + shelves.length + " модулей" +
           (j.brokerLabel ? " · " + j.brokerLabel : "");
-        $("log").textContent = (j.snapshot.entries || []).slice(0, 24).map((e) => e.topicPath || e.topic).join("\n");
+        renderShelves(shelves);
       } catch (e) {
         $("bus").className = "bad";
         $("bus").textContent = String(e.message || e);
