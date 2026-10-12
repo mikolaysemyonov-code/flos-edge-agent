@@ -316,7 +316,7 @@
     let activeTab = "light";
     let deskCatalog = [];
     let deskSolutions = [];
-    let cardFilter = "Все";
+    let cardFilter = "Свет";
     const CARDS = [
       { id: "light_button_toggle", ru: "Переключение" },
       { id: "light_dim_hold_mcm", ru: "Дим-удержание" },
@@ -858,7 +858,8 @@
     function renderVitrine() {
       const filters = $("cardFilters");
       const have = new Set(deskCatalog.map((c) => c.cat));
-      const cats = ["Все", ...CAT_ORDER.filter((c) => have.has(c))];
+      const cats = CAT_ORDER.filter((c) => have.has(c));
+      if (!cats.includes(cardFilter)) cardFilter = cats[0] || "Свет";
       filters.replaceChildren();
       cats.forEach((cat) => {
         const b = document.createElement("button");
@@ -870,7 +871,7 @@
       });
       const grid = $("vitrine");
       grid.replaceChildren();
-      deskCatalog.filter((c) => cardFilter === "Все" || c.cat === cardFilter).forEach((card) => {
+      deskCatalog.filter((c) => c.cat === cardFilter).forEach((card) => {
         const btn = document.createElement("button");
         btn.type = "button";
         btn.className = "vcard";
