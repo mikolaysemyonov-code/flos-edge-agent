@@ -275,7 +275,7 @@
       if (hints.length || (ch.source === "rules" && ch.name)) {
         const tag = document.createElement("span");
         tag.className = "from-rules";
-        tag.textContent = hints.length ? hints.join(" · ") : "rules";
+        tag.textContent = hints.length ? hints.join(" · ") : "разметка";
         grow.appendChild(tag);
       }
       row.appendChild(grow);
@@ -300,13 +300,14 @@
       const chs = document.createElement("ul");
       chs.className = "channels";
       featured.forEach((ch) => chs.appendChild(channelRow(s, ch)));
-      if (!featured.length) rest.forEach((ch) => chs.appendChild(channelRow(s, ch)));
       li.appendChild(chs);
-      if (featured.length && rest.length) {
+      if (rest.length) {
         const det = document.createElement("details");
         det.className = "more";
         const sum = document.createElement("summary");
-        sum.textContent = "ещё " + rest.length + " без имени";
+        sum.textContent = featured.length
+          ? "ещё " + rest.length + " без имени"
+          : rest.length + " контактов без имени";
         det.appendChild(sum);
         const inner = document.createElement("ul");
         inner.className = "channels";
@@ -315,6 +316,9 @@
         li.appendChild(det);
       }
       return li;
+    }
+    function hasFeatured(s) {
+      return (s.channels || []).some((c) => c.name || (c.hints && c.hints.length));
     }
     function fillList(id, rows, emptyText) {
       const ul = $(id);
@@ -326,7 +330,8 @@
         ul.appendChild(p);
         return;
       }
-      rows.forEach((s) => ul.appendChild(moduleCard(s)));
+      rows.slice().sort((a, b) => Number(hasFeatured(b)) - Number(hasFeatured(a)))
+        .forEach((s) => ul.appendChild(moduleCard(s)));
     }
     function renderShelves(rows) {
       lastShelvesRows = rows || [];
