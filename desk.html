@@ -275,7 +275,7 @@
       <ul id="shelves-buttons"></ul>
     </section>
     <section id="panel-relays" class="panel glass" hidden data-tab="relays">
-      <p id="relaysHead" class="meta">Силовые K и привод MR — открыть / закрыть, свет, розетка, пол.</p>
+      <p id="relaysHead" class="meta">Привод — комната и подпись. На K — тип нагрузки.</p>
       <ul id="shelves-relays"></ul>
     </section>
     <section id="panel-cards" class="panel glass" hidden data-tab="cards">
@@ -343,10 +343,10 @@
       "Свет 220 В", "Трек", "Люстра", "Бра", "Торшер", "Гирлянда", "Ёлка",
       "Управляемая розетка",
       "Сервопривод 24 В", "Сервопривод 220 В",
-      "Фазная штора открыть", "Фазная штора закрыть",
       "Тёплый пол", "Насос", "Вытяжка", "Вентиляция", "Полотенцесушитель",
       "Клапан", "Замок", "Антилёд",
     ];
+    const DRIVE_LABELS = ["Штора", "Роллета", "Жалюзи", "Тюль", "Экран"];
     const BUTTON_TYPES = ["Кнопка", "Клавиша", "Геркон", "Датчик движения", "Сценарий"];
     function isDeskDrive(id) {
       return /^(Curtain|Actuator) \d+ (Open|Close)$/i.test(String(id || "").trim());
@@ -362,8 +362,14 @@
       if (!m) return id;
       return "Привод " + m[1] + (m[2].toLowerCase() === "open" ? " открыть" : " закрыть");
     }
+    function driveTwin(controlId) {
+      const m = /^((?:Curtain|Actuator)\s+\d+\s+)(Open|Close)$/i.exec(String(controlId || "").trim());
+      if (!m) return "";
+      return m[1] + (/open/i.test(m[2]) ? "Close" : "Open");
+    }
     function markTypes(ch, isLoad) {
-      if (isDeskRelay(ch.controlId)) return RELAY_TYPES;
+      if (isDeskDrive(ch.controlId)) return DRIVE_LABELS;
+      if (/^K\d+$/i.test(ch.controlId)) return RELAY_TYPES;
       return isLoad ? LOAD_TYPES : BUTTON_TYPES;
     }
     const CARDS = [
@@ -1226,7 +1232,7 @@
       });
       return [...set].sort((a, b) => a.localeCompare(b, "ru"));
     }
-    function fillRoomTypeSelects(roomSel, typeSel, types, current) {
+    function fillRoomTypeSelects(roomSel, typeSel, types, current, typePh) {
       const rooms = roomsFromBus();
       roomSel.replaceChildren();
       const z = document.createElement("option");
@@ -1255,7 +1261,7 @@
       typeSel.replaceChildren();
       const zt = document.createElement("option");
       zt.value = "";
-      zt.textContent = "Тип";
+      zt.textContent = typePh || "Тип";
       typeSel.appendChild(zt);
       kinds.forEach((t) => {
         const o = document.createElement("option");
@@ -1273,9 +1279,16 @@
       roomSel.setAttribute("aria-label", "Комната");
       const typeSel = document.createElement("select");
       typeSel.className = "bind";
-      typeSel.setAttribute("aria-label", isDeskRelay(ch.controlId) ? "Тип реле" : isLoad ? "Тип линии" : "Тип входа");
+      typeSel.setAttribute("aria-label", isDeskDrive(ch.controlId) ? "Подпись" : isDeskRelay(ch.controlId) ? "Тип реле" : isLoad ? "Тип линии" : "Тип входа");
       const current = splitMark(ch.name);
-      fillRoomTypeSelects(roomSel, typeSel, markTypes(ch, isLoad), current);
+      const typePh = isDeskDrive(ch.controlId) ? "Подпись" : "Тип";
+      fillRoomTypeSelects(roomSel, typeSel, markTypes(ch, isLoad), current, typePh);
+      const persistName = (next) => {
+        const jobs = [saveName(s.deviceTopicKey, ch.controlId, next)];
+        const twin = isDeskDrive(ch.controlId) ? driveTwin(ch.controlId) : "";
+        if (twin) jobs.push(saveName(s.deviceTopicKey, twin, next));
+        return Promise.all(jobs).then(() => loadLast());
+      };
       const persist = () => {
         if (roomSel.value === "__add__") {
           const typed = window.prompt("Комната");
@@ -1289,13 +1302,13 @@
             if (!j.ok) return;
             deskRooms = j.rooms || deskRooms;
             const next = composeMark(prettyRoom(typed), typeSel.value);
-            if (next) saveName(s.deviceTopicKey, ch.controlId, next).then(() => loadLast());
+            if (next) persistName(next);
             else {
               renderRoomBars();
               fillRoomTypeSelects(roomSel, typeSel, markTypes(ch, isLoad), {
                 room: prettyRoom(typed),
                 type: typeSel.value,
-              });
+              }, typePh);
             }
           });
           return;
@@ -1303,7 +1316,7 @@
         const next = composeMark(roomSel.value, typeSel.value);
         if (next === String(ch.name || "").trim()) return;
         if (!next && !String(ch.name || "").trim()) return;
-        saveName(s.deviceTopicKey, ch.controlId, next).then(() => loadLast()).catch(() => {});
+        persistName(next).catch(() => {});
       };
       roomSel.addEventListener("change", persist);
       typeSel.addEventListener("change", persist);
