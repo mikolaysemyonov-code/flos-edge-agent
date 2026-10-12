@@ -380,7 +380,7 @@
         if (room && room !== lastRoom) {
           const h = document.createElement("li");
           h.className = "roomh";
-          h.textContent = room;
+          h.textContent = prettyRoom(room);
           ul.appendChild(h);
           lastRoom = room;
         }
@@ -507,7 +507,19 @@
       row.appendChild(grow);
       return row;
     }
-    function moduleCard(s) {
+    function ruIdleLight(n) {
+      const n10 = n % 10;
+      const n100 = n % 100;
+      if (n10 === 1 && n100 !== 11) return n + " модуль без разметки";
+      if (n10 >= 2 && n10 <= 4 && (n100 < 12 || n100 > 14)) return n + " модуля без разметки";
+      return n + " модулей без разметки";
+    }
+    function prettyRoom(s) {
+      const t = String(s || "").trim();
+      if (!t) return "";
+      return t.charAt(0).toLocaleUpperCase("ru") + t.slice(1);
+    }
+    function moduleCard(s, flat) {
       const li = document.createElement("li");
       li.className = "mod";
       const head = document.createElement("div");
@@ -528,6 +540,10 @@
       featured.forEach((ch) => chs.appendChild(channelRow(s, ch)));
       li.appendChild(chs);
       if (rest.length) {
+        if (flat && !featured.length) {
+          rest.forEach((ch) => chs.appendChild(channelRow(s, ch)));
+          return li;
+        }
         const det = document.createElement("details");
         det.className = "more";
         const sum = document.createElement("summary");
@@ -565,10 +581,10 @@
         const sum = document.createElement("summary");
         sum.textContent = id === "shelves-relays"
           ? idle.length + " реле без линий в заливке"
-          : idle.length + " модуля без разметки";
+          : ruIdleLight(idle.length);
         det.appendChild(sum);
         const inner = document.createElement("ul");
-        idle.forEach((s) => inner.appendChild(moduleCard(s)));
+        idle.forEach((s) => inner.appendChild(moduleCard(s, true)));
         det.appendChild(inner);
         ul.appendChild(det);
         return;

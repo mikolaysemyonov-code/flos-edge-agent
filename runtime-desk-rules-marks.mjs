@@ -3,7 +3,12 @@
  */
 import fs from "node:fs";
 import path from "node:path";
-import { canonicalDeskShelfKey, formatDeskShelfLabel, isDeskShelfChannelControl } from "./runtime-desk-shelves.mjs";
+import {
+  canonicalDeskShelfKey,
+  formatDeskShelfLabel,
+  isDeskShelfChannelControl,
+  parseDeskDeviceKey,
+} from "./runtime-desk-shelves.mjs";
 
 function deployDir() {
   return (
@@ -220,9 +225,23 @@ export function collapsePouredRuleRows(rows) {
       contacts: uniqueContacts([...(prev?.contacts || []), ...(r.contacts || [])]),
     });
   }
-  marking.sort((a, b) => String(a.title).localeCompare(String(b.title), "ru"));
   const users = disambiguateScenarioTitles([...groups.values()], marksFromMarking(marking));
-  return disambiguateMarkingTitles([...marking, ...users]);
+  const titled = disambiguateMarkingTitles([...marking, ...users]);
+  const marks = titled.filter((r) => r.kind === "marking").sort(contactSort);
+  return [...marks, ...titled.filter((r) => r.kind !== "marking")];
+}
+
+function contactSort(a, b) {
+  const ca = a.contacts?.[0] || {};
+  const cb = b.contacts?.[0] || {};
+  const sa = parseDeskDeviceKey(ca.deviceTopicKey)?.slave ?? 0;
+  const sb = parseDeskDeviceKey(cb.deviceTopicKey)?.slave ?? 0;
+  if (sa !== sb) return sa - sb;
+  const d = String(ca.deviceTopicKey || "").localeCompare(String(cb.deviceTopicKey || ""));
+  if (d) return d;
+  const na = Number(/(\d+)\s*$/.exec(ca.controlId)?.[1] || 0);
+  const nb = Number(/(\d+)\s*$/.exec(cb.controlId)?.[1] || 0);
+  return na - nb;
 }
 
 function disambiguateMarkingTitles(rows) {
