@@ -224,6 +224,24 @@ function isLoadControl(controlId) {
   return /^Channel \d+$/i.test(controlId) || /^K\d+$/i.test(controlId);
 }
 
+/** «Спальня · линия 1» + «Спальня · линия 2» → «Спальня · линия 1 · 2». */
+export function compactLoadNames(names) {
+  const items = (Array.isArray(names) ? names : []).map((n) => String(n).trim()).filter(Boolean);
+  const groups = [];
+  for (const n of items) {
+    const m = /^(.*?)(\d+)\s*$/.exec(n);
+    if (!m) {
+      groups.push({ text: n });
+      continue;
+    }
+    const stem = m[1].replace(/[\s·]+$/, "");
+    const prev = groups[groups.length - 1];
+    if (prev && prev.stem === stem) prev.nums.push(m[2]);
+    else groups.push({ stem, nums: [m[2]] });
+  }
+  return groups.map((g) => (g.stem ? `${g.stem} ${g.nums.join(" · ")}` : g.text));
+}
+
 /** На кнопке — имена линий из той же карточки, без выдумки. */
 export function pouredLoadsForContact(rules, marks, deviceTopicKey, controlId) {
   const key = liveDeskDeviceKey(deviceTopicKey);
@@ -248,7 +266,7 @@ export function pouredLoadsForContact(rules, marks, deviceTopicKey, controlId) {
       names.push(label);
     }
   }
-  return names;
+  return compactLoadNames(names);
 }
 
 /** На полке — имя карточки, без «· Channel 3 · MCM8». */
