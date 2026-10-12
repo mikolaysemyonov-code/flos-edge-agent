@@ -495,10 +495,11 @@
       const loads = Array.isArray(ch.loads) ? ch.loads.filter(Boolean) : [];
       input.placeholder = "Имя контакта";
       const original = String(ch.name || "").trim();
-      input.value = original;
+      input.value = prettyContactName(original);
       input.setAttribute("aria-label", (s.label || "") + " " + ch.controlId);
       const persist = () => {
-        if (input.value.trim() === original) return;
+        const typed = input.value.trim();
+        if (typed === original || prettyContactName(original) === typed) return;
         saveName(s.deviceTopicKey, ch.controlId, input.value).catch(() => {});
       };
       input.addEventListener("change", persist);
@@ -538,7 +539,7 @@
       if (loads.length) {
         const sub = document.createElement("span");
         sub.className = "loads";
-        sub.textContent = loads.join(" · ");
+        sub.textContent = loads.map(prettyContactName).join(" · ");
         grow.appendChild(sub);
       } else if (ch.name && selected.size === 0) {
         const sub = document.createElement("span");
@@ -560,6 +561,13 @@
       const t = String(s || "").trim();
       if (!t) return "";
       return t.charAt(0).toLocaleUpperCase("ru") + t.slice(1);
+    }
+    function prettyContactName(name) {
+      const t = String(name || "").trim();
+      if (!t) return "";
+      const parts = t.split(/\s*·\s*/);
+      parts[0] = prettyRoom(parts[0]);
+      return parts.join(" · ");
     }
     function moduleCard(s, flat) {
       const li = document.createElement("li");
