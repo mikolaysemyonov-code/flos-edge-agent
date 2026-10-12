@@ -250,6 +250,28 @@
         btn.setAttribute("aria-pressed", selected.has(btn.dataset.card) ? "true" : "false");
       });
     }
+    function makeLoadChips(key, controlId, selected) {
+      const chips = document.createElement("div");
+      chips.className = "chips" + (selected.size === 0 ? " need" : "");
+      chips.setAttribute("role", "group");
+      chips.setAttribute("aria-label", "Типовая карточка");
+      CARDS.forEach((card) => {
+        const btn = document.createElement("button");
+        btn.type = "button";
+        btn.className = "chip";
+        btn.dataset.card = card.id;
+        btn.textContent = card.ru;
+        btn.setAttribute("aria-pressed", selected.has(card.id) ? "true" : "false");
+        btn.addEventListener("click", () => {
+          toggleDeskCard(selected, card.id);
+          paintChips(chips, selected);
+          chips.classList.toggle("need", selected.size === 0);
+          saveCards(key, controlId, [...selected]).catch(() => {});
+        });
+        chips.appendChild(btn);
+      });
+      return chips;
+    }
     function enrollRu(s) {
       if (s === "restored" || s === "online" || s === "enrolled_awaiting_heartbeat") return "на связи";
       if (s === "enrolling") return "подключаюсь";
@@ -372,7 +394,7 @@
         $("previewHead").textContent = (j.reason || "Превью. Диск не трогаем.") + " · стол совпадает с диском";
       } else {
         $("previewHead").textContent = (j.reason || "Превью. Диск не трогаем.") + " · " + rows.length + " отличий";
-        appendRoomList(ul, rows, (r) => prettyRoom(String(r.name || "").split(/\s*·\s*/)[0] || ""), previewRow);
+        appendRoomList(ul, rows, (r) => nameRoom(r.name), previewRow);
       }
       $("gapsHead").hidden = !gaps.length;
       $("gapsHead").textContent = gaps.length
@@ -383,7 +405,7 @@
         title: g.name,
         contacts: [{ deviceTopicKey: g.deviceTopicKey, controlId: g.controlId }],
       }));
-      appendRoomList(gapsUl, gapRows, (r) => prettyRoom(String(r.name || "").split(/\s*·\s*/)[0] || ""), previewRow);
+      appendRoomList(gapsUl, gapRows, (r) => nameRoom(r.name), previewRow);
       lastGapCount = gaps.length;
       stampBusGaps();
     }
@@ -433,10 +455,18 @@
       return Number((/(\d+)\s*$/.exec(c) || [])[1] || 0);
     }
     function appendRoomList(ul, rows, roomFn, makeRow) {
+      const roomOf = (r) => {
+        const direct = roomFn(r);
+        if (direct) return direct;
+        const rooms = [...new Set(
+          rows.filter((x) => x.deviceTopicKey === r.deviceTopicKey).map(roomFn).filter(Boolean),
+        )];
+        return rooms.length === 1 ? rooms[0] : "";
+      };
       const minSlave = {};
       const minCh = {};
       rows.forEach((r) => {
-        const room = roomFn(r);
+        const room = roomOf(r);
         if (!room) return;
         const s = rowSlave(r);
         const c = rowCh(r);
@@ -444,20 +474,20 @@
         if (minCh[room] == null || c < minCh[room]) minCh[room] = c;
       });
       rows.sort((a, b) => {
-        const ra = roomFn(a);
-        const rb = roomFn(b);
-        const sa = minSlave[ra] ?? 0;
-        const sb = minSlave[rb] ?? 0;
+        const ra = roomOf(a);
+        const rb = roomOf(b);
+        const sa = ra ? (minSlave[ra] ?? rowSlave(a)) : rowSlave(a);
+        const sb = rb ? (minSlave[rb] ?? rowSlave(b)) : rowSlave(b);
         if (sa !== sb) return sa - sb;
-        const ca = minCh[ra] ?? 0;
-        const cb = minCh[rb] ?? 0;
+        const ca = ra ? (minCh[ra] ?? rowCh(a)) : rowCh(a);
+        const cb = rb ? (minCh[rb] ?? rowCh(b)) : rowCh(b);
         if (ca !== cb) return ca - cb;
         if (ra !== rb) return ra.localeCompare(rb, "ru");
         return rowCh(a) - rowCh(b);
       });
       let last = "";
       rows.forEach((r) => {
-        const room = roomFn(r);
+        const room = roomOf(r);
         if (room && room !== last) {
           const h = document.createElement("li");
           h.className = "roomh";
@@ -602,7 +632,18 @@
             ? rawRoom + " · " + typed
             : typed;
         if (next === original) return;
-        saveName(s.deviceTopicKey, ch.controlId, next).catch(() => {});
+        saveName(s.deviceTopicKey, ch.controlId, next).then(() => {
+          if (!next || !isLoad || poured) return;
+          if (!grow.querySelector(".chips")) {
+            grow.appendChild(makeLoadChips(s.deviceTopicKey, ch.controlId, new Set()));
+          }
+          if (!grow.querySelector(".loads")) {
+            const sub = document.createElement("span");
+            sub.className = "loads";
+            sub.textContent = "нет кнопки в заливке";
+            grow.appendChild(sub);
+          }
+        }).catch(() => {});
       };
       input.addEventListener("change", persist);
       input.addEventListener("blur", persist);
@@ -616,28 +657,7 @@
       const showChips = isLoad && !!original && !poured;
       const diskIds = exclusiveCards(CARDS.filter((c) => (ch.hints || []).includes(c.ru)).map((c) => c.id));
       const deskDiverged = poured && [...selected].sort().join(",") !== diskIds.slice().sort().join(",");
-      if (showChips) {
-        const chips = document.createElement("div");
-        chips.className = "chips" + (selected.size === 0 && !loads.length ? " need" : "");
-        chips.setAttribute("role", "group");
-        chips.setAttribute("aria-label", "Типовая карточка");
-        CARDS.forEach((card) => {
-          const btn = document.createElement("button");
-          btn.type = "button";
-          btn.className = "chip";
-          btn.dataset.card = card.id;
-          btn.textContent = card.ru;
-          btn.setAttribute("aria-pressed", selected.has(card.id) ? "true" : "false");
-          btn.addEventListener("click", () => {
-            toggleDeskCard(selected, card.id);
-            paintChips(chips, selected);
-            chips.classList.toggle("need", selected.size === 0 && !loads.length);
-            saveCards(s.deviceTopicKey, ch.controlId, [...selected]).catch(() => {});
-          });
-          chips.appendChild(btn);
-        });
-        grow.appendChild(chips);
-      }
+      if (showChips) grow.appendChild(makeLoadChips(s.deviceTopicKey, ch.controlId, selected));
       if (loads.length) {
         const sub = document.createElement("span");
         sub.className = "loads";
@@ -681,6 +701,11 @@
       if (!t) return "";
       return t.charAt(0).toLocaleUpperCase("ru") + t.slice(1);
     }
+    function nameRoom(name) {
+      const parts = String(name || "").split(/\s*·\s*/).filter(Boolean);
+      if (parts.length < 2) return "";
+      return prettyRoom(parts[0]);
+    }
     function prettyContactName(name) {
       const t = String(name || "").trim();
       if (!t) return "";
@@ -689,7 +714,7 @@
       return parts.join(" · ");
     }
     function channelRoom(ch) {
-      return prettyRoom(String(ch.name || "").split(/\s*·\s*/)[0] || "");
+      return nameRoom(ch.name);
     }
     function knobNum(ch) {
       return Number((/(\d+)\s*$/.exec(ch.controlId || "") || [])[1] || 0);
