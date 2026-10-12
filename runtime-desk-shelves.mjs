@@ -33,21 +33,30 @@ function deviceKeyFromEntry(entry) {
   return m ? m[1] : "";
 }
 
-/** Шлюз DALI и его bus_* / broadcast — одна полка. */
-export function canonicalDeskShelfKey(deviceTopicKey) {
-  const k = String(deviceTopicKey ?? "").trim();
+/** wb-led_176_2 и wb-dali_62_bus_1_0 → канон полки на DIN. */
+export function parseDeskDeviceKey(raw) {
+  const k = String(raw ?? "").trim();
+  if (!k) return null;
+  if (/^wb-gpio$/i.test(k)) return { canonical: "wb-gpio", type: "gpio", slave: 0 };
   const dali = /^(wb-(?:mdali(?:-3)?|dali))_(\d+)/i.exec(k);
-  if (dali) return `${dali[1].toLowerCase()}_${dali[2]}`;
-  return k;
+  if (dali) {
+    return { canonical: `${dali[1].toLowerCase()}_${dali[2]}`, type: "dali", slave: Number(dali[2]) };
+  }
+  const m = /^wb-([a-z0-9-]+)_(\d+)(?:_\d+)?$/i.exec(k);
+  if (!m) return null;
+  return { canonical: `wb-${m[1].toLowerCase()}_${m[2]}`, type: m[1].toLowerCase(), slave: Number(m[2]) };
+}
+
+export function canonicalDeskShelfKey(deviceTopicKey) {
+  return parseDeskDeviceKey(deviceTopicKey)?.canonical ?? String(deviceTopicKey ?? "").trim();
 }
 
 export function formatDeskShelfLabel(deviceTopicKey) {
-  const k = canonicalDeskShelfKey(deviceTopicKey);
-  if (/^wb-gpio$/i.test(k)) return "GPIO";
-  const m = /^wb-([a-z0-9-]+)_(\d+)$/i.exec(k);
-  if (!m) return null;
-  const sku = SKU[m[1].toLowerCase()] ?? `WB-${m[1].toUpperCase()}`;
-  return `${sku} №${m[2]}`;
+  const p = parseDeskDeviceKey(deviceTopicKey);
+  if (!p) return null;
+  if (p.type === "gpio") return "GPIO";
+  const sku = SKU[p.type] ?? `WB-${p.type.toUpperCase()}`;
+  return `${sku} №${p.slave}`;
 }
 
 function controlIdOf(entry) {
@@ -57,13 +66,19 @@ function controlIdOf(entry) {
   return m ? m[1].trim() : "";
 }
 
-/** Силовой/входной канал полки. Brightness, meta, DALI bulk — не канал. */
-export function isDeskShelfChannelControl(controlId) {
+function isRelayFamily(type) {
+  return /^(mr6c|mr6cu|mr6cv3|mr6c-v3|mr12|mr6lv|mrm)/i.test(String(type ?? ""));
+}
+
+/** Силовой/входной канал. У реле только K1… — не Input/Safety. */
+export function isDeskShelfChannelControl(controlId, deviceTopicKey) {
   const c = String(controlId ?? "").trim();
   if (!c) return false;
   if (/brightness|temperature|palette|error|voltage|current|power|frequency|energy|status|offline|dapc|bulk_send|wanted_level|go_to_scene|actual_level/i.test(c)) {
     return false;
   }
+  const type = parseDeskDeviceKey(deviceTopicKey)?.type ?? "";
+  if (isRelayFamily(type)) return /^K\d+$/i.test(c);
   if (/^K\d+$/i.test(c)) return true;
   if (/^Channel \d+$/i.test(c)) return true;
   if (/^(CCT|RGB)\d+$/i.test(c)) return true;
@@ -72,19 +87,13 @@ export function isDeskShelfChannelControl(controlId) {
   return false;
 }
 
-function familyRank(key) {
-  const k = canonicalDeskShelfKey(key);
-  if (/mr6c|mr12|mr6lv|mrm/i.test(k)) return 10;
-  if (/led|ampled|mdm|mao/i.test(k)) return 20;
-  if (/dali/i.test(k)) return 30;
-  if (/gpio|mcm|mdi/i.test(k)) return 40;
-  if (/map|mwac/i.test(k)) return 50;
+function familyRank(type) {
+  if (isRelayFamily(type)) return 10;
+  if (/led|ampled|mdm|mao/i.test(type)) return 20;
+  if (/dali/i.test(type)) return 30;
+  if (/gpio|mcm|mdi/i.test(type)) return 40;
+  if (/map|mwac/i.test(type)) return 50;
   return 90;
-}
-
-function slaveNum(key) {
-  const m = /_(\d+)$/.exec(canonicalDeskShelfKey(key));
-  return m ? Number(m[1]) : 0;
 }
 
 function daliBusIndex(rawKey) {
@@ -92,12 +101,21 @@ function daliBusIndex(rawKey) {
   return m ? m[1] : null;
 }
 
+function ruShiny(n) {
+  const n10 = n % 10;
+  const n100 = n % 100;
+  if (n10 === 1 && n100 !== 11) return `${n} шина`;
+  if (n10 >= 2 && n10 <= 4 && (n100 < 12 || n100 > 14)) return `${n} шины`;
+  return `${n} шин`;
+}
+
 export function groupDeskShelves(entries) {
   const map = new Map();
   for (const entry of Array.isArray(entries) ? entries : []) {
     const raw = deviceKeyFromEntry(entry);
     if (!raw || !isMarkShieldDiscoverableDeviceKey(raw)) continue;
-    const key = canonicalDeskShelfKey(raw);
+    const parsed = parseDeskDeviceKey(raw);
+    const key = parsed?.canonical ?? raw;
     let row = map.get(key);
     if (!row) {
       row = {
@@ -106,6 +124,8 @@ export function groupDeskShelves(entries) {
         channelCount: 0,
         controls: new Set(),
         buses: new Set(),
+        type: parsed?.type ?? "",
+        slave: parsed?.slave ?? 0,
       };
       map.set(key, row);
     }
@@ -113,19 +133,21 @@ export function groupDeskShelves(entries) {
     if (bus) row.buses.add(bus);
     if (/\/meta\//i.test(String(entry?.topicPath ?? ""))) continue;
     const cid = controlIdOf(entry);
-    if (isDeskShelfChannelControl(cid) && !row.controls.has(cid)) {
+    if (isDeskShelfChannelControl(cid, raw) && !row.controls.has(cid)) {
       row.controls.add(cid);
       row.channelCount += 1;
     }
   }
   return [...map.values()]
-    .map(({ controls: _c, buses, ...rest }) => ({
+    .map(({ controls: _c, buses, type: _t, slave: _s, ...rest }) => ({
       ...rest,
-      hint: buses.size > 0 ? `${buses.size} шины` : null,
+      hint: buses.size > 0 ? ruShiny(buses.size) : null,
     }))
     .sort((a, b) => {
-      const d = familyRank(a.deviceTopicKey) - familyRank(b.deviceTopicKey);
+      const pa = parseDeskDeviceKey(a.deviceTopicKey);
+      const pb = parseDeskDeviceKey(b.deviceTopicKey);
+      const d = familyRank(pa?.type) - familyRank(pb?.type);
       if (d !== 0) return d;
-      return slaveNum(a.deviceTopicKey) - slaveNum(b.deviceTopicKey);
+      return (pa?.slave ?? 0) - (pb?.slave ?? 0);
     });
 }
