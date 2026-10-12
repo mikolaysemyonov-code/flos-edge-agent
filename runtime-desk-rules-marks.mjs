@@ -220,6 +220,37 @@ export function cardsFromHints(hints) {
   return DESK_CARD_IDS.filter((id) => set.has(DESK_CARD_RU[id]));
 }
 
+function isLoadControl(controlId) {
+  return /^Channel \d+$/i.test(controlId) || /^K\d+$/i.test(controlId);
+}
+
+/** На кнопке — имена линий из той же карточки, без выдумки. */
+export function pouredLoadsForContact(rules, marks, deviceTopicKey, controlId) {
+  const key = liveDeskDeviceKey(deviceTopicKey);
+  const cid = String(controlId ?? "").trim();
+  if (!key || !cid || isLoadControl(cid)) return [];
+  const names = [];
+  const seen = new Set();
+  for (const r of Array.isArray(rules) ? rules : []) {
+    if (r.kind === "marking") continue;
+    const contacts = r.contacts || [];
+    const hit = contacts.some(
+      (c) => liveDeskDeviceKey(c.deviceTopicKey) === key && String(c.controlId) === cid,
+    );
+    if (!hit) continue;
+    for (const c of contacts) {
+      if (!isLoadControl(c.controlId)) continue;
+      const dev = liveDeskDeviceKey(c.deviceTopicKey);
+      const mark = marks?.[dev]?.[c.controlId] || marks?.[c.deviceTopicKey]?.[c.controlId] || "";
+      const label = mark || `${formatDeskShelfLabel(dev) || dev} · ${c.controlId}`;
+      if (seen.has(label)) continue;
+      seen.add(label);
+      names.push(label);
+    }
+  }
+  return names;
+}
+
 /** На полке — имя карточки, без «· Channel 3 · MCM8». */
 export function shortPouredHint(title) {
   return String(title || "")

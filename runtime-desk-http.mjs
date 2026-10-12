@@ -10,7 +10,13 @@ import {
   readDeskMarking,
   upsertDeskShelfMark,
 } from "./runtime-desk-marking.mjs";
-import { cardsFromHints, pouredHintsForContact, readPouredDeskSnapshot } from "./runtime-desk-rules-marks.mjs";
+import {
+  cardsFromHints,
+  pouredHintsForContact,
+  pouredLoadsForContact,
+  readPouredChannelMarks,
+  readPouredDeskSnapshot,
+} from "./runtime-desk-rules-marks.mjs";
 import { formatDeskShelfLabel, groupDeskShelves, rememberDeskShelves } from "./runtime-desk-shelves.mjs";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
@@ -59,6 +65,7 @@ export function readLastDeskShelves() {
 
 function withPouredHints(shelves) {
   const rules = readPouredDeskSnapshot().rules || [];
+  const marks = readPouredChannelMarks();
   return (Array.isArray(shelves) ? shelves : []).map((s) => ({
     ...s,
     channels: (Array.isArray(s.channels) ? s.channels : []).map((ch) => {
@@ -70,6 +77,7 @@ function withPouredHints(shelves) {
         hints,
         cards,
         cardsSource: deskCards.length ? "desk" : cards.length ? "rules" : "",
+        loads: pouredLoadsForContact(rules, marks, s.deviceTopicKey, ch.controlId),
       };
     }),
   }));
