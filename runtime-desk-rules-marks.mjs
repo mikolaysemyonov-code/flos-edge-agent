@@ -265,7 +265,7 @@ export function exclusiveDeskCards(ids) {
   return out;
 }
 
-function isLoadControl(controlId) {
+export function isLoadControl(controlId) {
   return /^Channel \d+$/i.test(controlId) || /^K\d+$/i.test(controlId);
 }
 

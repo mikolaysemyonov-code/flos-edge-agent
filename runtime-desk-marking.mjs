@@ -7,6 +7,7 @@ import {
   cardsFromHints,
   DESK_CARD_RU,
   exclusiveDeskCards,
+  isLoadControl,
   liveDeskDeviceKey,
   pouredHintsForContact,
   readPouredChannelMarks,
@@ -130,7 +131,9 @@ export function buildDeskPourPreview(doc = readDeskMarking(), poured = readPoure
     const cids = new Set([...Object.keys(deskCh), ...Object.keys(typeof pouredCh === "object" ? pouredCh : {})]);
     for (const controlId of cids) {
       const deskName = typeof deskCh[controlId]?.name === "string" ? deskCh[controlId].name : "";
-      const deskCards = Array.isArray(deskCh[controlId]?.cards) ? deskCh[controlId].cards : [];
+      const deskCards = isLoadControl(controlId) && Array.isArray(deskCh[controlId]?.cards)
+        ? deskCh[controlId].cards
+        : [];
       const pouredName = typeof pouredCh[controlId] === "string" ? pouredCh[controlId] : "";
       const pouredCards = cardsFromHints(pouredHintsForContact(ruleRows, deviceTopicKey, controlId));
       const name = deskName || pouredName;
