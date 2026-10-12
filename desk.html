@@ -306,7 +306,8 @@
       const sub = document.createElement("div");
       sub.className = "meta";
       sub.textContent = shelfLabel(r.deviceTopicKey) + " · " + r.controlId +
-        (r.pouredName && r.pouredName !== r.name ? " · на диске " + r.pouredName : "");
+        (r.pouredName && r.pouredName !== r.name ? " · на диске " + r.pouredName : "") +
+        (r.pouredCards && r.pouredCards.length ? " · на диске " + r.pouredCards.join(" · ") : "");
       if (r.status === "blocked") sub.className = "meta orphan";
       left.appendChild(title);
       left.appendChild(sub);
@@ -611,6 +612,8 @@
       const selected = new Set(exclusiveCards(Array.isArray(ch.cards) ? ch.cards : []));
       const poured = Array.isArray(ch.hints) && ch.hints.length > 0;
       const buttons = Array.isArray(ch.buttons) ? ch.buttons.filter(Boolean) : [];
+      const diskIds = exclusiveCards(CARDS.filter((c) => (ch.hints || []).includes(c.ru)).map((c) => c.id));
+      const deskDiverged = poured && [...selected].sort().join(",") !== diskIds.slice().sort().join(",");
       const chips = document.createElement("div");
       chips.className = "chips" + (original && selected.size === 0 && !loads.length ? " need" : "");
       chips.setAttribute("role", "group");
@@ -640,6 +643,11 @@
         const sub = document.createElement("span");
         sub.className = "loads";
         sub.textContent = "кнопка · " + buttons.map(prettyContactName).join(" · ");
+        grow.appendChild(sub);
+      } else if (deskDiverged) {
+        const sub = document.createElement("span");
+        sub.className = "loads";
+        sub.textContent = "на диске · " + (ch.hints || []).join(" · ");
         grow.appendChild(sub);
       } else if (ch.name && !poured) {
         const sub = document.createElement("span");
