@@ -296,7 +296,7 @@
       input.type = "text";
       input.maxLength = 80;
       const loads = Array.isArray(ch.loads) ? ch.loads.filter(Boolean) : [];
-      input.placeholder = loads.length && !ch.name ? loads[0] : "Имя контакта";
+      input.placeholder = "Имя контакта";
       input.value = ch.name || "";
       input.setAttribute("aria-label", (s.label || "") + " " + ch.controlId);
       const persist = () => saveName(s.deviceTopicKey, ch.controlId, input.value).catch(() => {});
@@ -325,7 +325,7 @@
         chips.appendChild(btn);
       });
       grow.appendChild(chips);
-      if (loads.length && ch.name !== loads[0]) {
+      if (loads.length) {
         const sub = document.createElement("span");
         sub.className = "loads";
         sub.textContent = loads.join(" · ");
