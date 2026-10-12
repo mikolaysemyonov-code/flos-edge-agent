@@ -410,6 +410,11 @@
         sub.className = "loads";
         sub.textContent = loads.join(" · ");
         grow.appendChild(sub);
+      } else if (ch.name && selected.size === 0) {
+        const sub = document.createElement("span");
+        sub.className = "loads";
+        sub.textContent = "на диске нет карточки";
+        grow.appendChild(sub);
       }
       row.appendChild(grow);
       return row;
