@@ -522,7 +522,7 @@
       input.type = "text";
       input.maxLength = 80;
       const loads = Array.isArray(ch.loads) ? ch.loads.filter(Boolean) : [];
-      input.placeholder = "Имя контакта";
+      input.placeholder = spare ? "запас" : "Имя контакта";
       const original = String(ch.name || "").trim();
       const pretty = prettyContactName(original);
       const stripped = room ? titleUnderRoom(pretty, room) : pretty;
