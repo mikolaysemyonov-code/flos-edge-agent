@@ -109,6 +109,11 @@
       box-shadow: 0 0 12px rgb(var(--sky) / .22);
     }
     .loads { display: block; margin-top: .2rem; color: var(--mute); font-size: .72rem; }
+    button.loads {
+      appearance: none; border: 0; background: none; padding: 0;
+      font: inherit; text-align: left; cursor: pointer;
+      color: rgb(var(--sky) / .9);
+    }
     #bus .gapjump {
       appearance: none; border: 0; background: none; padding: 0;
       font: inherit; color: rgb(var(--sky) / .9); cursor: pointer;
@@ -1051,6 +1056,23 @@
     function contactKey(key, cid) {
       return String(key) + "::" + String(cid);
     }
+    function triggersBoundTo(loadKey, loadCid) {
+      const want = contactKey(loadKey, loadCid);
+      const out = [];
+      (lastShelvesRows || []).forEach((s) => {
+        (s.channels || []).forEach((ch) => {
+          (Array.isArray(ch.binds) ? ch.binds : []).forEach((b) => {
+            if (contactKey(b.deviceTopicKey, b.controlId) !== want) return;
+            out.push({
+              deviceTopicKey: s.deviceTopicKey,
+              controlId: ch.controlId,
+              label: solContactLabel({ deviceTopicKey: s.deviceTopicKey, controlId: ch.controlId }),
+            });
+          });
+        });
+      });
+      return out;
+    }
     function jumpToContact(key, cid) {
       setTab(familyOf({ deviceTopicKey: key }));
       const want = contactKey(key, cid);
@@ -1108,10 +1130,18 @@
       const poured = Array.isArray(ch.hints) && ch.hints.length > 0;
       const buttons = Array.isArray(ch.buttons) ? ch.buttons.filter(Boolean) : [];
       const isLoad = /^(Channel\s+\d+|K\d+)$/i.test(ch.controlId);
+      const deskTriggers = isLoad ? triggersBoundTo(s.deviceTopicKey, ch.controlId) : [];
       const diskIds = exclusiveCards(CARDS.filter((c) => (ch.hints || []).includes(c.ru)).map((c) => c.id));
       const deskDiverged = poured && [...selected].sort().join(",") !== diskIds.slice().sort().join(",");
       if (!isLoad) grow.appendChild(makeBindSelect(s, ch, loads));
-      else if (buttons.length) {
+      else if (deskTriggers.length) {
+        const sub = document.createElement("button");
+        sub.type = "button";
+        sub.className = "loads";
+        sub.textContent = "кнопка · " + deskTriggers.map((t) => t.label).join(" · ");
+        sub.addEventListener("click", () => jumpToContact(deskTriggers[0].deviceTopicKey, deskTriggers[0].controlId));
+        grow.appendChild(sub);
+      } else if (buttons.length) {
         const sub = document.createElement("span");
         sub.className = "loads";
         sub.textContent = "кнопка · " + buttons.map(prettyContactName).join(" · ");
@@ -1124,7 +1154,7 @@
       } else if (ch.name && !poured) {
         const sub = document.createElement("span");
         sub.className = "loads";
-        sub.textContent = "нет кнопки в заливке";
+        sub.textContent = "нет кнопки";
         grow.appendChild(sub);
       }
       row.appendChild(grow);
