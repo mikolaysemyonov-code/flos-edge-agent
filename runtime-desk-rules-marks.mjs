@@ -159,14 +159,43 @@ function scenarioHint(r) {
   return sku ? `${sku} · ${c.controlId}` : c.controlId;
 }
 
-function disambiguateScenarioTitles(rows) {
+function marksFromMarking(marking) {
+  const out = {};
+  for (const r of marking) {
+    const title = String(r.title || "").trim();
+    if (!title) continue;
+    for (const c of r.contacts || []) putMark(out, c.deviceTopicKey, c.controlId, title);
+  }
+  return out;
+}
+
+function scenarioLoadPhrase(r, marks) {
+  const names = [];
+  const seen = new Set();
+  for (const c of r.contacts || []) {
+    if (!isLoadControl(c.controlId)) continue;
+    const n = marks[liveDeskDeviceKey(c.deviceTopicKey)]?.[c.controlId];
+    if (!n || seen.has(n)) continue;
+    seen.add(n);
+    names.push(n);
+  }
+  return compactLoadNames(names).join(" · ");
+}
+
+function disambiguateScenarioTitles(rows, marks) {
+  const withPhrase = rows.map((r) => {
+    if (r.kind !== "user") return r;
+    const phrase = scenarioLoadPhrase(r, marks);
+    return phrase ? { ...r, title: `${r.title} · ${phrase}` } : r;
+  });
   const counts = new Map();
-  for (const r of rows) {
+  for (const r of withPhrase) {
     if (r.kind !== "user") continue;
     counts.set(r.title, (counts.get(r.title) || 0) + 1);
   }
-  return rows.map((r) => {
+  return withPhrase.map((r) => {
     if (r.kind !== "user" || (counts.get(r.title) || 0) < 2) return r;
+    if (scenarioLoadPhrase(r, marks)) return r;
     const hint = scenarioHint(r);
     return hint ? { ...r, title: `${r.title} · ${hint}` } : r;
   });
@@ -191,7 +220,8 @@ export function collapsePouredRuleRows(rows) {
     });
   }
   marking.sort((a, b) => String(a.title).localeCompare(String(b.title), "ru"));
-  return disambiguateScenarioTitles(disambiguateMarkingTitles([...marking, ...groups.values()]));
+  const users = disambiguateScenarioTitles([...groups.values()], marksFromMarking(marking));
+  return disambiguateMarkingTitles([...marking, ...users]);
 }
 
 function disambiguateMarkingTitles(rows) {
