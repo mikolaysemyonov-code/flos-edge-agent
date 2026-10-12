@@ -23,7 +23,22 @@ export function deskMarkingPath() {
 }
 
 function emptyDoc() {
-  return { version: 3, shelves: {}, solutions: [] };
+  return { version: 3, shelves: {}, solutions: [], rooms: [] };
+}
+
+function cleanRooms(value) {
+  if (!Array.isArray(value)) return [];
+  const out = [];
+  const seen = new Set();
+  for (const raw of value) {
+    const s = cleanName(raw);
+    if (!s || /·/.test(s)) continue;
+    const k = s.toLowerCase();
+    if (seen.has(k)) continue;
+    seen.add(k);
+    out.push(s);
+  }
+  return out.slice(0, 40);
 }
 
 export function readDeskDocument() {
@@ -32,10 +47,23 @@ export function readDeskDocument() {
     const json = JSON.parse(raw);
     const shelves = json?.shelves && typeof json.shelves === "object" ? json.shelves : {};
     const solutions = Array.isArray(json?.solutions) ? json.solutions : [];
-    return { version: 3, shelves, solutions };
+    return { version: 3, shelves, solutions, rooms: cleanRooms(json?.rooms) };
   } catch {
     return emptyDoc();
   }
+}
+
+export function listDeskRooms() {
+  return readDeskDocument().rooms;
+}
+
+export function upsertDeskRoom(name) {
+  const room = cleanName(name);
+  if (!room || /·/.test(room)) return { ok: false, error: "need_room" };
+  const doc = readDeskDocument();
+  const rooms = cleanRooms([...(doc.rooms || []), room]);
+  writeDoc({ ...doc, rooms });
+  return { ok: true, rooms };
 }
 
 export function readDeskMarking() {
@@ -56,9 +84,10 @@ function writeDoc(doc) {
   const prev = readDeskDocument();
   const shelves = doc?.shelves && typeof doc.shelves === "object" ? doc.shelves : {};
   const solutions = Array.isArray(doc?.solutions) ? doc.solutions : prev.solutions;
+  const rooms = Array.isArray(doc?.rooms) ? cleanRooms(doc.rooms) : prev.rooms;
   fs.writeFileSync(
     file,
-    JSON.stringify({ version: 3, shelves, solutions }, null, 2) + "\n",
+    JSON.stringify({ version: 3, shelves, solutions, rooms }, null, 2) + "\n",
     "utf8",
   );
 }

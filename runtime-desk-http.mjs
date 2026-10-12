@@ -8,7 +8,9 @@ import {
   applyMarksToShelves,
   buildDeskPourPreview,
   deskMarkingPath,
+  listDeskRooms,
   readDeskMarking,
+  upsertDeskRoom,
   upsertDeskShelfMark,
 } from "./runtime-desk-marking.mjs";
 import {
@@ -203,7 +205,7 @@ function jsonEnd(res, status, obj) {
 export async function handleRuntimeDeskMarking(req, res) {
   const method = (req.method ?? "GET").toUpperCase();
   if (method === "GET") {
-    jsonEnd(res, 200, { ok: true, ...readDeskMarking() });
+    jsonEnd(res, 200, { ok: true, ...readDeskMarking(), rooms: listDeskRooms() });
     return;
   }
   if (method !== "PUT" && method !== "POST") {
@@ -218,6 +220,11 @@ export async function handleRuntimeDeskMarking(req, res) {
     if (raw.trim()) body = JSON.parse(raw);
   } catch {
     jsonEnd(res, 400, { ok: false, error: "invalid_json" });
+    return;
+  }
+  if (body.room && !body.deviceTopicKey) {
+    const out = upsertDeskRoom(body.room);
+    jsonEnd(res, out.ok ? 200 : 400, out);
     return;
   }
   const out = upsertDeskShelfMark(body);

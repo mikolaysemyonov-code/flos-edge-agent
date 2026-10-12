@@ -167,6 +167,9 @@
       border-color: rgb(var(--sky) / .45);
       box-shadow: inset 0 1px 0 rgb(255 255 255 / .3), 0 0 16px rgb(var(--sky) / .35);
     }
+    .pair { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.15fr); gap: .35rem; margin-top: .15rem; }
+    .pair select.bind { margin-top: 0; }
+    .rooms { display: flex; flex-wrap: wrap; gap: .35rem; margin: 0 0 .85rem; }
     .filters { display: flex; flex-wrap: wrap; gap: .35rem; margin: .15rem 0 .85rem; }
     .filters button {
       appearance: none; border: 1px solid rgb(255 255 255 / .1); background: rgb(255 255 255 / .04);
@@ -262,10 +265,13 @@
     </div>
     <section id="panel-light" class="panel glass" data-tab="light">
       <p id="bus" class="meta">Шина ещё не снимали.</p>
+      <p class="meta">Комната и тип линии — из списка, не с клавиатуры.</p>
+      <div id="rooms-light" class="rooms" aria-label="Комнаты"></div>
       <ul id="shelves-light"></ul>
     </section>
     <section id="panel-buttons" class="panel glass" hidden data-tab="buttons">
-      <p class="meta">Как в разметке: имя входа, затем линия. Диск не пишем.</p>
+      <p class="meta">Комната и тип входа — из списка. Затем линия.</p>
+      <div id="rooms-buttons" class="rooms" aria-label="Комнаты"></div>
       <ul id="shelves-buttons"></ul>
     </section>
     <section id="panel-relays" class="panel glass" hidden data-tab="relays">
@@ -327,6 +333,13 @@
     let deskCatalog = [];
     let deskSolutions = [];
     let cardFilter = "Свет";
+    let deskRooms = [];
+    const LOAD_TYPES = [
+      "Световая линия", "Трек", "Трек DALI", "Магнитный трек", "Подсветка",
+      "Подсветка ниши", "Лента", "Спот", "Точечные", "Бра", "Люстра",
+      "Светильник DALI", "Потолочный", "Ночной свет",
+    ];
+    const BUTTON_TYPES = ["Кнопка", "Клавиша", "Геркон", "Датчик движения", "Сценарий"];
     const CARDS = [
       { id: "light_button_toggle", ru: "Переключение" },
       { id: "light_dim_hold_mcm", ru: "Дим-удержание" },
@@ -1083,7 +1096,7 @@
         if (det) det.open = true;
         el.scrollIntoView({ block: "center" });
         el.classList.add("jump");
-        const inp = el.querySelector("input[type='text']");
+        const inp = el.querySelector("select.bind") || el.querySelector("input[type='text']");
         if (inp) inp.focus();
         setTimeout(() => el.classList.remove("jump"), 1400);
       };
@@ -1095,34 +1108,12 @@
       const knob = document.createElement("span");
       knob.className = "knob";
       knob.textContent = ch.controlId;
-      const input = document.createElement("input");
-      input.type = "text";
-      input.maxLength = 80;
       const loads = Array.isArray(ch.loads) ? ch.loads.filter(Boolean) : [];
       const isLoad = /^(Channel\s+\d+|K\d+)$/i.test(ch.controlId);
-      input.placeholder = isLoad ? "Имя линии" : "Имя кнопки";
       const original = String(ch.name || "").trim();
-      const pretty = prettyContactName(original);
-      const stripped = room ? titleUnderRoom(pretty, room) : pretty;
-      input.value = stripped;
-      input.setAttribute("aria-label", (s.label || "") + " " + ch.controlId);
-      const persist = () => {
-        const typed = input.value.trim();
-        if (typed === original || typed === pretty || typed === stripped) return;
-        const rawRoom = String(original).split(/\s*·\s*/)[0] || "";
-        const next = !typed
-          ? ""
-          : room && rawRoom && typed.toLowerCase().indexOf(rawRoom.toLowerCase()) !== 0
-            ? rawRoom + " · " + typed
-            : typed;
-        if (next === original) return;
-        saveName(s.deviceTopicKey, ch.controlId, next).catch(() => {});
-      };
-      input.addEventListener("change", persist);
-      input.addEventListener("blur", persist);
       row.appendChild(knob);
       const grow = document.createElement("div");
-      grow.appendChild(input);
+      grow.appendChild(makeMarkPair(s, ch, isLoad));
       const selected = new Set(exclusiveCards(Array.isArray(ch.cards) ? ch.cards : []));
       const poured = Array.isArray(ch.hints) && ch.hints.length > 0;
       const buttons = Array.isArray(ch.buttons) ? ch.buttons.filter(Boolean) : [];
@@ -1186,6 +1177,154 @@
       const parts = String(name || "").split(/\s*·\s*/).filter(Boolean);
       if (parts.length < 2) return "";
       return prettyRoom(parts[0]);
+    }
+    function splitMark(name) {
+      const parts = String(name || "").split(/\s*·\s*/).filter(Boolean);
+      if (!parts.length) return { room: "", type: "" };
+      if (parts.length === 1) return { room: "", type: parts[0] };
+      return { room: prettyRoom(parts[0]), type: parts.slice(1).join(" · ") };
+    }
+    function composeMark(room, type) {
+      const r = prettyRoom(room);
+      const t = String(type || "").trim();
+      if (!r || !t) return "";
+      return r + " · " + t;
+    }
+    function roomsFromBus() {
+      const set = new Set(deskRooms.map((r) => prettyRoom(r)).filter(Boolean));
+      (lastShelvesRows || []).forEach((s) => {
+        (s.channels || []).forEach((ch) => {
+          const r = nameRoom(ch.name);
+          if (r) set.add(r);
+        });
+      });
+      return [...set].sort((a, b) => a.localeCompare(b, "ru"));
+    }
+    function fillRoomTypeSelects(roomSel, typeSel, types, current) {
+      const rooms = roomsFromBus();
+      roomSel.replaceChildren();
+      const z = document.createElement("option");
+      z.value = "";
+      z.textContent = "Комната";
+      roomSel.appendChild(z);
+      rooms.forEach((r) => {
+        const o = document.createElement("option");
+        o.value = r;
+        o.textContent = r;
+        roomSel.appendChild(o);
+      });
+      if (current.room && !rooms.includes(current.room)) {
+        const o = document.createElement("option");
+        o.value = current.room;
+        o.textContent = current.room;
+        roomSel.appendChild(o);
+      }
+      const add = document.createElement("option");
+      add.value = "__add__";
+      add.textContent = "+ комната";
+      roomSel.appendChild(add);
+      roomSel.value = current.room || "";
+      const kinds = [...types];
+      if (current.type && !kinds.includes(current.type)) kinds.push(current.type);
+      typeSel.replaceChildren();
+      const zt = document.createElement("option");
+      zt.value = "";
+      zt.textContent = "Тип";
+      typeSel.appendChild(zt);
+      kinds.forEach((t) => {
+        const o = document.createElement("option");
+        o.value = t;
+        o.textContent = t;
+        typeSel.appendChild(o);
+      });
+      typeSel.value = current.type || "";
+    }
+    function makeMarkPair(s, ch, isLoad) {
+      const box = document.createElement("div");
+      box.className = "pair";
+      const roomSel = document.createElement("select");
+      roomSel.className = "bind";
+      roomSel.setAttribute("aria-label", "Комната");
+      const typeSel = document.createElement("select");
+      typeSel.className = "bind";
+      typeSel.setAttribute("aria-label", isLoad ? "Тип линии" : "Тип входа");
+      const current = splitMark(ch.name);
+      fillRoomTypeSelects(roomSel, typeSel, isLoad ? LOAD_TYPES : BUTTON_TYPES, current);
+      const persist = () => {
+        if (roomSel.value === "__add__") {
+          const typed = window.prompt("Комната");
+          roomSel.value = current.room || "";
+          if (!typed || !typed.trim()) return;
+          fetch("/runtime/desk-marking", {
+            method: "PUT",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ room: typed.trim() }),
+          }).then((r) => r.json()).then((j) => {
+            if (!j.ok) return;
+            deskRooms = j.rooms || deskRooms;
+            const next = composeMark(prettyRoom(typed), typeSel.value);
+            if (next) saveName(s.deviceTopicKey, ch.controlId, next).then(() => loadLast());
+            else {
+              renderRoomBars();
+              fillRoomTypeSelects(roomSel, typeSel, isLoad ? LOAD_TYPES : BUTTON_TYPES, {
+                room: prettyRoom(typed),
+                type: typeSel.value,
+              });
+            }
+          });
+          return;
+        }
+        const next = composeMark(roomSel.value, typeSel.value);
+        if (next === String(ch.name || "").trim()) return;
+        if (!next && !String(ch.name || "").trim()) return;
+        saveName(s.deviceTopicKey, ch.controlId, next).then(() => loadLast()).catch(() => {});
+      };
+      roomSel.addEventListener("change", persist);
+      typeSel.addEventListener("change", persist);
+      box.append(roomSel, typeSel);
+      return box;
+    }
+    function renderRoomBars() {
+      const rooms = roomsFromBus();
+      ["rooms-light", "rooms-buttons"].forEach((id) => {
+        const bar = $(id);
+        if (!bar) return;
+        bar.replaceChildren();
+        rooms.forEach((r) => {
+          const b = document.createElement("span");
+          b.className = "chip";
+          b.style.opacity = "1";
+          b.textContent = r;
+          bar.appendChild(b);
+        });
+        const add = document.createElement("button");
+        add.type = "button";
+        add.className = "ghost";
+        add.textContent = "+ комната";
+        add.addEventListener("click", () => {
+          const typed = window.prompt("Комната");
+          if (!typed || !typed.trim()) return;
+          fetch("/runtime/desk-marking", {
+            method: "PUT",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ room: typed.trim() }),
+          }).then((r) => r.json()).then((j) => {
+            if (!j.ok) return;
+            deskRooms = j.rooms || deskRooms;
+            renderRoomBars();
+            renderShelves(lastShelvesRows);
+          });
+        });
+        bar.appendChild(add);
+      });
+    }
+    async function loadRooms() {
+      try {
+        const r = await fetch("/runtime/desk-marking");
+        const j = await r.json();
+        if (j.ok && Array.isArray(j.rooms)) deskRooms = j.rooms;
+      } catch (_) { /* стол ниже */ }
+      renderRoomBars();
     }
     function prettyContactName(name) {
       const t = String(name || "").trim();
@@ -1354,6 +1493,7 @@
       $("bus").dataset.base = line;
       $("bus").textContent = line;
       renderShelves(shelves);
+      renderRoomBars();
       stampBusGaps();
       liveKeys = { ready: true };
       shelves.forEach((s) => { liveKeys[s.deviceTopicKey] = true; });
@@ -1398,6 +1538,7 @@
     if (/^(light|buttons|relays|cards|poured)$/.test(fromHash)) setTab(fromHash);
     loadHealth();
     loadPoured();
+    loadRooms();
     loadLast();
     loadSolutions();
   </script>

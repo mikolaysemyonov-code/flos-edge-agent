@@ -80,7 +80,12 @@ function writeDoc(doc) {
   fs.mkdirSync(path.dirname(file), { recursive: true });
   fs.writeFileSync(
     file,
-    JSON.stringify({ version: 3, shelves: doc.shelves || {}, solutions: doc.solutions || [] }, null, 2) + "\n",
+    JSON.stringify({
+      version: 3,
+      shelves: doc.shelves || {},
+      solutions: doc.solutions || [],
+      rooms: Array.isArray(doc.rooms) ? doc.rooms : [],
+    }, null, 2) + "\n",
     "utf8",
   );
 }
