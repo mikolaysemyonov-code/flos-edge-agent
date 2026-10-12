@@ -373,9 +373,13 @@
       input.maxLength = 80;
       const loads = Array.isArray(ch.loads) ? ch.loads.filter(Boolean) : [];
       input.placeholder = "Имя контакта";
-      input.value = ch.name || "";
+      const original = String(ch.name || "").trim();
+      input.value = original;
       input.setAttribute("aria-label", (s.label || "") + " " + ch.controlId);
-      const persist = () => saveName(s.deviceTopicKey, ch.controlId, input.value).catch(() => {});
+      const persist = () => {
+        if (input.value.trim() === original) return;
+        saveName(s.deviceTopicKey, ch.controlId, input.value).catch(() => {});
+      };
       input.addEventListener("change", persist);
       input.addEventListener("blur", persist);
       row.appendChild(knob);

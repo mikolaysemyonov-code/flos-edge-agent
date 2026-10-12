@@ -73,12 +73,16 @@ function withPouredHints(shelves) {
       const hints = pouredHintsForContact(rules, s.deviceTopicKey, ch.controlId);
       const deskCards = Array.isArray(ch.cards) && ch.cards.length ? ch.cards : [];
       const cards = deskCards.length ? deskCards : cardsFromHints(hints);
+      const loads = pouredLoadsForContact(rules, marks, s.deviceTopicKey, ch.controlId);
+      const fromLoads = !ch.name && loads.length;
       return {
         ...ch,
         hints,
         cards,
         cardsSource: deskCards.length ? "desk" : cards.length ? "rules" : "",
-        loads: pouredLoadsForContact(rules, marks, s.deviceTopicKey, ch.controlId),
+        name: fromLoads ? loads.join(" · ") : ch.name,
+        source: ch.source || (fromLoads ? "loads" : ""),
+        loads: fromLoads ? [] : loads,
       };
     }),
   }));
