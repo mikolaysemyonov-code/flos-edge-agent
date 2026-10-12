@@ -328,6 +328,51 @@
         $("previewHead").textContent = String(e.message || e);
       }
     }
+    function rowSlave(r) {
+      const k = (r.contacts && r.contacts[0] && r.contacts[0].deviceTopicKey) || "";
+      const m = /_(\d+)$/.exec(k);
+      return m ? Number(m[1]) : 0;
+    }
+    function rowCh(r) {
+      const c = (r.contacts && r.contacts[0] && r.contacts[0].controlId) || "";
+      return Number((/(\d+)\s*$/.exec(c) || [])[1] || 0);
+    }
+    function appendRoomList(ul, rows, roomFn) {
+      const minSlave = {};
+      const minCh = {};
+      rows.forEach((r) => {
+        const room = roomFn(r);
+        if (!room) return;
+        const s = rowSlave(r);
+        const c = rowCh(r);
+        if (minSlave[room] == null || s < minSlave[room]) minSlave[room] = s;
+        if (minCh[room] == null || c < minCh[room]) minCh[room] = c;
+      });
+      rows.sort((a, b) => {
+        const ra = roomFn(a);
+        const rb = roomFn(b);
+        const sa = minSlave[ra] ?? 0;
+        const sb = minSlave[rb] ?? 0;
+        if (sa !== sb) return sa - sb;
+        const ca = minCh[ra] ?? 0;
+        const cb = minCh[rb] ?? 0;
+        if (ca !== cb) return ca - cb;
+        if (ra !== rb) return ra.localeCompare(rb, "ru");
+        return rowCh(a) - rowCh(b);
+      });
+      let last = "";
+      rows.forEach((r) => {
+        const room = roomFn(r);
+        if (room && room !== last) {
+          const h = document.createElement("li");
+          h.className = "roomh";
+          h.textContent = room;
+          ul.appendChild(h);
+          last = room;
+        }
+        ul.appendChild(pouredRow(r));
+      });
+    }
     function pouredRow(r) {
       const li = document.createElement("li");
       const left = document.createElement("div");
@@ -368,27 +413,10 @@
         ul.appendChild(empty);
         return;
       }
-      const roomOf = (title) => String(title || "").split(/\s*·\s*/)[1] || "";
-      scenarios.sort((a, b) => {
-        const ra = roomOf(a.title);
-        const rb = roomOf(b.title);
-        return ra.localeCompare(rb, "ru") || String(a.title).localeCompare(String(b.title), "ru");
-      });
-      let lastRoom = "";
-      scenarios.forEach((r) => {
-        const room = roomOf(r.title);
-        if (room && room !== lastRoom) {
-          const h = document.createElement("li");
-          h.className = "roomh";
-          h.textContent = prettyRoom(room);
-          ul.appendChild(h);
-          lastRoom = room;
-        }
-        ul.appendChild(pouredRow(r));
-      });
+      appendRoomList(ul, scenarios, (r) => prettyRoom(String(r.title || "").split(/\s*·\s*/)[1] || ""));
       wrap.hidden = !names.length;
       $("pouredMarksSum").textContent = names.length + " имён из разметки";
-      names.forEach((r) => marksUl.appendChild(pouredRow(r)));
+      appendRoomList(marksUl, names, (r) => prettyRoom(String(r.title || "").split(/\s*·\s*/)[0] || ""));
     }
     async function loadHealth() {
       const box = $("health");
