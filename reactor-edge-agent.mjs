@@ -23,6 +23,7 @@ import {
   restartWbRules,
   setRuntimeHealthExtraProvider,
 } from "./runtime-control-plane-http.mjs";
+import { setRuntimeMqttScanHandler } from "./runtime-desk-http.mjs";
 import { isMarkShieldDiscoverableDeviceKey } from "./lib/mark-shield-discoverable-device.mjs";
 import {
   classifyWbRulesJournalLines,
@@ -30,7 +31,7 @@ import {
 } from "./wb-rules-journal-incidents.mjs";
 
 /** Одна строка в heartbeat и snapshot — иначе UI врёт версией. */
-const EDGE_AGENT_VERSION = "edge-pilot-v2.stability-2";
+const EDGE_AGENT_VERSION = "edge-pilot-v2.lan-desk-1";
 
 /** Prefer `FLOS_*` (FL OS); fall back to legacy `REACTOR_*` for existing deployments. */
 function env(primary, legacy) {
@@ -1738,7 +1739,7 @@ source_ok=0
 if [[ -n "$CLOUD" ]]; then
   echo "[flos-edge-agent] pulling agent files from cloud tip…"
   set +e
-  for f in Dockerfile entrypoint.sh package.json reactor-edge-agent.mjs runtime-control-plane-http.mjs runtime-rules-inventory.mjs docker-compose.yml wb-rules-journal-incidents.mjs; do
+  for f in Dockerfile entrypoint.sh package.json reactor-edge-agent.mjs runtime-control-plane-http.mjs runtime-desk-http.mjs desk.html runtime-rules-inventory.mjs docker-compose.yml wb-rules-journal-incidents.mjs; do
     curl -fsSL "$CLOUD/api/edge-agent/files/$f" -o "$AGENT_DIR/$f" || { echo "fail $f"; source_ok=1; break; }
   done
   if [[ $source_ok -eq 0 ]]; then
@@ -3062,7 +3063,7 @@ function startHandshakeHttpServerIfEnabled() {
     });
     server.listen(port, bind, () => {
       console.log(
-        `[flos-edge-agent] runtime http://${bind}:${port} (/runtime/health, /runtime/apply) + ${EDGE_HANDSHAKE_HELLO_PATH} + ${ROUTER_SETUP_PREFLIGHT_PATH} + ${ROUTER_SETUP_APPLY_PATH}`,
+        `[flos-edge-agent] runtime http://${bind}:${port}/ (стол пуска) + /runtime/health + /runtime/apply + ${EDGE_HANDSHAKE_HELLO_PATH} + ${ROUTER_SETUP_PREFLIGHT_PATH} + ${ROUTER_SETUP_APPLY_PATH}`,
       );
     });
   };
@@ -3144,6 +3145,28 @@ async function main() {
     cloudBaseUrl: baseUrl,
     mqttMirror: mqttMirrorHealth(),
   }));
+  setRuntimeMqttScanHandler(async (body) => {
+    const ack = await runMqttTopicScanCommand({
+      markShield: true,
+      preferMirror: true,
+      scanMs: Number(body?.scanMs) || 8000,
+    });
+    const scan = ack?.details?.mqttTopicScan;
+    if (!Array.isArray(scan?.entries)) {
+      return { ok: false, error: ack?.error || "no_entries" };
+    }
+    return {
+      ok: true,
+      brokerLabel: scan.brokerLabel || "127.0.0.1:1883",
+      snapshot: {
+        version: 1,
+        source: "wb_mqtt_scan",
+        importedAt: new Date().toISOString(),
+        entries: scan.entries,
+        discoverableDeviceCount: scan.discoverableDeviceCount,
+      },
+    };
+  });
   startMqttDiagnosticsBridge().catch((err) => console.warn("[flos-edge-agent] mqtt bridge failed:", err?.message ?? err));
   startMqttBusMirror().catch((err) => console.warn("[flos-edge-agent] mqtt mirror failed:", err?.message ?? err));
   startHandshakeHttpServerIfEnabled();

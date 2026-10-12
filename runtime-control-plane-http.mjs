@@ -8,6 +8,10 @@ import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { buildRulesInventory } from "./runtime-rules-inventory.mjs";
+import {
+  handleRuntimeMqttScan,
+  serveCommissionDesk,
+} from "./runtime-desk-http.mjs";
 
 const MAX_SCRIPT_BYTES = 512_000;
 const MAX_SHARD_BODY_BYTES = 2_500_000;
@@ -470,6 +474,20 @@ export async function handleRuntimeRollback(req, res) {
 export function runtimeHttpPathHandler(req, res) {
   const method = (req.method ?? "GET").toUpperCase();
   const urlPath = (req.url ?? "/").split("?")[0];
+  if (method === "GET" && (urlPath === "/" || urlPath === "/desk")) {
+    return serveCommissionDesk(req, res);
+  }
+  if ((method === "POST" || method === "GET") && urlPath === "/runtime/mqtt-scan") {
+    void handleRuntimeMqttScan(req, res).catch((err) => {
+      console.error("[runtime-control-plane] mqtt-scan:", err?.message ?? err);
+      if (!res.headersSent) {
+        res.statusCode = 500;
+        res.setHeader("content-type", "application/json; charset=utf-8");
+        res.end(JSON.stringify({ ok: false, error: "INTERNAL" }));
+      }
+    });
+    return true;
+  }
   if (method === "GET" && (urlPath === "/runtime/health" || urlPath === "/health")) {
     handleRuntimeHealth(req, res);
     return true;

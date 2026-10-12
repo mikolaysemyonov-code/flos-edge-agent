@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Пуск · щит</title>
+  <style>
+    :root { color-scheme: dark; }
+    body { margin: 0; font: 15px/1.45 system-ui, sans-serif; background: #0c0c0e; color: #eee; }
+    main { max-width: 40rem; margin: 0 auto; padding: 1.5rem 1.25rem 3rem; }
+    h1 { font-size: 1.25rem; font-weight: 600; margin: 0 0 .35rem; }
+    .muted { color: #9a9aa3; font-size: .85rem; }
+    button { appearance: none; border: 0; border-radius: 999px; padding: .55rem 1rem; background: #f4f4f5; color: #111; font-weight: 600; cursor: pointer; }
+    button:disabled { opacity: .45; cursor: wait; }
+    .card { margin-top: 1rem; padding: 1rem 1.1rem; border-radius: 1rem; background: #16161a; border: 1px solid #2a2a30; }
+    .ok { color: #8ee0b0; }
+    .bad { color: #f0a0a0; }
+    pre { white-space: pre-wrap; word-break: break-word; font-size: .78rem; color: #c8c8d0; }
+  </style>
+</head>
+<body>
+  <main>
+    <p class="muted">Локальный стол · как HA на :8123</p>
+    <h1>Пусконаладка щита</h1>
+    <p class="muted">Браузер в сети контроллера. Кабинет (бриф, КП) — в облачном сервисе. Этот стол снимает шину здесь, на щите.</p>
+    <p style="margin-top:1rem"><button id="scan" type="button">Снять шину</button></p>
+    <div class="card">
+      <p id="health" class="muted">Спрашиваю агента…</p>
+    </div>
+    <div class="card">
+      <p id="bus" class="muted">Шина ещё не снимали.</p>
+      <pre id="log"></pre>
+    </div>
+  </main>
+  <script>
+    const $ = (id) => document.getElementById(id);
+    async function loadHealth() {
+      try {
+        const r = await fetch("/runtime/health");
+        const j = await r.json();
+        const en = j.enrollment && j.enrollment.state ? j.enrollment.state : "—";
+        const topics = j.mqttMirror && j.mqttMirror.topicCount;
+        $("health").className = j.ok ? "ok" : "bad";
+        $("health").textContent = j.ok
+          ? "Агент на щите · enroll " + en + (topics != null ? " · зеркало " + topics + " топиков" : "")
+          : "Агент не ответил";
+      } catch (e) {
+        $("health").className = "bad";
+        $("health").textContent = "Нет /runtime/health — откройте этот адрес с машины в сети щита.";
+      }
+    }
+    $("scan").onclick = async () => {
+      $("scan").disabled = true;
+      $("bus").textContent = "Снимаю шину…";
+      $("log").textContent = "";
+      try {
+        const r = await fetch("/runtime/mqtt-scan", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ scanMs: 8000 }),
+        });
+        const j = await r.json();
+        if (!j.ok) {
+          $("bus").className = "bad";
+          $("bus").textContent = j.error || "Скан не вышел";
+          return;
+        }
+        const n = (j.snapshot && j.snapshot.entries && j.snapshot.entries.length) || 0;
+        const d = j.snapshot && j.snapshot.discoverableDeviceCount;
+        $("bus").className = "ok";
+        $("bus").textContent = "Шина снята · " + n + " топиков" + (d != null ? " · устройств " + d : "") +
+          (j.brokerLabel ? " · " + j.brokerLabel : "");
+        $("log").textContent = (j.snapshot.entries || []).slice(0, 24).map((e) => e.topicPath || e.topic).join("\n");
+      } catch (e) {
+        $("bus").className = "bad";
+        $("bus").textContent = String(e.message || e);
+      } finally {
+        $("scan").disabled = false;
+      }
+    };
+    loadHealth();
+  </script>
+</body>
+</html>

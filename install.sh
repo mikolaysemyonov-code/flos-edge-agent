@@ -167,7 +167,7 @@ want_pinned_github() {
 }
 
 field_dockerfile_ok() {
-  [[ -s "$1" ]] && grep -qE '^COPY runtime-rules-inventory\.mjs ' "$1"
+  [[ -s "$1" ]] && grep -qE '^COPY runtime-rules-inventory\.mjs ' "$1" && grep -qE '^COPY desk\.html ' "$1"
 }
 
 ensure_agent_files() {
@@ -191,7 +191,7 @@ ensure_agent_files() {
   elif cloud_tip_reachable; then
     echo "[flos-edge-agent] скачиваю файлы с tip/облака ($CLOUD_FILES)…"
     local ok=1
-    for f in Dockerfile docker-compose.yml entrypoint.sh package.json reactor-edge-agent.mjs runtime-control-plane-http.mjs runtime-rules-inventory.mjs wb-rules-journal-incidents.mjs; do
+    for f in Dockerfile docker-compose.yml entrypoint.sh package.json reactor-edge-agent.mjs runtime-control-plane-http.mjs runtime-desk-http.mjs desk.html runtime-rules-inventory.mjs wb-rules-journal-incidents.mjs; do
       curl_get "$CLOUD_FILES/$f" -o "$AGENT_DIR/$f" || ok=0
     done
     curl_get "$CLOUD_FILES/lib/mark-shield-discoverable-device.mjs" -o "$AGENT_DIR/lib/mark-shield-discoverable-device.mjs" || ok=0
@@ -204,7 +204,7 @@ ensure_agent_files() {
     echo "[flos-edge-agent] tip недоступен с щита (таймаут) — беру GitHub"
   fi
   echo "[flos-edge-agent] скачиваю файлы с GitHub ($RAW)…"
-  for f in Dockerfile docker-compose.yml entrypoint.sh package.json reactor-edge-agent.mjs runtime-control-plane-http.mjs runtime-rules-inventory.mjs wb-rules-journal-incidents.mjs; do
+  for f in Dockerfile docker-compose.yml entrypoint.sh package.json reactor-edge-agent.mjs runtime-control-plane-http.mjs runtime-desk-http.mjs desk.html runtime-rules-inventory.mjs wb-rules-journal-incidents.mjs; do
     curl_get "$RAW/$f" -o "$AGENT_DIR/$f"
   done
   curl_get "$RAW/lib/mark-shield-discoverable-device.mjs" -o "$AGENT_DIR/lib/mark-shield-discoverable-device.mjs"
@@ -214,14 +214,14 @@ ensure_agent_files() {
 # Не поднимать Restarting-контейнер, если GitHub/tip отдал JS без модуля в образе.
 assert_field_image_complete() {
   local missing=0
-  for f in runtime-rules-inventory.mjs wb-rules-journal-incidents.mjs runtime-control-plane-http.mjs reactor-edge-agent.mjs Dockerfile; do
+  for f in runtime-rules-inventory.mjs wb-rules-journal-incidents.mjs runtime-control-plane-http.mjs runtime-desk-http.mjs desk.html reactor-edge-agent.mjs Dockerfile; do
     if [[ ! -s "$AGENT_DIR/$f" ]]; then
       echo "[flos-edge-agent] ERROR: нет $AGENT_DIR/$f — не собираю дырявый образ." >&2
       missing=1
     fi
   done
   if ! field_dockerfile_ok "$AGENT_DIR/Dockerfile"; then
-    echo "[flos-edge-agent] ERROR: Dockerfile без COPY runtime-rules-inventory.mjs — GitHub не догнали." >&2
+    echo "[flos-edge-agent] ERROR: Dockerfile без COPY runtime-rules-inventory.mjs / desk.html — GitHub не догнали." >&2
     missing=1
   fi
   if [[ "$missing" != "0" ]]; then
@@ -319,7 +319,8 @@ echo "---"
 echo "Health OK:"
 curl -sS --max-time 3 "http://127.0.0.1:18081/runtime/health" || true
 echo
-echo "В сервисе Integrator: «Проверить агент», затем Разметить щит."
+echo "Стол пуска: http://127.0.0.1:18081/  (с Mac в той же сети: http://<ip-щита>:18081/)"
+echo "Облако шину не снимает — пуск в этом браузере."
 echo "Если «агент не зарегистрирован»: docker logs --tail 50 flos-edge-agent | grep -E 'enroll|fetch'"
 echo "Обновление:"
 echo "  curl -fsSL $RAW/install.sh | bash -s -- --upgrade-only (креды из $DATA_DIR/.env)"
