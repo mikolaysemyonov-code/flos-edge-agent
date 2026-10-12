@@ -214,6 +214,7 @@ export function collapsePouredRuleRows(rows) {
     groups.set(fam, {
       id: fam,
       title: humanScenarioTitle(r.id),
+      card: humanScenarioTitle(r.id),
       kind: "user",
       file: r.file,
       contacts: uniqueContacts([...(prev?.contacts || []), ...(r.contacts || [])]),
@@ -299,9 +300,12 @@ export function pouredLoadsForContact(rules, marks, deviceTopicKey, controlId) {
   return compactLoadNames(names);
 }
 
-/** На полке — имя карточки, без «· Channel 3 · MCM8». */
+/** На полке — имя карточки, без комнаты и без SKU. */
 export function shortPouredHint(title) {
-  return String(title || "")
+  const s = String(title || "").trim();
+  const first = s.split(/\s*·\s*/)[0];
+  if (Object.values(DESK_CARD_RU).includes(first)) return first;
+  return s
     .replace(/\s*·\s*WB-.+$/i, "")
     .replace(/\s*·\s*(Channel|Input|K)\s+\S+$/i, "")
     .trim();
@@ -320,7 +324,7 @@ export function pouredHintsForContact(rules, deviceTopicKey, controlId) {
       (c) => liveDeskDeviceKey(c.deviceTopicKey) === key && String(c.controlId) === cid,
     );
     if (!hit) continue;
-    const t = shortPouredHint(r.title);
+    const t = r.card || shortPouredHint(r.title);
     if (!t || seen.has(t)) continue;
     seen.add(t);
     titles.push(t);
