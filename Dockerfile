@@ -13,6 +13,8 @@ COPY runtime-desk-marking.mjs /app/runtime-desk-marking.mjs
 COPY runtime-desk-solutions.mjs /app/runtime-desk-solutions.mjs
 COPY runtime-desk-rules-marks.mjs /app/runtime-desk-rules-marks.mjs
 COPY desk.html /app/desk.html
+COPY desk.css /app/desk.css
+COPY desk.js /app/desk.js
 COPY runtime-rules-inventory.mjs /app/runtime-rules-inventory.mjs
 COPY wb-rules-journal-incidents.mjs /app/wb-rules-journal-incidents.mjs
 COPY lib/ /app/lib/

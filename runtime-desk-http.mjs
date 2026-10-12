@@ -54,6 +54,29 @@ export function serveCommissionDesk(_req, res) {
   }
 }
 
+const DESK_FILES = {
+  "/desk.css": { name: "desk.css", type: "text/css; charset=utf-8" },
+  "/desk.js": { name: "desk.js", type: "text/javascript; charset=utf-8" },
+};
+
+export function serveCommissionDeskFile(urlPath, res) {
+  const spec = DESK_FILES[urlPath];
+  if (!spec) return false;
+  try {
+    const body = fs.readFileSync(path.join(HERE, spec.name));
+    res.statusCode = 200;
+    res.setHeader("content-type", spec.type);
+    res.setHeader("cache-control", "no-store");
+    res.end(body);
+    return true;
+  } catch {
+    res.statusCode = 503;
+    res.setHeader("content-type", "text/plain; charset=utf-8");
+    res.end("Нет " + spec.name);
+    return true;
+  }
+}
+
 function lastShelvesPath() {
   return path.join(path.dirname(deskMarkingPath()), "desk-last-shelves.json");
 }

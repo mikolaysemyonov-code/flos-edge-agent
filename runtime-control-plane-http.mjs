@@ -15,6 +15,7 @@ import {
   handleRuntimeDeskSolutions,
   handleRuntimeMqttScan,
   serveCommissionDesk,
+  serveCommissionDeskFile,
 } from "./runtime-desk-http.mjs";
 
 const MAX_SCRIPT_BYTES = 512_000;
@@ -480,6 +481,9 @@ export function runtimeHttpPathHandler(req, res) {
   const urlPath = (req.url ?? "/").split("?")[0];
   if (method === "GET" && (urlPath === "/" || urlPath === "/desk")) {
     return serveCommissionDesk(req, res);
+  }
+  if (method === "GET" && serveCommissionDeskFile(urlPath, res)) {
+    return true;
   }
   if (method === "GET" && urlPath === "/runtime/desk-poured") {
     handleRuntimeDeskPoured(req, res);
