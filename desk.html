@@ -96,6 +96,10 @@
       box-shadow: 0 0 12px rgb(var(--sky) / .22);
     }
     .loads { display: block; margin-top: .2rem; color: var(--mute); font-size: .72rem; }
+    #bus .gapjump {
+      appearance: none; border: 0; background: none; padding: 0;
+      font: inherit; color: rgb(var(--sky) / .9); cursor: pointer;
+    }
     .orphan { color: rgb(var(--bad)); }
     #gaps li { cursor: pointer; }
     #gaps li:focus { outline: 1px solid rgb(var(--sky) / .45); border-radius: .4rem; }
@@ -322,9 +326,23 @@
     function stampBusGaps() {
       const bus = $("bus");
       if (!bus) return;
-      const base = (bus.textContent || "").replace(/\s·\s\d+ без карточки/, "");
-      if (!/модулей/.test(base)) return;
-      bus.textContent = base + (lastGapCount ? " · " + lastGapCount + " без карточки" : "");
+      const base = bus.dataset.base;
+      if (!base || !/модулей/.test(base)) return;
+      bus.replaceChildren(base);
+      if (!lastGapCount) return;
+      const go = document.createElement("button");
+      go.type = "button";
+      go.className = "gapjump";
+      go.textContent = lastGapCount + " без карточки";
+      go.addEventListener("click", () => {
+        setTab("poured");
+        requestAnimationFrame(() => {
+          const first = [...($("gaps").children || [])].find((n) => n.className !== "roomh");
+          (first || $("gapsHead")).scrollIntoView({ block: "start" });
+          if (first) first.focus();
+        });
+      });
+      bus.append(" · ", go);
     }
     async function loadPreview() {
       try {
@@ -715,7 +733,8 @@
           if (!lastShelvesRows.length) {
             $("bus").className = "meta bad";
             $("bus").style.color = "rgb(var(--bad))";
-            $("bus").textContent = j.error || "Скан не вышел";
+            delete $("bus").dataset.base;
+          $("bus").textContent = j.error || "Скан не вышел";
           }
           return;
         }
@@ -724,6 +743,7 @@
         if (!lastShelvesRows.length) {
           $("bus").className = "meta";
           $("bus").style.color = "rgb(var(--bad))";
+          delete $("bus").dataset.base;
           $("bus").textContent = String(e.message || e);
         }
       } finally {
@@ -738,9 +758,11 @@
       const named = shelves.reduce(function (n, s) {
         return n + (s.channels || []).filter(function (c) { return c.source === "rules" && c.name; }).length;
       }, 0);
-      $("bus").textContent = shelves.length + " модулей" +
+      const line = shelves.length + " модулей" +
         (j.brokerLabel ? " · " + j.brokerLabel : "") +
         (named ? " · " + named + " имён из разметки" : "");
+      $("bus").dataset.base = line;
+      $("bus").textContent = line;
       renderShelves(shelves);
       stampBusGaps();
       liveKeys = { ready: true };
