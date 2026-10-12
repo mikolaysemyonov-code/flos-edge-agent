@@ -185,6 +185,11 @@
       border-color: rgb(var(--sky) / .38);
       background: linear-gradient(180deg, rgb(var(--sky) / .09), rgb(255 255 255 / .03));
     }
+    button.vcard.on {
+      border-color: rgb(var(--sky) / .5);
+      box-shadow: inset 0 0 0 1px rgb(var(--sky) / .18);
+    }
+    .vcard .cat.on { color: rgb(186 230 253); }
     .vcard .vtop { display: flex; align-items: center; justify-content: space-between; gap: .5rem; }
     .vcard .ico {
       width: 2.15rem; height: 2.15rem; border-radius: .7rem; flex: none;
@@ -694,10 +699,14 @@
       if (i < 0) return null;
       return { deviceTopicKey: v.slice(0, i), controlId: v.slice(i + 2) };
     }
+    function catOfSol(sol) {
+      const card = deskCatalog.find((c) => c.id === sol.solutionId);
+      return (card && card.cat) || "";
+    }
     function renderDeskSolutions() {
       const ul = $("deskSols");
       ul.innerHTML = "";
-      deskSolutions.forEach((sol) => {
+      deskSolutions.filter((sol) => catOfSol(sol) === cardFilter).forEach((sol) => {
         const li = document.createElement("li");
         const t = (sol.targets || []).map(contactPretty).join(" · ");
         li.innerHTML = "";
@@ -716,6 +725,11 @@
             body: JSON.stringify({ delete: sol.id }),
           }).then(() => loadSolutions());
         });
+        left.style.cursor = "pointer";
+        left.addEventListener("click", () => {
+          const card = deskCatalog.find((c) => c.id === sol.solutionId);
+          if (card) openCardSheet(card, sol);
+        });
         li.appendChild(left);
         li.appendChild(del);
         ul.appendChild(li);
@@ -732,7 +746,7 @@
       $("cardSheet").hidden = true;
       $("cardMask").hidden = true;
     }
-    function openCardSheet(card) {
+    function openCardSheet(card, draft) {
       const box = $("cardSheet");
       const mask = $("cardMask");
       box.hidden = false;
@@ -753,6 +767,7 @@
         trig.className = "bind";
         trig.setAttribute("aria-label", "Кнопка или датчик");
         fillSelect(trig, namedTriggers(), "С этой шины");
+        if (draft && draft.trigger) trig.value = contactKey(draft.trigger.deviceTopicKey, draft.trigger.controlId);
       } else {
         trigLab.textContent = "Расписание";
         const note = document.createElement("p");
@@ -783,6 +798,7 @@
           cb.type = "checkbox";
           cb.value = contactKey(load.deviceTopicKey, load.controlId);
           lab.append(cb, document.createTextNode(load.label));
+          if (draft && (draft.targets || []).some((t) => contactKey(t.deviceTopicKey, t.controlId) === cb.value)) cb.checked = true;
           picks.appendChild(lab);
         });
         tgtNode = picks;
@@ -792,6 +808,9 @@
         tgt.className = "bind";
         tgt.setAttribute("aria-label", "Линия");
         fillSelect(tgt, loads, "Из этой разметки");
+        if (draft && draft.targets && draft.targets[0]) {
+          tgt.value = contactKey(draft.targets[0].deviceTopicKey, draft.targets[0].controlId);
+        }
         tgtNode = tgt;
         collectTargets = () => [parseBindValue(tgt.value)].filter(Boolean);
       }
@@ -806,6 +825,7 @@
           method: "PUT",
           headers: { "content-type": "application/json" },
           body: JSON.stringify({
+            id: draft && draft.id,
             solutionId: card.id,
             trigger: needTrig ? parseBindValue(trig.value) : null,
             targets: collectTargets(),
@@ -866,21 +886,24 @@
         b.type = "button";
         b.textContent = cat;
         b.setAttribute("aria-pressed", cardFilter === cat ? "true" : "false");
-        b.addEventListener("click", () => { cardFilter = cat; renderVitrine(); });
+        b.addEventListener("click", () => { cardFilter = cat; renderVitrine(); renderDeskSolutions(); });
         filters.appendChild(b);
       });
       const grid = $("vitrine");
       grid.replaceChildren();
       deskCatalog.filter((c) => c.cat === cardFilter).forEach((card) => {
+        const onDesk = deskSolutions.filter((s) => s.solutionId === card.id);
         const btn = document.createElement("button");
         btn.type = "button";
-        btn.className = "vcard";
+        btn.className = "vcard" + (onDesk.length ? " on" : "");
         btn.innerHTML = "<span class=\"vtop\"><span class=\"ico\"></span><span class=\"cat\"></span></span><span class=\"vt\"></span><span class=\"vs\"></span>";
         btn.querySelector(".ico").innerHTML = CARD_ICO[card.id] || CARD_ICO[card.cat] || CARD_ICO["Свет"];
-        btn.querySelector(".cat").textContent = card.cat;
+        const catEl = btn.querySelector(".cat");
+        catEl.textContent = onDesk.length ? "на столе" + (onDesk.length > 1 ? " · " + onDesk.length : "") : card.cat;
+        if (onDesk.length) catEl.classList.add("on");
         btn.querySelector(".vt").textContent = card.title;
         btn.querySelector(".vs").textContent = card.summary;
-        btn.addEventListener("click", () => openCardSheet(card));
+        btn.addEventListener("click", () => openCardSheet(card, onDesk[0]));
         grid.appendChild(btn);
       });
     }
