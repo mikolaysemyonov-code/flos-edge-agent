@@ -597,6 +597,13 @@
       if (n10 >= 2 && n10 <= 4 && (n100 < 12 || n100 > 14)) return n + " модуля без разметки";
       return n + " модулей без разметки";
     }
+    function ruIdleButtons(n) {
+      const n10 = n % 10;
+      const n100 = n % 100;
+      if (n10 === 1 && n100 !== 11) return n + " модуль без кнопок в заливке";
+      if (n10 >= 2 && n10 <= 4 && (n100 < 12 || n100 > 14)) return n + " модуля без кнопок в заливке";
+      return n + " модулей без кнопок в заливке";
+    }
     function prettyRoom(s) {
       const t = String(s || "").trim();
       if (!t) return "";
@@ -698,13 +705,15 @@
       const live = rows.filter(hasFeatured);
       const idle = rows.filter((s) => !hasFeatured(s));
       live.forEach((s) => ul.appendChild(moduleCard(s)));
-      if ((id === "shelves-relays" || id === "shelves-light") && idle.length) {
+      if ((id === "shelves-relays" || id === "shelves-light" || id === "shelves-buttons") && idle.length) {
         const det = document.createElement("details");
         det.className = "more";
         const sum = document.createElement("summary");
         sum.textContent = id === "shelves-relays"
           ? idle.length + " реле без линий в заливке"
-          : ruIdleLight(idle.length);
+          : id === "shelves-buttons"
+            ? ruIdleButtons(idle.length)
+            : ruIdleLight(idle.length);
         det.appendChild(sum);
         const inner = document.createElement("ul");
         idle.forEach((s) => inner.appendChild(moduleCard(s, true)));
