@@ -16,21 +16,25 @@
     .ok { color: #8ee0b0; }
     .bad { color: #f0a0a0; }
     ul { list-style: none; margin: .75rem 0 0; padding: 0; }
-    li { display: flex; justify-content: space-between; align-items: center; gap: 1rem; padding: .55rem 0; border-top: 1px solid #2a2a30; }
-    li:first-child { border-top: 0; }
-    .meta { min-width: 0; flex: 1; display: flex; flex-direction: column; gap: .2rem; }
-    input[type="text"] { width: 100%; box-sizing: border-box; border: 0; border-bottom: 1px solid #3a3a42; background: transparent; color: #eee; font: inherit; font-weight: 600; padding: 0 0 .2rem; outline: none; }
+    li.mod { padding: .85rem 0 0.35rem; border-top: 1px solid #2a2a30; }
+    li.mod:first-child { border-top: 0; padding-top: 0; }
+    .head { display: flex; justify-content: space-between; gap: 1rem; margin-bottom: .35rem; }
+    .sku { font-weight: 600; }
+    .ch { color: #9a9aa3; font-size: .8rem; white-space: nowrap; }
+    .channels { margin: 0; }
+    .channels li { display: flex; align-items: center; gap: .75rem; padding: .35rem 0; border-top: 0; }
+    .knob { color: #9a9aa3; font-size: .8rem; min-width: 4.5rem; flex: none; }
+    input[type="text"] { width: 100%; box-sizing: border-box; border: 0; border-bottom: 1px solid #3a3a42; background: transparent; color: #eee; font: inherit; font-weight: 600; padding: 0 0 .15rem; outline: none; }
     input[type="text"]::placeholder { color: #6e6e78; font-weight: 500; }
     input[type="text"]:focus { border-bottom-color: #8ee0b0; color: #fff; }
-    .sku { color: #9a9aa3; font-size: .75rem; }
-    .ch { color: #9a9aa3; font-size: .8rem; white-space: nowrap; }
+    .from-rules { color: #6e6e78; font-size: .7rem; }
   </style>
 </head>
 <body>
   <main>
     <p class="muted">Локальный стол · как HA на :8123</p>
     <h1>Пусконаладка щита</h1>
-    <p class="muted">Серая строка — имя, как на бумаге. Пишется на щите, переживает перезапуск. Заливку rules не делаем.</p>
+    <p class="muted">Имя — на контакте (K1…), не на корпусе. Берём из залитых rules; правка живёт на щите. Новую заливку не делаем.</p>
     <p style="margin-top:1rem"><button id="scan" type="button">Снять шину</button></p>
     <div class="card">
       <p id="health" class="muted">Спрашиваю агента…</p>
@@ -49,20 +53,21 @@
         const en = j.enrollment && j.enrollment.state ? j.enrollment.state : "—";
         const topics = j.mqttMirror && j.mqttMirror.topicCount;
         const ver = String(j.agentVersion || "").replace(/^.*\./, "");
+        const rules = j.rulesInventory && j.rulesInventory.userDefineRuleCount;
         $("health").className = j.ok ? "ok" : "bad";
         $("health").textContent = j.ok
-          ? "Агент на щите · enroll " + en + (ver ? " · " + ver : "") + (topics != null ? " · зеркало " + topics + " топиков" : "")
+          ? "Агент на щите · enroll " + en + (ver ? " · " + ver : "") + (topics != null ? " · зеркало " + topics + " топиков" : "") + (rules ? " · rules " + rules : "")
           : "Агент не ответил";
       } catch (e) {
         $("health").className = "bad";
         $("health").textContent = "Нет /runtime/health — откройте этот адрес с машины в сети щита.";
       }
     }
-    async function saveName(key, name) {
+    async function saveName(key, controlId, name) {
       await fetch("/runtime/desk-marking", {
         method: "PUT",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ deviceTopicKey: key, name: name }),
+        body: JSON.stringify({ deviceTopicKey: key, controlId: controlId, name: name }),
       });
     }
     function renderShelves(rows) {
@@ -70,27 +75,45 @@
       ul.innerHTML = "";
       (rows || []).forEach((s) => {
         const li = document.createElement("li");
-        const meta = document.createElement("div");
-        meta.className = "meta";
-        const input = document.createElement("input");
-        input.type = "text";
-        input.maxLength = 80;
-        input.placeholder = "Имя на щите";
-        input.value = s.name || "";
-        input.setAttribute("aria-label", "Имя " + (s.label || s.deviceTopicKey));
-        const persist = () => saveName(s.deviceTopicKey, input.value).catch(() => {});
-        input.addEventListener("change", persist);
-        input.addEventListener("blur", persist);
+        li.className = "mod";
+        const head = document.createElement("div");
+        head.className = "head";
         const sku = document.createElement("span");
         sku.className = "sku";
-        sku.textContent = s.label || "";
-        meta.appendChild(input);
-        meta.appendChild(sku);
-        const ch = document.createElement("span");
-        ch.className = "ch";
-        ch.textContent = s.hint || (s.channelCount ? s.channelCount + " кан." : "");
-        li.appendChild(meta);
-        li.appendChild(ch);
+        sku.textContent = s.label || s.deviceTopicKey;
+        const meta = document.createElement("span");
+        meta.className = "ch";
+        meta.textContent = s.hint || (s.channelCount ? s.channelCount + " кан." : "");
+        head.appendChild(sku);
+        head.appendChild(meta);
+        li.appendChild(head);
+        const chs = document.createElement("ul");
+        chs.className = "channels";
+        (s.channels || []).forEach((ch) => {
+          const row = document.createElement("li");
+          const knob = document.createElement("span");
+          knob.className = "knob";
+          knob.textContent = ch.controlId;
+          const input = document.createElement("input");
+          input.type = "text";
+          input.maxLength = 80;
+          input.placeholder = "Имя контакта";
+          input.value = ch.name || "";
+          input.setAttribute("aria-label", (s.label || "") + " " + ch.controlId);
+          const persist = () => saveName(s.deviceTopicKey, ch.controlId, input.value).catch(() => {});
+          input.addEventListener("change", persist);
+          input.addEventListener("blur", persist);
+          row.appendChild(knob);
+          row.appendChild(input);
+          if (ch.source === "rules" && ch.name) {
+            const tag = document.createElement("span");
+            tag.className = "from-rules";
+            tag.textContent = "rules";
+            row.appendChild(tag);
+          }
+          chs.appendChild(row);
+        });
+        li.appendChild(chs);
         ul.appendChild(li);
       });
     }

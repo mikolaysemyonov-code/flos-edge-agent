@@ -109,6 +109,13 @@ function ruShiny(n) {
   return `${n} шин`;
 }
 
+function sortControlIds(a, b) {
+  const pa = String(a).replace(/\d+\s*$/, "");
+  const pb = String(b).replace(/\d+\s*$/, "");
+  if (pa !== pb) return pa.localeCompare(pb);
+  return (Number((/(\d+)\s*$/.exec(a) || [])[1]) || 0) - (Number((/(\d+)\s*$/.exec(b) || [])[1]) || 0);
+}
+
 export function groupDeskShelves(entries) {
   const map = new Map();
   for (const entry of Array.isArray(entries) ? entries : []) {
@@ -139,9 +146,10 @@ export function groupDeskShelves(entries) {
     }
   }
   return [...map.values()]
-    .map(({ controls: _c, buses, type: _t, slave: _s, ...rest }) => ({
+    .map(({ controls, buses, type: _t, slave: _s, ...rest }) => ({
       ...rest,
       hint: buses.size > 0 ? ruShiny(buses.size) : null,
+      channels: [...controls].sort(sortControlIds).map((controlId) => ({ controlId })),
     }))
     .sort((a, b) => {
       const pa = parseDeskDeviceKey(a.deviceTopicKey);

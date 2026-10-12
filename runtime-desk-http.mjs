@@ -111,7 +111,12 @@ export async function handleRuntimeMqttScan(req, res) {
       out.shelves = applyMarksToShelves(groupDeskShelves(out.snapshot.entries));
       if (out.shelves.length) {
         writeLastDeskShelves(
-          out.shelves.map(({ name: _n, room: _r, ...row }) => row),
+          out.shelves.map(({ name: _n, room: _r, channels, ...row }) => ({
+            ...row,
+            channels: Array.isArray(channels)
+              ? channels.map((c) => ({ controlId: c.controlId }))
+              : [],
+          })),
           out.brokerLabel,
         );
       }
