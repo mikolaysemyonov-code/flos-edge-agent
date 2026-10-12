@@ -10,7 +10,8 @@ import {
   readDeskMarking,
   upsertDeskShelfMark,
 } from "./runtime-desk-marking.mjs";
-import { groupDeskShelves } from "./runtime-desk-shelves.mjs";
+import { readPouredDeskSnapshot } from "./runtime-desk-rules-marks.mjs";
+import { formatDeskShelfLabel, groupDeskShelves } from "./runtime-desk-shelves.mjs";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 
@@ -159,4 +160,16 @@ export async function handleRuntimeDeskMarking(req, res) {
   }
   const out = upsertDeskShelfMark(body);
   jsonEnd(res, out.ok ? 200 : 400, out);
+}
+
+export function handleRuntimeDeskPoured(_req, res) {
+  const snap = readPouredDeskSnapshot();
+  const rules = (snap.rules || []).map((r) => ({
+    ...r,
+    contacts: (r.contacts || []).map((c) => ({
+      ...c,
+      label: formatDeskShelfLabel(c.deviceTopicKey) || c.deviceTopicKey,
+    })),
+  }));
+  jsonEnd(res, 200, { ok: true, ...snap, rules });
 }

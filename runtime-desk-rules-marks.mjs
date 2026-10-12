@@ -65,19 +65,27 @@ export function parseChannelMarksFromRules(source) {
   return out;
 }
 
-export function readPouredChannelMarks() {
+function isIntegratorShardName(name) {
+  return /^(00_|15_|20_|30_|40_rules).*\.js$/i.test(name) || name === "40_rules_integrator.js";
+}
+
+function listShardFiles() {
   const dir = deployDir();
-  const out = {};
-  let files = [];
   try {
-    files = fs.readdirSync(dir);
+    return fs.readdirSync(dir).filter(isIntegratorShardName).map((name) => ({
+      filename: name,
+      content: fs.readFileSync(path.join(dir, name), "utf8"),
+    }));
   } catch {
-    return out;
+    return [];
   }
-  for (const name of files) {
-    if (!/^(00_|15_|20_|30_|40_rules).*\.js$/i.test(name) && name !== "40_rules_integrator.js") continue;
+}
+
+export function readPouredChannelMarks() {
+  const out = {};
+  for (const file of listShardFiles()) {
     try {
-      const parsed = parseChannelMarksFromRules(fs.readFileSync(path.join(dir, name), "utf8"));
+      const parsed = parseChannelMarksFromRules(file.content);
       for (const [dev, ch] of Object.entries(parsed)) {
         if (!out[dev]) out[dev] = {};
         Object.assign(out[dev], ch);
@@ -87,4 +95,68 @@ export function readPouredChannelMarks() {
     }
   }
   return out;
+}
+
+function uniqueContacts(rows) {
+  const seen = new Set();
+  const out = [];
+  for (const row of rows) {
+    const k = `${row.deviceTopicKey}|${row.controlId}`;
+    if (seen.has(k)) continue;
+    seen.add(k);
+    out.push(row);
+  }
+  return out;
+}
+
+/** Список залитых defineRule без тел: id, имя, контакты. Mirror/bri не дублируем. */
+export function parsePouredRuleRows(source, filename) {
+  const text = String(source ?? "");
+  const titles = parseCellTitles(text);
+  const file = String(filename ?? "");
+  const rows = [];
+  const ruleRe = /defineRule\s*\(\s*['"]([^'"]+)['"][\s\S]*?(?=defineRule\s*\(|$)/g;
+  let m;
+  while ((m = ruleRe.exec(text))) {
+    const id = m[1];
+    if (/^fl_rt_mir_/.test(id) || /_(bri|temp)$/.test(id)) continue;
+    const contacts = [];
+    const cellRe = /['"](wb-[a-z0-9-]+_\d+(?:_\d+)?)\/([^'"]+)['"]/gi;
+    let c;
+    while ((c = cellRe.exec(m[0]))) {
+      contacts.push({ deviceTopicKey: liveDeskDeviceKey(c[1]), controlId: c[2] });
+    }
+    const uniq = uniqueContacts(contacts);
+    if (!uniq.length && !/^fl_rt_cmd_/.test(id)) continue;
+    const stem = id.replace(/^fl_rt_cmd_/, "");
+    const title = (titles[stem] || titles[id] || "").replace(/\s*·\s*яркость$/i, "");
+    const kind = /^fl_rt_cmd_/.test(id) ? "marking" : /authored_|40_rules/i.test(`${id} ${file}`) ? "user" : "core";
+    rows.push({ id, title, kind, file, contacts: uniq });
+  }
+  return rows;
+}
+
+export function readPouredDeskSnapshot() {
+  const files = listShardFiles();
+  const rules = [];
+  for (const file of files) {
+    rules.push(...parsePouredRuleRows(file.content, file.filename));
+  }
+  let revisionId = "";
+  try {
+    const hashPath = (
+      process.env.FLOS_WB_RULES_RELEASE_HASH_PATH ||
+      process.env.REACTOR_WB_RULES_RELEASE_HASH_PATH ||
+      "/etc/formlogic/current_release.hash"
+    ).trim();
+    revisionId = fs.readFileSync(hashPath, "utf8").trim();
+  } catch {
+    revisionId = "";
+  }
+  return {
+    revisionId,
+    files: files.map((f) => ({ filename: f.filename, bytes: Buffer.byteLength(f.content, "utf8") })),
+    rules: rules.slice(0, 80),
+    ruleCount: rules.length,
+  };
 }

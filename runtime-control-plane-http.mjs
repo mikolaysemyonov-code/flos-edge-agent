@@ -10,6 +10,7 @@ import path from "node:path";
 import { buildRulesInventory } from "./runtime-rules-inventory.mjs";
 import {
   handleRuntimeDeskMarking,
+  handleRuntimeDeskPoured,
   handleRuntimeMqttScan,
   serveCommissionDesk,
 } from "./runtime-desk-http.mjs";
@@ -477,6 +478,10 @@ export function runtimeHttpPathHandler(req, res) {
   const urlPath = (req.url ?? "/").split("?")[0];
   if (method === "GET" && (urlPath === "/" || urlPath === "/desk")) {
     return serveCommissionDesk(req, res);
+  }
+  if (method === "GET" && urlPath === "/runtime/desk-poured") {
+    handleRuntimeDeskPoured(req, res);
+    return true;
   }
   if ((method === "GET" || method === "PUT" || method === "POST") && urlPath === "/runtime/desk-marking") {
     void handleRuntimeDeskMarking(req, res).catch((err) => {

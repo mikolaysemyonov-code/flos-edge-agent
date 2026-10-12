@@ -28,13 +28,17 @@
     input[type="text"]::placeholder { color: #6e6e78; font-weight: 500; }
     input[type="text"]:focus { border-bottom-color: #8ee0b0; color: #fff; }
     .from-rules { color: #6e6e78; font-size: .7rem; }
+    .kind { color: #6e6e78; font-size: .7rem; white-space: nowrap; }
+    .orphan { color: #f0a0a0; }
+    #poured li { display: flex; justify-content: space-between; align-items: baseline; gap: 1rem; padding: .4rem 0; border-top: 1px solid #2a2a30; }
+    #poured li:first-child { border-top: 0; }
   </style>
 </head>
 <body>
   <main>
     <p class="muted">Локальный стол · как HA на :8123</p>
     <h1>Пусконаладка щита</h1>
-    <p class="muted">Имя — на контакте (K1…), не на корпусе. Берём из залитых rules; правка живёт на щите. Новую заливку не делаем.</p>
+    <p class="muted">Имя — на контакте. Залитое с щита видно ниже: что есть и что поправить. Новую заливку не делаем.</p>
     <p style="margin-top:1rem"><button id="scan" type="button">Снять шину</button></p>
     <div class="card">
       <p id="health" class="muted">Спрашиваю агента…</p>
@@ -43,9 +47,50 @@
       <p id="bus" class="muted">Шина ещё не снимали.</p>
       <ul id="shelves"></ul>
     </div>
+    <div class="card">
+      <p id="pouredHead" class="muted">Спрашиваю залитое…</p>
+      <ul id="poured"></ul>
+    </div>
   </main>
   <script>
     const $ = (id) => document.getElementById(id);
+    let liveKeys = {};
+    let pouredRules = [];
+    function kindRu(k) {
+      if (k === "marking") return "разметка";
+      if (k === "user") return "сценарий";
+      return "ядро";
+    }
+    function contactLine(c) {
+      return (c.label || c.deviceTopicKey) + " · " + c.controlId;
+    }
+    function renderPoured() {
+      const ul = $("poured");
+      ul.innerHTML = "";
+      pouredRules.forEach((r) => {
+        const li = document.createElement("li");
+        const left = document.createElement("div");
+        const title = document.createElement("div");
+        title.textContent = r.title || r.id;
+        const sub = document.createElement("div");
+        sub.className = "muted";
+        const bits = (r.contacts || []).map(contactLine);
+        const missing = (r.contacts || []).filter((c) => liveKeys.ready && !liveKeys[c.deviceTopicKey]);
+        sub.textContent = bits.join(", ") || "нет контакта на шине";
+        if (missing.length) {
+          sub.className = "muted orphan";
+          sub.textContent = bits.join(", ") + " · нет на этой шине";
+        }
+        left.appendChild(title);
+        left.appendChild(sub);
+        const kind = document.createElement("span");
+        kind.className = "kind";
+        kind.textContent = kindRu(r.kind);
+        li.appendChild(left);
+        li.appendChild(kind);
+        ul.appendChild(li);
+      });
+    }
     async function loadHealth() {
       try {
         const r = await fetch("/runtime/health");
@@ -154,7 +199,31 @@
         (j.brokerLabel ? " · " + j.brokerLabel : "") +
         (named ? " · " + named + " имён из rules" : "");
       renderShelves(shelves);
+      liveKeys = { ready: true };
+      shelves.forEach((s) => { liveKeys[s.deviceTopicKey] = true; });
+      renderPoured();
       if (shelves.length) $("scan").textContent = "Обновить шину";
+    }
+    async function loadPoured() {
+      try {
+        const r = await fetch("/runtime/desk-poured");
+        const j = await r.json();
+        if (!j.ok) {
+          $("pouredHead").className = "bad";
+          $("pouredHead").textContent = j.error || "Не прочитал залитое";
+          return;
+        }
+        pouredRules = j.rules || [];
+        const files = (j.files || []).map((f) => f.filename).join(", ");
+        $("pouredHead").className = "ok";
+        $("pouredHead").textContent = "Залито на щит · " + (j.ruleCount || pouredRules.length) + " правил" +
+          (j.revisionId ? " · " + String(j.revisionId).slice(0, 12) : "") +
+          (files ? " · " + files : "");
+        renderPoured();
+      } catch (e) {
+        $("pouredHead").className = "bad";
+        $("pouredHead").textContent = String(e.message || e);
+      }
     }
     async function loadLast() {
       try {
@@ -165,6 +234,7 @@
       await scanNow();
     }
     loadHealth();
+    loadPoured();
     loadLast();
   </script>
 </body>
