@@ -18,10 +18,10 @@
     ul { list-style: none; margin: .75rem 0 0; padding: 0; }
     li { display: flex; justify-content: space-between; align-items: center; gap: 1rem; padding: .55rem 0; border-top: 1px solid #2a2a30; }
     li:first-child { border-top: 0; }
-    .meta { min-width: 0; flex: 1; display: flex; flex-direction: column; gap: .1rem; }
-    input[type="text"] { width: 100%; box-sizing: border-box; border: 0; background: transparent; color: #eee; font: inherit; padding: 0; outline: none; }
-    input[type="text"]::placeholder { color: #eee; }
-    input[type="text"]:focus { color: #fff; }
+    .meta { min-width: 0; flex: 1; display: flex; flex-direction: column; gap: .2rem; }
+    input[type="text"] { width: 100%; box-sizing: border-box; border: 0; border-bottom: 1px solid #3a3a42; background: transparent; color: #eee; font: inherit; font-weight: 600; padding: 0 0 .2rem; outline: none; }
+    input[type="text"]::placeholder { color: #6e6e78; font-weight: 500; }
+    input[type="text"]:focus { border-bottom-color: #8ee0b0; color: #fff; }
     .sku { color: #9a9aa3; font-size: .75rem; }
     .ch { color: #9a9aa3; font-size: .8rem; white-space: nowrap; }
   </style>
@@ -30,7 +30,7 @@
   <main>
     <p class="muted">Локальный стол · как HA на :8123</p>
     <h1>Пусконаладка щита</h1>
-    <p class="muted">Имя полки пишется на щите и переживает перезапуск. Заливку rules не делаем.</p>
+    <p class="muted">Серая строка — имя, как на бумаге. Пишется на щите, переживает перезапуск. Заливку rules не делаем.</p>
     <p style="margin-top:1rem"><button id="scan" type="button">Снять шину</button></p>
     <div class="card">
       <p id="health" class="muted">Спрашиваю агента…</p>
@@ -48,9 +48,10 @@
         const j = await r.json();
         const en = j.enrollment && j.enrollment.state ? j.enrollment.state : "—";
         const topics = j.mqttMirror && j.mqttMirror.topicCount;
+        const ver = String(j.agentVersion || "").replace(/^.*\./, "");
         $("health").className = j.ok ? "ok" : "bad";
         $("health").textContent = j.ok
-          ? "Агент на щите · enroll " + en + (topics != null ? " · зеркало " + topics + " топиков" : "")
+          ? "Агент на щите · enroll " + en + (ver ? " · " + ver : "") + (topics != null ? " · зеркало " + topics + " топиков" : "")
           : "Агент не ответил";
       } catch (e) {
         $("health").className = "bad";
@@ -74,12 +75,12 @@
         const input = document.createElement("input");
         input.type = "text";
         input.maxLength = 80;
-        input.placeholder = s.label || s.deviceTopicKey;
+        input.placeholder = "Имя на щите";
         input.value = s.name || "";
         input.setAttribute("aria-label", "Имя " + (s.label || s.deviceTopicKey));
-        input.addEventListener("change", () => {
-          saveName(s.deviceTopicKey, input.value).catch(() => {});
-        });
+        const persist = () => saveName(s.deviceTopicKey, input.value).catch(() => {});
+        input.addEventListener("change", persist);
+        input.addEventListener("blur", persist);
         const sku = document.createElement("span");
         sku.className = "sku";
         sku.textContent = s.label || "";
