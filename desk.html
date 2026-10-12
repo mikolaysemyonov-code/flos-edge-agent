@@ -704,7 +704,7 @@
         const left = document.createElement("div");
         left.innerHTML = "<strong></strong><div class=\"meta\"></div>";
         left.querySelector("strong").textContent = sol.title || sol.solutionId;
-        left.querySelector(".meta").textContent = contactPretty(sol.trigger) + (t ? " → " + t : "");
+        left.querySelector(".meta").textContent = (sol.trigger ? contactPretty(sol.trigger) : "по расписанию") + (t ? " → " + t : "");
         const del = document.createElement("button");
         del.type = "button";
         del.className = "ghost";
@@ -743,13 +743,23 @@
       const p = document.createElement("p");
       p.className = "meta";
       p.textContent = card.summary;
+      const needTrig = card.needTrig !== false;
+      let trig = null;
       const trigLab = document.createElement("span");
       trigLab.className = "fld";
-      trigLab.textContent = "Кнопка / датчик";
-      const trig = document.createElement("select");
-      trig.className = "bind";
-      trig.setAttribute("aria-label", "Кнопка или датчик");
-      fillSelect(trig, namedTriggers(), "С этой шины");
+      if (needTrig) {
+        trigLab.textContent = "Кнопка / датчик";
+        trig = document.createElement("select");
+        trig.className = "bind";
+        trig.setAttribute("aria-label", "Кнопка или датчик");
+        fillSelect(trig, namedTriggers(), "С этой шины");
+      } else {
+        trigLab.textContent = "Расписание";
+        const note = document.createElement("p");
+        note.className = "meta";
+        note.textContent = "По cron. Время настроим при заливке. Сейчас — линии с этой шины.";
+        trig = note;
+      }
       const tgtLab = document.createElement("span");
       tgtLab.className = "fld";
       tgtLab.textContent = card.multi ? "Линии" : "Линия";
@@ -795,7 +805,11 @@
         fetch("/runtime/desk-solutions", {
           method: "PUT",
           headers: { "content-type": "application/json" },
-          body: JSON.stringify({ solutionId: card.id, trigger: parseBindValue(trig.value), targets: collectTargets() }),
+          body: JSON.stringify({
+            solutionId: card.id,
+            trigger: needTrig ? parseBindValue(trig.value) : null,
+            targets: collectTargets(),
+          }),
         }).then((r) => r.json()).then((j) => {
           if (!j.ok) {
             err.textContent = j.error === "need_trigger" ? "Нужна кнопка с шины"
@@ -832,10 +846,19 @@
       scene_away: "<svg viewBox='0 0 24 24'><path d='M3 11l9-8 9 8'/><path d='M5 10v10h14V10'/></svg>",
       scene_vacation: "<svg viewBox='0 0 24 24'><path d='M4 20l7-16 3 7 6 2z'/></svg>",
       scene_home: "<svg viewBox='0 0 24 24'><path d='M3 11l9-8 9 8'/><path d='M9 21V12h6v9'/></svg>",
+      "Свет": "<svg viewBox='0 0 24 24'><circle cx='12' cy='12' r='4'/><path d='M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2'/></svg>",
+      "Шторы": "<svg viewBox='0 0 24 24'><path d='M4 4h16v16H4z'/><path d='M4 8h16M12 8v12'/></svg>",
+      "Климат": "<svg viewBox='0 0 24 24'><path d='M14 14.76V3.5a2.5 2.5 0 0 0-5 0v11.26a4 4 0 1 0 5 0z'/></svg>",
+      "Охрана": "<svg viewBox='0 0 24 24'><path d='M12 3l8 4v5c0 5-3.5 8.5-8 9.5C7.5 20.5 4 17 4 12V7z'/></svg>",
+      "Розетки": "<svg viewBox='0 0 24 24'><path d='M9 7v4M15 7v4M8 15h8'/><rect x='5' y='4' width='14' height='16' rx='3'/></svg>",
+      "Общее": "<svg viewBox='0 0 24 24'><path d='M12 3l1.8 5.5H19l-4.4 3.2L16.4 18 12 14.8 7.6 18l1.8-6.3L5 8.5h5.2z'/></svg>",
+      "Сцены": "<svg viewBox='0 0 24 24'><path d='M3 11l9-8 9 8'/><path d='M5 10v10h14V10'/></svg>",
     };
+    const CAT_ORDER = ["Свет", "Шторы", "Климат", "Охрана", "Розетки", "Общее", "Сцены"];
     function renderVitrine() {
       const filters = $("cardFilters");
-      const cats = ["Все", ...[...new Set(deskCatalog.map((c) => c.cat))]];
+      const have = new Set(deskCatalog.map((c) => c.cat));
+      const cats = ["Все", ...CAT_ORDER.filter((c) => have.has(c))];
       filters.replaceChildren();
       cats.forEach((cat) => {
         const b = document.createElement("button");
@@ -852,7 +875,7 @@
         btn.type = "button";
         btn.className = "vcard";
         btn.innerHTML = "<span class=\"vtop\"><span class=\"ico\"></span><span class=\"cat\"></span></span><span class=\"vt\"></span><span class=\"vs\"></span>";
-        btn.querySelector(".ico").innerHTML = CARD_ICO[card.id] || CARD_ICO.light_button_toggle;
+        btn.querySelector(".ico").innerHTML = CARD_ICO[card.id] || CARD_ICO[card.cat] || CARD_ICO["Свет"];
         btn.querySelector(".cat").textContent = card.cat;
         btn.querySelector(".vt").textContent = card.title;
         btn.querySelector(".vs").textContent = card.summary;
