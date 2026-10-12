@@ -3,7 +3,7 @@
  */
 import fs from "node:fs";
 import path from "node:path";
-import { canonicalDeskShelfKey } from "./runtime-desk-shelves.mjs";
+import { canonicalDeskShelfKey, isDeskShelfChannelControl } from "./runtime-desk-shelves.mjs";
 
 function deployDir() {
   return (
@@ -119,21 +119,56 @@ export function parsePouredRuleRows(source, filename) {
   let m;
   while ((m = ruleRe.exec(text))) {
     const id = m[1];
-    if (/^fl_rt_mir_/.test(id) || /_(bri|temp)$/.test(id)) continue;
+    if (/^fl_rt_(mir|bri|temp)_/.test(id)) continue;
     const contacts = [];
     const cellRe = /['"](wb-[a-z0-9-]+_\d+(?:_\d+)?)\/([^'"]+)['"]/gi;
     let c;
     while ((c = cellRe.exec(m[0]))) {
-      contacts.push({ deviceTopicKey: liveDeskDeviceKey(c[1]), controlId: c[2] });
+      const deviceTopicKey = liveDeskDeviceKey(c[1]);
+      const controlId = c[2];
+      if (!isDeskShelfChannelControl(controlId, deviceTopicKey)) continue;
+      contacts.push({ deviceTopicKey, controlId });
     }
     const uniq = uniqueContacts(contacts);
     if (!uniq.length && !/^fl_rt_cmd_/.test(id)) continue;
     const stem = id.replace(/^fl_rt_cmd_/, "");
     const title = (titles[stem] || titles[id] || "").replace(/\s*·\s*яркость$/i, "");
-    const kind = /^fl_rt_cmd_/.test(id) ? "marking" : /authored_|40_rules/i.test(`${id} ${file}`) ? "user" : "core";
+    const kind = /^fl_rt_cmd_/.test(id) ? "marking" : /authored_|nodes_v1_|40_rules/i.test(`${id} ${file}`) ? "user" : "core";
+    if (kind === "core") continue;
     rows.push({ id, title, kind, file, contacts: uniq });
   }
   return rows;
+}
+
+function scenarioFamilyId(id) {
+  return String(id).replace(/_(long|shortlong|hold_release|short|double|release)$/i, "");
+}
+
+function humanScenarioTitle(id) {
+  if (/dim_hold/i.test(id)) return "Дим-удержание";
+  if (/all_off/i.test(id)) return "Все выкл";
+  return "";
+}
+
+export function collapsePouredRuleRows(rows) {
+  const marking = [];
+  const groups = new Map();
+  for (const r of Array.isArray(rows) ? rows : []) {
+    if (r.kind === "marking") {
+      marking.push(r);
+      continue;
+    }
+    const fam = scenarioFamilyId(r.id);
+    const prev = groups.get(fam);
+    groups.set(fam, {
+      id: fam,
+      title: humanScenarioTitle(r.id) || r.title || prev?.title || "",
+      kind: "user",
+      file: r.file,
+      contacts: uniqueContacts([...(prev?.contacts || []), ...(r.contacts || [])]),
+    });
+  }
+  return [...marking, ...groups.values()];
 }
 
 export function readPouredDeskSnapshot() {
@@ -142,6 +177,7 @@ export function readPouredDeskSnapshot() {
   for (const file of files) {
     rules.push(...parsePouredRuleRows(file.content, file.filename));
   }
+  const collapsed = collapsePouredRuleRows(rules);
   let revisionId = "";
   try {
     const hashPath = (
@@ -156,7 +192,7 @@ export function readPouredDeskSnapshot() {
   return {
     revisionId,
     files: files.map((f) => ({ filename: f.filename, bytes: Buffer.byteLength(f.content, "utf8") })),
-    rules: rules.slice(0, 80),
-    ruleCount: rules.length,
+    rules: collapsed.slice(0, 80),
+    ruleCount: collapsed.length,
   };
 }
