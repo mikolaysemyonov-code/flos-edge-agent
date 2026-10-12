@@ -727,7 +727,11 @@
         det.appendChild(sum);
         const spare = document.createElement("p");
         spare.className = "meta";
-        spare.textContent = idle.map((s) => s.label || s.deviceTopicKey).join("\n");
+        spare.textContent = idle.slice().sort((a, b) => {
+          const na = Number((/№(\d+)/.exec(a.label || "") || [])[1] || 0);
+          const nb = Number((/№(\d+)/.exec(b.label || "") || [])[1] || 0);
+          return na - nb || String(a.label || "").localeCompare(String(b.label || ""), "ru");
+        }).map((s) => s.label || s.deviceTopicKey).join("\n");
         det.appendChild(spare);
         ul.appendChild(det);
         return;
