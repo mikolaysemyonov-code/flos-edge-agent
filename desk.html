@@ -1083,12 +1083,8 @@
         if (det) det.open = true;
         el.scrollIntoView({ block: "center" });
         el.classList.add("jump");
-        const chip = el.querySelector(".chip");
-        if (chip) chip.focus();
-        else {
-          const inp = el.querySelector("input");
-          if (inp) inp.focus();
-        }
+        const inp = el.querySelector("input[type='text']");
+        if (inp) inp.focus();
         setTimeout(() => el.classList.remove("jump"), 1400);
       };
       requestAnimationFrame(() => requestAnimationFrame(go));
@@ -1103,7 +1099,8 @@
       input.type = "text";
       input.maxLength = 80;
       const loads = Array.isArray(ch.loads) ? ch.loads.filter(Boolean) : [];
-      input.placeholder = "Имя контакта";
+      const isLoad = /^(Channel\s+\d+|K\d+)$/i.test(ch.controlId);
+      input.placeholder = isLoad ? "Имя линии" : "Имя кнопки";
       const original = String(ch.name || "").trim();
       const pretty = prettyContactName(original);
       const stripped = room ? titleUnderRoom(pretty, room) : pretty;
@@ -1129,12 +1126,18 @@
       const selected = new Set(exclusiveCards(Array.isArray(ch.cards) ? ch.cards : []));
       const poured = Array.isArray(ch.hints) && ch.hints.length > 0;
       const buttons = Array.isArray(ch.buttons) ? ch.buttons.filter(Boolean) : [];
-      const isLoad = /^(Channel\s+\d+|K\d+)$/i.test(ch.controlId);
       const deskTriggers = isLoad ? triggersBoundTo(s.deviceTopicKey, ch.controlId) : [];
       const diskIds = exclusiveCards(CARDS.filter((c) => (ch.hints || []).includes(c.ru)).map((c) => c.id));
       const deskDiverged = poured && [...selected].sort().join(",") !== diskIds.slice().sort().join(",");
-      if (!isLoad) grow.appendChild(makeBindSelect(s, ch, loads));
-      else if (deskTriggers.length) {
+      if (!isLoad) {
+        grow.appendChild(makeBindSelect(s, ch, loads));
+        if (!original && (Array.isArray(ch.binds) && ch.binds.length)) {
+          const sub = document.createElement("span");
+          sub.className = "loads orphan";
+          sub.textContent = "нужно имя";
+          grow.appendChild(sub);
+        }
+      } else if (deskTriggers.length) {
         const sub = document.createElement("button");
         sub.type = "button";
         sub.className = "loads";
