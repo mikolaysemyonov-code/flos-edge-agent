@@ -4,6 +4,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { applyMarksToShelves, readDeskMarking, upsertDeskShelfMark } from "./runtime-desk-marking.mjs";
 import { groupDeskShelves } from "./runtime-desk-shelves.mjs";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
@@ -57,7 +58,7 @@ export async function handleRuntimeMqttScan(req, res) {
   try {
     const out = await mqttScanHandler(body);
     if (out?.ok && Array.isArray(out.snapshot?.entries)) {
-      out.shelves = groupDeskShelves(out.snapshot.entries);
+      out.shelves = applyMarksToShelves(groupDeskShelves(out.snapshot.entries));
     }
     res.statusCode = out?.ok ? 200 : 409;
     res.setHeader("content-type", "application/json; charset=utf-8");
@@ -67,4 +68,34 @@ export async function handleRuntimeMqttScan(req, res) {
     res.setHeader("content-type", "application/json; charset=utf-8");
     res.end(JSON.stringify({ ok: false, error: String(err?.message ?? err) }));
   }
+}
+
+function jsonEnd(res, status, obj) {
+  res.statusCode = status;
+  res.setHeader("content-type", "application/json; charset=utf-8");
+  res.end(JSON.stringify(obj));
+}
+
+export async function handleRuntimeDeskMarking(req, res) {
+  const method = (req.method ?? "GET").toUpperCase();
+  if (method === "GET") {
+    jsonEnd(res, 200, { ok: true, ...readDeskMarking() });
+    return;
+  }
+  if (method !== "PUT" && method !== "POST") {
+    jsonEnd(res, 405, { ok: false, error: "method" });
+    return;
+  }
+  const chunks = [];
+  for await (const c of req) chunks.push(c);
+  let body = {};
+  try {
+    const raw = Buffer.concat(chunks).toString("utf8");
+    if (raw.trim()) body = JSON.parse(raw);
+  } catch {
+    jsonEnd(res, 400, { ok: false, error: "invalid_json" });
+    return;
+  }
+  const out = upsertDeskShelfMark(body);
+  jsonEnd(res, out.ok ? 200 : 400, out);
 }

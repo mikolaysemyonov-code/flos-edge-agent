@@ -9,6 +9,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { buildRulesInventory } from "./runtime-rules-inventory.mjs";
 import {
+  handleRuntimeDeskMarking,
   handleRuntimeMqttScan,
   serveCommissionDesk,
 } from "./runtime-desk-http.mjs";
@@ -476,6 +477,17 @@ export function runtimeHttpPathHandler(req, res) {
   const urlPath = (req.url ?? "/").split("?")[0];
   if (method === "GET" && (urlPath === "/" || urlPath === "/desk")) {
     return serveCommissionDesk(req, res);
+  }
+  if ((method === "GET" || method === "PUT" || method === "POST") && urlPath === "/runtime/desk-marking") {
+    void handleRuntimeDeskMarking(req, res).catch((err) => {
+      console.error("[runtime-control-plane] desk-marking:", err?.message ?? err);
+      if (!res.headersSent) {
+        res.statusCode = 500;
+        res.setHeader("content-type", "application/json; charset=utf-8");
+        res.end(JSON.stringify({ ok: false, error: "INTERNAL" }));
+      }
+    });
+    return true;
   }
   if ((method === "POST" || method === "GET") && urlPath === "/runtime/mqtt-scan") {
     void handleRuntimeMqttScan(req, res).catch((err) => {

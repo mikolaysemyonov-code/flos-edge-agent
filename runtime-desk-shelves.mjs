@@ -129,7 +129,7 @@ export function groupDeskShelves(entries) {
       };
       map.set(key, row);
     }
-    const bus = daliBusIndex(raw);
+    const bus = daliBusIndex(raw) || daliBusIndex(entry?.topicPath);
     if (bus) row.buses.add(bus);
     if (/\/meta\//i.test(String(entry?.topicPath ?? ""))) continue;
     const cid = controlIdOf(entry);
