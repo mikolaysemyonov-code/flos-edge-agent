@@ -106,19 +106,19 @@
       font: inherit; color: rgb(var(--sky) / .9); cursor: pointer;
     }
     .orphan { color: rgb(var(--bad)); }
-    #gaps li { cursor: pointer; }
-    #gaps li:focus { outline: 1px solid rgb(var(--sky) / .45); border-radius: .4rem; }
-    #gaps .chips { margin-top: .35rem; }
+    #gaps li, #preview li:not(.roomh) { cursor: pointer; }
+    #gaps li:focus, #preview li:focus { outline: 1px solid rgb(var(--sky) / .45); border-radius: .4rem; }
+    #gaps .chips, #preview .chips { margin-top: .35rem; }
     .channels li.jump {
       outline: 1px solid rgb(var(--sky) / .5);
       border-radius: .45rem;
     }
-    #poured li.roomh, #gaps li.roomh {
+    #poured li.roomh, #gaps li.roomh, #preview li.roomh {
       display: block; border-top: 0; padding: .85rem 0 .15rem;
       color: var(--mute); font-size: .72rem;
     }
     #poured li, #preview li, #pouredMarks li, #gaps li { display: flex; justify-content: space-between; align-items: baseline; gap: 1rem; padding: .55rem 0; border-top: 1px solid rgb(255 255 255 / .08); }
-    #gaps li { align-items: start; }
+    #gaps li, #preview li { align-items: start; }
     #poured li:first-child, #preview li:first-child, #pouredMarks li:first-child, #gaps li:first-child { border-top: 0; }
     details.more { margin: .1rem 0 .35rem; }
     details.more summary { color: var(--mute); font-size: .8rem; cursor: pointer; }
@@ -278,7 +278,7 @@
       const left = document.createElement("div");
       const title = document.createElement("div");
       const label = room ? titleUnderRoom(r.name || "без имени", room) : (r.name || "без имени");
-      title.textContent = label + (r.cards && r.cards.length ? " · " + r.cards.join(" · ") : "");
+      title.textContent = label;
       const sub = document.createElement("div");
       sub.className = "meta";
       sub.textContent = shelfLabel(r.deviceTopicKey) + " · " + r.controlId +
@@ -287,7 +287,8 @@
       left.appendChild(title);
       left.appendChild(sub);
       li.appendChild(left);
-      if (r.status === "no_card") {
+      const withChips = r.status === "no_card" || r.status === "card";
+      if (withChips) {
         li.tabIndex = 0;
         li.setAttribute("role", "button");
         const go = () => jumpToContact(r.deviceTopicKey, r.controlId);
@@ -298,8 +299,10 @@
             go();
           }
         });
+        const ru = new Set(r.cards || []);
+        const selected = new Set(CARDS.filter((c) => ru.has(c.ru)).map((c) => c.id));
         const chips = document.createElement("div");
-        chips.className = "chips need";
+        chips.className = "chips" + (selected.size === 0 ? " need" : "");
         chips.setAttribute("role", "group");
         chips.setAttribute("aria-label", "Типовая карточка");
         CARDS.forEach((card) => {
@@ -307,10 +310,12 @@
           btn.type = "button";
           btn.className = "chip";
           btn.textContent = card.ru;
-          btn.setAttribute("aria-pressed", "false");
+          btn.setAttribute("aria-pressed", selected.has(card.id) ? "true" : "false");
           btn.addEventListener("click", (e) => {
             e.stopPropagation();
-            saveCards(r.deviceTopicKey, r.controlId, [card.id]).then(() => {
+            if (selected.has(card.id)) selected.delete(card.id);
+            else selected.add(card.id);
+            saveCards(r.deviceTopicKey, r.controlId, [...selected]).then(() => {
               fetch("/runtime/mqtt-scan").then((res) => res.json()).then((j) => {
                 if (j.ok && j.shelves) showShelves(j);
               }).catch(() => {});
@@ -339,8 +344,8 @@
       if (!rows.length) {
         $("previewHead").textContent = (j.reason || "Превью. Диск не трогаем.") + " · стол совпадает с диском";
       } else {
-        $("previewHead").textContent = (j.reason || "Превью. Диск не трогаем.") + " · " + rows.length + " отличий";
-        rows.forEach((r) => ul.appendChild(previewRow(r)));
+        $("previewHead").textContent = (j.reason || "Превью. Диск не трогаем.") + " · " + rows.length + " отличий · чип правит стол, диск не трогаем";
+        appendRoomList(ul, rows, (r) => prettyRoom(String(r.name || "").split(/\s*·\s*/)[0] || ""), previewRow);
       }
       $("gapsHead").hidden = !gaps.length;
       $("gapsHead").textContent = gaps.length
@@ -392,12 +397,12 @@
       }
     }
     function rowSlave(r) {
-      const k = (r.contacts && r.contacts[0] && r.contacts[0].deviceTopicKey) || "";
+      const k = (r.contacts && r.contacts[0] && r.contacts[0].deviceTopicKey) || r.deviceTopicKey || "";
       const m = /_(\d+)$/.exec(k);
       return m ? Number(m[1]) : 0;
     }
     function rowCh(r) {
-      const c = (r.contacts && r.contacts[0] && r.contacts[0].controlId) || "";
+      const c = (r.contacts && r.contacts[0] && r.contacts[0].controlId) || r.controlId || "";
       return Number((/(\d+)\s*$/.exec(c) || [])[1] || 0);
     }
     function appendRoomList(ul, rows, roomFn, makeRow) {
