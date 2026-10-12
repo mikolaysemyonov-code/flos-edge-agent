@@ -172,7 +172,7 @@
       <ul id="shelves-buttons"></ul>
     </section>
     <section id="panel-relays" class="panel glass" hidden data-tab="relays">
-      <p class="meta">Силовые K. Имена появятся, когда линия попадёт в заливку.</p>
+      <p id="relaysHead" class="meta">Силовые K.</p>
       <ul id="shelves-relays"></ul>
     </section>
     <section id="panel-poured" class="panel glass" hidden data-tab="poured">
@@ -314,7 +314,9 @@
         rows.forEach((r) => ul.appendChild(previewRow(r)));
       }
       $("gapsHead").hidden = !gaps.length;
-      $("gapsHead").textContent = gaps.length ? gaps.length + " линий без карточки" : "";
+      $("gapsHead").textContent = gaps.length
+        ? gaps.length + " линий без карточки · ткни чип, диск не трогаем"
+        : "";
       const gapRows = gaps.map((g) => ({
         ...g,
         title: g.name,
@@ -731,6 +733,10 @@
       fillList("shelves-light", split.light, "Света на шине нет.");
       fillList("shelves-buttons", split.buttons, "Кнопок на шине нет.");
       fillList("shelves-relays", split.relays, "Реле на шине нет.");
+      const liveRelays = split.relays.filter(hasFeatured).length;
+      $("relaysHead").textContent = liveRelays
+        ? "Силовые K в заливке света."
+        : "Нет силовых линий в заливке света.";
       $("n-light").textContent = split.light.filter(hasFeatured).length || "";
       $("n-buttons").textContent = split.buttons.filter(hasFeatured).length || "";
       $("n-relays").textContent = split.relays.filter(hasFeatured).length || "";
