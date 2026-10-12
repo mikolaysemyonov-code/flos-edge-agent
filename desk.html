@@ -286,11 +286,7 @@
       if (r.status === "blocked") sub.className = "meta orphan";
       left.appendChild(title);
       left.appendChild(sub);
-      const kind = document.createElement("span");
-      kind.className = "kind";
-      kind.textContent = previewStatusRu(r.status);
       li.appendChild(left);
-      li.appendChild(kind);
       if (r.status === "no_card") {
         li.tabIndex = 0;
         li.setAttribute("role", "button");
@@ -323,6 +319,11 @@
           chips.appendChild(btn);
         });
         left.appendChild(chips);
+      } else {
+        const kind = document.createElement("span");
+        kind.className = "kind";
+        kind.textContent = previewStatusRu(r.status);
+        li.appendChild(kind);
       }
       return li;
     }
