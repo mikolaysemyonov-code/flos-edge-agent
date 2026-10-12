@@ -68,6 +68,11 @@ function cleanCards(value) {
   return exclusiveDeskCards(value);
 }
 
+export function isDeskDeviceKey(key) {
+  const s = String(key ?? "").trim();
+  return /^[a-z0-9][a-z0-9._-]{0,79}$/i.test(s) && !/\/devices\//i.test(s);
+}
+
 function cleanBinds(value) {
   if (!Array.isArray(value)) return [];
   const out = [];
@@ -75,7 +80,7 @@ function cleanBinds(value) {
   for (const b of value) {
     const deviceTopicKey = String(b?.deviceTopicKey ?? "").trim();
     const controlId = String(b?.controlId ?? "").trim();
-    if (!/^wb-[a-z0-9._-]+$/i.test(deviceTopicKey)) continue;
+    if (!isDeskDeviceKey(deviceTopicKey)) continue;
     if (!isLoadControl(controlId)) continue;
     const id = deviceTopicKey + "::" + controlId;
     if (seen.has(id)) continue;
@@ -89,8 +94,8 @@ function cleanBinds(value) {
 export function upsertDeskShelfMark(input) {
   const key = String(input?.deviceTopicKey ?? "").trim();
   const controlId = String(input?.controlId ?? "").trim();
-  if (!key || !/^wb-[a-z0-9._-]+$/i.test(key)) return { ok: false, error: "bad_key" };
-  if (!controlId || controlId.length > 40 || /\/devices\//i.test(controlId)) {
+  if (!key || !isDeskDeviceKey(key)) return { ok: false, error: "bad_key" };
+  if (!controlId || controlId.length > 64 || /\/devices\//i.test(controlId)) {
     return { ok: false, error: "need_control" };
   }
   const doc = readDeskMarking();

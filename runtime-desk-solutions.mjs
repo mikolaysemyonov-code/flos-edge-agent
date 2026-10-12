@@ -4,7 +4,7 @@
  */
 import fs from "node:fs";
 import path from "node:path";
-import { deskMarkingPath, readDeskDocument } from "./runtime-desk-marking.mjs";
+import { deskMarkingPath, isDeskDeviceKey, readDeskDocument, upsertDeskShelfMark } from "./runtime-desk-marking.mjs";
 
 const L = (id, cat, title, summary, extra = {}) => ({ id, cat, title, summary, multi: false, ...extra });
 const M = (id, cat, title, summary, extra = {}) => L(id, cat, title, summary, { multi: true, ...extra });
@@ -70,8 +70,8 @@ export const DESK_SOLUTION_CARDS = [
 function contactOf(raw) {
   const deviceTopicKey = String(raw?.deviceTopicKey ?? "").trim();
   const controlId = String(raw?.controlId ?? "").trim();
-  if (!/^wb-[a-z0-9._-]+$/i.test(deviceTopicKey)) return null;
-  if (!controlId || controlId.length > 40) return null;
+  if (!isDeskDeviceKey(deviceTopicKey)) return null;
+  if (!controlId || controlId.length > 64) return null;
   return { deviceTopicKey, controlId };
 }
 
@@ -104,6 +104,22 @@ export function upsertDeskSolution(input) {
   const next = doc.solutions.filter((s) => s.id !== id);
   next.push(row);
   writeDoc({ ...doc, solutions: next });
+  if (trigger) {
+    upsertDeskShelfMark({
+      deviceTopicKey: trigger.deviceTopicKey,
+      controlId: trigger.controlId,
+      binds: targets,
+    });
+  }
+  if (/^light_button_toggle|light_dim_hold_mcm|light_all_off$/.test(card.id)) {
+    targets.forEach((t) => {
+      upsertDeskShelfMark({
+        deviceTopicKey: t.deviceTopicKey,
+        controlId: t.controlId,
+        cards: [card.id],
+      });
+    });
+  }
   return { ok: true, solution: row, solutions: next };
 }
 

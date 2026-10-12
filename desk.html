@@ -655,11 +655,16 @@
       stampDiskScenes();
     }
     function contactPretty(c) {
-      if (!c) return "";
+      return solContactLabel(c);
+    }
+    function solContactLabel(c) {
+      if (!c) return "по расписанию";
       const s = lastShelvesRows.find((r) => r.deviceTopicKey === c.deviceTopicKey);
       const ch = s && (s.channels || []).find((x) => x.controlId === c.controlId);
-      const name = ch && ch.name ? prettyContactName(ch.name) : "";
-      return (name || (s && s.label) || c.deviceTopicKey) + " · " + c.controlId;
+      const name = ch && String(ch.name || "").trim();
+      if (name && /^(Channel\s+\d+|K\d+)$/i.test(c.controlId)) return shortLoadName(name, c.controlId);
+      if (name) return prettyContactName(name);
+      return ((s && s.label) || c.deviceTopicKey) + " · " + c.controlId;
     }
     function namedTriggers() {
       const named = [];
@@ -708,12 +713,12 @@
       ul.innerHTML = "";
       deskSolutions.filter((sol) => catOfSol(sol) === cardFilter).forEach((sol) => {
         const li = document.createElement("li");
-        const t = (sol.targets || []).map(contactPretty).join(" · ");
+        const t = (sol.targets || []).map(solContactLabel).join(" · ");
         li.innerHTML = "";
         const left = document.createElement("div");
         left.innerHTML = "<strong></strong><div class=\"meta\"></div>";
         left.querySelector("strong").textContent = sol.title || sol.solutionId;
-        left.querySelector(".meta").textContent = (sol.trigger ? contactPretty(sol.trigger) : "по расписанию") + (t ? " → " + t : "");
+        left.querySelector(".meta").textContent = solContactLabel(sol.trigger) + (t ? " → " + t : "");
         const del = document.createElement("button");
         del.type = "button";
         del.className = "ghost";
@@ -839,8 +844,12 @@
           }
           closeCardSheet();
           loadSolutions();
+          loadLast();
         }).catch(() => { err.textContent = "Нет связи с агентом"; });
       });
+      const clearErr = () => { err.textContent = ""; };
+      if (needTrig && trig.tagName === "SELECT") trig.addEventListener("change", clearErr);
+      tgtNode.addEventListener("change", clearErr);
       const cancel = document.createElement("button");
       cancel.type = "button";
       cancel.className = "ghost";
@@ -1083,18 +1092,7 @@
             ? rawRoom + " · " + typed
             : typed;
         if (next === original) return;
-        saveName(s.deviceTopicKey, ch.controlId, next).then(() => {
-          if (!next || !isLoad || poured) return;
-          if (!grow.querySelector(".chips")) {
-            grow.appendChild(makeLoadChips(s.deviceTopicKey, ch.controlId, new Set()));
-          }
-          if (!grow.querySelector(".loads")) {
-            const sub = document.createElement("span");
-            sub.className = "loads";
-            sub.textContent = "нет кнопки в заливке";
-            grow.appendChild(sub);
-          }
-        }).catch(() => {});
+        saveName(s.deviceTopicKey, ch.controlId, next).catch(() => {});
       };
       input.addEventListener("change", persist);
       input.addEventListener("blur", persist);
@@ -1105,10 +1103,8 @@
       const poured = Array.isArray(ch.hints) && ch.hints.length > 0;
       const buttons = Array.isArray(ch.buttons) ? ch.buttons.filter(Boolean) : [];
       const isLoad = /^(Channel\s+\d+|K\d+)$/i.test(ch.controlId);
-      const showChips = isLoad && !!original && !poured;
       const diskIds = exclusiveCards(CARDS.filter((c) => (ch.hints || []).includes(c.ru)).map((c) => c.id));
       const deskDiverged = poured && [...selected].sort().join(",") !== diskIds.slice().sort().join(",");
-      if (showChips) grow.appendChild(makeLoadChips(s.deviceTopicKey, ch.controlId, selected));
       if (!isLoad) grow.appendChild(makeBindSelect(s, ch, loads));
       else if (buttons.length) {
         const sub = document.createElement("span");
