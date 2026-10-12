@@ -725,9 +725,10 @@
             ? ruIdleButtons(idle.length)
             : ruIdleLight(idle.length);
         det.appendChild(sum);
-        const inner = document.createElement("ul");
-        idle.forEach((s) => inner.appendChild(moduleCard(s, true)));
-        det.appendChild(inner);
+        const spare = document.createElement("p");
+        spare.className = "meta";
+        spare.textContent = idle.map((s) => s.label || s.deviceTopicKey).join(" · ");
+        det.appendChild(spare);
         ul.appendChild(det);
         return;
       }
