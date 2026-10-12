@@ -60,6 +60,13 @@
     .sku { font-weight: 600; letter-spacing: -.01em; }
     .ch { color: var(--mute); font-size: .78rem; white-space: nowrap; }
     .channels li { display: grid; grid-template-columns: 4.6rem minmax(0, 1fr); gap: .15rem .7rem; padding: .42rem 0; align-items: start; }
+    .channels li.roomh {
+      display: block;
+      padding: .7rem 0 .05rem;
+      color: var(--mute);
+      font-size: .72rem;
+    }
+    .channels li.roomh:first-child { padding-top: .1rem; }
     .knob { color: var(--mute); font-size: .78rem; min-width: 0; padding-top: .28rem; }
     input[type="text"] {
       width: 100%; border: 0; border-bottom: 1px solid rgb(255 255 255 / .12);
@@ -483,7 +490,7 @@
       };
       requestAnimationFrame(() => requestAnimationFrame(go));
     }
-    function channelRow(s, ch) {
+    function channelRow(s, ch, room) {
       const row = document.createElement("li");
       row.dataset.contact = contactKey(s.deviceTopicKey, ch.controlId);
       const knob = document.createElement("span");
@@ -495,12 +502,21 @@
       const loads = Array.isArray(ch.loads) ? ch.loads.filter(Boolean) : [];
       input.placeholder = "Имя контакта";
       const original = String(ch.name || "").trim();
-      input.value = prettyContactName(original);
+      const pretty = prettyContactName(original);
+      const stripped = room ? titleUnderRoom(pretty, room) : pretty;
+      input.value = stripped;
       input.setAttribute("aria-label", (s.label || "") + " " + ch.controlId);
       const persist = () => {
         const typed = input.value.trim();
-        if (typed === original || prettyContactName(original) === typed) return;
-        saveName(s.deviceTopicKey, ch.controlId, input.value).catch(() => {});
+        if (typed === original || typed === pretty || typed === stripped) return;
+        const rawRoom = String(original).split(/\s*·\s*/)[0] || "";
+        const next = !typed
+          ? ""
+          : room && rawRoom && typed.toLowerCase().indexOf(rawRoom.toLowerCase()) !== 0
+            ? rawRoom + " · " + typed
+            : typed;
+        if (next === original) return;
+        saveName(s.deviceTopicKey, ch.controlId, next).catch(() => {});
       };
       input.addEventListener("change", persist);
       input.addEventListener("blur", persist);
@@ -569,6 +585,41 @@
       parts[0] = prettyRoom(parts[0]);
       return parts.join(" · ");
     }
+    function channelRoom(ch) {
+      return prettyRoom(String(ch.name || "").split(/\s*·\s*/)[0] || "");
+    }
+    function knobNum(ch) {
+      return Number((/(\d+)\s*$/.exec(ch.controlId || "") || [])[1] || 0);
+    }
+    function appendNamedChannels(ul, s, channels) {
+      const minCh = {};
+      channels.forEach((ch) => {
+        const room = channelRoom(ch);
+        const n = knobNum(ch);
+        if (room && (minCh[room] == null || n < minCh[room])) minCh[room] = n;
+      });
+      const rows = channels.slice().sort((a, b) => {
+        const ra = channelRoom(a);
+        const rb = channelRoom(b);
+        const d = (minCh[ra] ?? 99) - (minCh[rb] ?? 99);
+        if (d) return d;
+        const rr = ra.localeCompare(rb, "ru");
+        if (rr) return rr;
+        return knobNum(a) - knobNum(b);
+      });
+      let last = "";
+      rows.forEach((ch) => {
+        const room = channelRoom(ch);
+        if (room && room !== last) {
+          const h = document.createElement("li");
+          h.className = "roomh";
+          h.textContent = room;
+          ul.appendChild(h);
+          last = room;
+        }
+        ul.appendChild(channelRow(s, ch, room));
+      });
+    }
     function moduleCard(s, flat) {
       const li = document.createElement("li");
       li.className = "mod";
@@ -587,7 +638,7 @@
       const rest = (s.channels || []).filter((c) => !c.name && !(c.hints && c.hints.length) && !(c.cards && c.cards.length));
       const chs = document.createElement("ul");
       chs.className = "channels";
-      featured.forEach((ch) => chs.appendChild(channelRow(s, ch)));
+      appendNamedChannels(chs, s, featured);
       li.appendChild(chs);
       if (rest.length) {
         if (flat && !featured.length) {
