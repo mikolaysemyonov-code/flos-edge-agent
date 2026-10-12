@@ -120,7 +120,7 @@
     #poured li:first-child, #preview li:first-child, #pouredMarks li:first-child, #gaps li:first-child { border-top: 0; }
     details.more { margin: .1rem 0 .35rem; }
     details.more summary { color: var(--mute); font-size: .8rem; cursor: pointer; }
-    details.more p.meta { margin: .35rem 0 .2rem; }
+    details.more p.meta { margin: .35rem 0 .2rem; white-space: pre-line; }
     .empty { margin: 2.5rem 1rem; text-align: center; color: var(--mute); }
     .dock {
       position: fixed; left: 50%; bottom: 0; transform: translateX(-50%);
@@ -727,7 +727,7 @@
         det.appendChild(sum);
         const spare = document.createElement("p");
         spare.className = "meta";
-        spare.textContent = idle.map((s) => s.label || s.deviceTopicKey).join(" · ");
+        spare.textContent = idle.map((s) => s.label || s.deviceTopicKey).join("\n");
         det.appendChild(spare);
         ul.appendChild(det);
         return;
