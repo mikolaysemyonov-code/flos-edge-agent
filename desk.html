@@ -89,7 +89,11 @@
       background: rgb(255 255 255 / .05);
     }
     .chip { opacity: .42; }
-    .chips.need .chip { opacity: .82; }
+    .chips.need .chip {
+      opacity: 1;
+      color: var(--ink);
+      background: rgb(255 255 255 / .1);
+    }
     .chip[aria-pressed="true"] {
       opacity: 1;
       color: rgb(186 230 253);
