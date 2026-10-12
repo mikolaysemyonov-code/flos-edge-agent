@@ -208,6 +208,14 @@ function disambiguateMarkingTitles(rows) {
   });
 }
 
+/** На полке — имя карточки, без «· Channel 3 · MCM8». */
+export function shortPouredHint(title) {
+  return String(title || "")
+    .replace(/\s*·\s*WB-.+$/i, "")
+    .replace(/\s*·\s*(Channel|Input|K)\s+\S+$/i, "")
+    .trim();
+}
+
 /** Сценарии на контакте: что поправить, без тел rules. */
 export function pouredHintsForContact(rules, deviceTopicKey, controlId) {
   const key = liveDeskDeviceKey(deviceTopicKey);
@@ -221,7 +229,7 @@ export function pouredHintsForContact(rules, deviceTopicKey, controlId) {
       (c) => liveDeskDeviceKey(c.deviceTopicKey) === key && String(c.controlId) === cid,
     );
     if (!hit) continue;
-    const t = String(r.title || "").trim();
+    const t = shortPouredHint(r.title);
     if (!t || seen.has(t)) continue;
     seen.add(t);
     titles.push(t);
