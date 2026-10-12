@@ -844,7 +844,10 @@
           }
           closeCardSheet();
           loadSolutions();
-          loadLast();
+          const hit = (j.solution && j.solution.targets && j.solution.targets[0]) || collectTargets()[0];
+          loadLast().then(() => {
+            if (hit) jumpToContact(hit.deviceTopicKey, hit.controlId);
+          });
         }).catch(() => { err.textContent = "Нет связи с агентом"; });
       });
       const clearErr = () => { err.textContent = ""; };
@@ -911,7 +914,9 @@
         catEl.textContent = onDesk.length ? "на столе" + (onDesk.length > 1 ? " · " + onDesk.length : "") : card.cat;
         if (onDesk.length) catEl.classList.add("on");
         btn.querySelector(".vt").textContent = card.title;
-        btn.querySelector(".vs").textContent = card.summary;
+        btn.querySelector(".vs").textContent = onDesk[0]
+          ? solContactLabel(onDesk[0].trigger) + " → " + onDesk[0].targets.map(solContactLabel).join(" · ")
+          : card.summary;
         btn.addEventListener("click", () => openCardSheet(card, onDesk[0]));
         grid.appendChild(btn);
       });
