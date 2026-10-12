@@ -68,24 +68,44 @@ export function readLastDeskShelves() {
 function withPouredHints(shelves) {
   const rules = readPouredDeskSnapshot().rules || [];
   const marks = readPouredChannelMarks();
-  return (Array.isArray(shelves) ? shelves : []).map((s) => ({
+  const rows = Array.isArray(shelves) ? shelves : [];
+  const reverse = {};
+  rows.forEach((s) => {
+    (s.channels || []).forEach((ch) => {
+      (Array.isArray(ch.binds) ? ch.binds : []).forEach((b) => {
+        const k = String(b.deviceTopicKey) + "::" + String(b.controlId);
+        const label = (formatDeskShelfLabel(s.deviceTopicKey) || s.deviceTopicKey) + " · " + ch.controlId;
+        if (!reverse[k]) reverse[k] = [];
+        if (!reverse[k].includes(label)) reverse[k].push(label);
+      });
+    });
+  });
+  return rows.map((s) => ({
     ...s,
     channels: (Array.isArray(s.channels) ? s.channels : []).map((ch) => {
       const hints = pouredHintsForContact(rules, s.deviceTopicKey, ch.controlId);
       const deskCards = Array.isArray(ch.cards) && ch.cards.length ? ch.cards : [];
       const cards = deskCards.length ? deskCards : cardsFromHints(hints);
-      const loads = pouredLoadsForContact(rules, marks, s.deviceTopicKey, ch.controlId);
-      const buttons = pouredButtonsForContact(rules, marks, s.deviceTopicKey, ch.controlId);
-      const fromLoads = !ch.name && loads.length;
+      const pouredLoads = pouredLoadsForContact(rules, marks, s.deviceTopicKey, ch.controlId);
+      const pouredButtons = pouredButtonsForContact(rules, marks, s.deviceTopicKey, ch.controlId);
+      const deskBinds = Array.isArray(ch.binds) ? ch.binds : [];
+      const bindLabels = deskBinds.map((b) => {
+        const shelf = (Array.isArray(shelves) ? shelves : []).find((row) => row.deviceTopicKey === b.deviceTopicKey);
+        const hit = (shelf?.channels || []).find((c) => c.controlId === b.controlId);
+        return (hit && hit.name) || "";
+      }).filter(Boolean);
       return {
         ...ch,
         hints,
         cards,
         cardsSource: deskCards.length ? "desk" : cards.length ? "rules" : "",
-        name: fromLoads ? loads.join(" · ") : ch.name,
-        source: ch.source || (fromLoads ? "loads" : ""),
-        loads: fromLoads ? [] : loads,
-        buttons,
+        name: ch.name,
+        source: ch.source || "",
+        loads: bindLabels.length ? bindLabels : pouredLoads,
+        binds: deskBinds,
+        buttons: (reverse[s.deviceTopicKey + "::" + ch.controlId] || []).length
+          ? reverse[s.deviceTopicKey + "::" + ch.controlId]
+          : pouredButtons,
       };
     }),
   }));

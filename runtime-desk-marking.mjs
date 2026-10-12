@@ -55,6 +55,23 @@ function cleanCards(value) {
   return exclusiveDeskCards(value);
 }
 
+function cleanBinds(value) {
+  if (!Array.isArray(value)) return [];
+  const out = [];
+  const seen = new Set();
+  for (const b of value) {
+    const deviceTopicKey = String(b?.deviceTopicKey ?? "").trim();
+    const controlId = String(b?.controlId ?? "").trim();
+    if (!/^wb-[a-z0-9._-]+$/i.test(deviceTopicKey)) continue;
+    if (!isLoadControl(controlId)) continue;
+    const id = deviceTopicKey + "::" + controlId;
+    if (seen.has(id)) continue;
+    seen.add(id);
+    out.push({ deviceTopicKey, controlId });
+  }
+  return out;
+}
+
 /** Merge one contact. Never deletes sibling channels. Never writes wb-rules. */
 export function upsertDeskShelfMark(input) {
   const key = String(input?.deviceTopicKey ?? "").trim();
@@ -77,8 +94,14 @@ export function upsertDeskShelfMark(input) {
     if (!cards || cards.length === 0) delete cur.cards;
     else cur.cards = cards;
   }
-  if (!cur.name && !(cur.cards && cur.cards.length)) delete channels[controlId];
-  else channels[controlId] = cur;
+  if (input?.binds !== undefined) {
+    const binds = cleanBinds(input.binds);
+    if (!binds.length) delete cur.binds;
+    else cur.binds = binds;
+  }
+  if (!cur.name && !(cur.cards && cur.cards.length) && !(cur.binds && cur.binds.length)) {
+    delete channels[controlId];
+  } else channels[controlId] = cur;
   if (Object.keys(channels).length === 0) delete doc.shelves[key];
   else doc.shelves[key] = { ...prev, channels };
   writeDoc(doc);
@@ -98,12 +121,14 @@ export function applyMarksToShelves(shelves, doc = readDeskMarking(), poured = r
       const pouredName = typeof fromRules[ch.controlId] === "string" ? fromRules[ch.controlId] : "";
       const name = typed || pouredName;
       const deskCards = Array.isArray(local?.[ch.controlId]?.cards) ? local[ch.controlId].cards : [];
+      const binds = Array.isArray(local?.[ch.controlId]?.binds) ? local[ch.controlId].binds : [];
       return {
         ...ch,
         name,
         source: typed ? "desk" : pouredName ? "rules" : "",
         cards: deskCards,
         cardsSource: deskCards.length ? "desk" : "",
+        binds,
       };
     });
     return { ...s, channels, name: "" };

@@ -78,6 +78,14 @@
       border-bottom-color: rgb(var(--sky));
       box-shadow: 0 8px 18px -12px rgb(var(--sky) / .8);
     }
+    select.bind {
+      width: 100%; margin-top: .35rem;
+      border: 0; border-bottom: 1px solid rgb(255 255 255 / .12);
+      background: transparent; color: var(--ink);
+      font: inherit; font-size: .82rem; font-weight: 600;
+      padding: .1rem 0 .2rem; outline: none; color-scheme: dark;
+    }
+    select.bind:focus { border-bottom-color: rgb(var(--sky)); }
     .from-rules, .kind { color: rgb(var(--sky) / .85); font-size: .68rem; }
     .from-rules { display: block; margin-top: .12rem; }
     .chips { display: flex; flex-wrap: wrap; gap: .3rem; margin-top: .35rem; }
@@ -175,7 +183,7 @@
       <ul id="shelves-light"></ul>
     </section>
     <section id="panel-buttons" class="panel glass" hidden data-tab="buttons">
-      <p class="meta">Каждый Input — имя. Если уже в заливке, под ним линия.</p>
+      <p class="meta">Как в разметке: имя входа, затем линия. Диск не пишем.</p>
       <ul id="shelves-buttons"></ul>
     </section>
     <section id="panel-relays" class="panel glass" hidden data-tab="relays">
@@ -583,6 +591,60 @@
     async function saveCards(key, controlId, cards) {
       await saveMark({ deviceTopicKey: key, controlId: controlId, cards: cards });
     }
+    async function saveBinds(key, controlId, binds) {
+      await saveMark({ deviceTopicKey: key, controlId: controlId, binds: binds });
+      fetch("/runtime/mqtt-scan").then((res) => res.json()).then((j) => {
+        if (j.ok && j.shelves) showShelves(j);
+      }).catch(() => {});
+    }
+    function namedLoads() {
+      const out = [];
+      (lastShelvesRows || []).forEach((s) => {
+        (s.channels || []).forEach((ch) => {
+          if (!/^(Channel\s+\d+|K\d+)$/i.test(ch.controlId)) return;
+          const name = String(ch.name || "").trim();
+          if (!name) return;
+          out.push({
+            deviceTopicKey: s.deviceTopicKey,
+            controlId: ch.controlId,
+            label: prettyContactName(name) + " · " + (s.label || "") + " · " + ch.controlId,
+          });
+        });
+      });
+      return out;
+    }
+    function makeBindSelect(s, ch, pouredLoads) {
+      const sel = document.createElement("select");
+      sel.className = "bind";
+      sel.setAttribute("aria-label", "Линия света");
+      const empty = document.createElement("option");
+      empty.value = "";
+      empty.textContent = pouredLoads.length ? "на диске — оставить" : "Привязать линию";
+      sel.appendChild(empty);
+      const cur = (Array.isArray(ch.binds) && ch.binds[0])
+        ? contactKey(ch.binds[0].deviceTopicKey, ch.binds[0].controlId)
+        : "";
+      namedLoads().forEach((load) => {
+        const opt = document.createElement("option");
+        opt.value = contactKey(load.deviceTopicKey, load.controlId);
+        opt.textContent = load.label;
+        sel.appendChild(opt);
+      });
+      sel.value = cur;
+      sel.addEventListener("change", () => {
+        const v = sel.value;
+        if (!v) {
+          saveBinds(s.deviceTopicKey, ch.controlId, []).catch(() => {});
+          return;
+        }
+        const i = v.indexOf("::");
+        saveBinds(s.deviceTopicKey, ch.controlId, [{
+          deviceTopicKey: v.slice(0, i),
+          controlId: v.slice(i + 2),
+        }]).catch(() => {});
+      });
+      return sel;
+    }
     function contactKey(key, cid) {
       return String(key) + "::" + String(cid);
     }
@@ -658,6 +720,7 @@
       const diskIds = exclusiveCards(CARDS.filter((c) => (ch.hints || []).includes(c.ru)).map((c) => c.id));
       const deskDiverged = poured && [...selected].sort().join(",") !== diskIds.slice().sort().join(",");
       if (showChips) grow.appendChild(makeLoadChips(s.deviceTopicKey, ch.controlId, selected));
+      if (!isLoad) grow.appendChild(makeBindSelect(s, ch, loads));
       if (loads.length) {
         const sub = document.createElement("span");
         sub.className = "loads";
