@@ -31,7 +31,7 @@ import {
 } from "./wb-rules-journal-incidents.mjs";
 
 /** Одна строка в heartbeat и snapshot — иначе UI врёт версией. */
-const EDGE_AGENT_VERSION = "edge-pilot-v2.lan-desk-6";
+const EDGE_AGENT_VERSION = "edge-pilot-v2.lan-desk-7";
 
 /** Prefer `FLOS_*` (FL OS); fall back to legacy `REACTOR_*` for existing deployments. */
 function env(primary, legacy) {
@@ -1220,6 +1220,8 @@ const mqttMirrorState = {
   bootstrapSent: new Set(),
   /** Epoch ms when subscribe succeeded — retained dump starts then. */
   subscribedAtMs: null,
+  /** Last time a *new* topic path appeared — value updates must not un-settle. */
+  lastNewPathAtMs: null,
   /** Long-lived mqtt.js client — B3: reuse instead of second Connect burst. */
   client: null,
   brokerHost: "127.0.0.1",
@@ -1227,7 +1229,7 @@ const mqttMirrorState = {
 };
 const MQTT_MIRROR_DELTA_BATCH = 200;
 const MQTT_MIRROR_FLUSH_MS = 5_000;
-/** Retained dump settles when no new msgs for this long (after subscribe). */
+/** Retained dump settles when no *new topic paths* for this long. Live value updates do not count. */
 const MQTT_MIRROR_SETTLE_QUIET_MS = 1_500;
 /** Min age after subscribe before mirror may shortcut a mark-shield scan. */
 const MQTT_MIRROR_MIN_AGE_MS = 4_000;
@@ -1254,9 +1256,9 @@ function isMqttMirrorSettledForScan() {
   if (!subAt || !Number.isFinite(subAt)) return false;
   const ageMs = Date.now() - subAt;
   if (ageMs < MQTT_MIRROR_MIN_AGE_MS) return false;
-  const lastMsg = mqttMirrorState.lastMsgAt ? Date.parse(mqttMirrorState.lastMsgAt) : NaN;
-  if (!Number.isFinite(lastMsg)) return false;
-  if (Date.now() - lastMsg < MQTT_MIRROR_SETTLE_QUIET_MS) return false;
+  const lastNew = mqttMirrorState.lastNewPathAtMs;
+  if (!Number.isFinite(lastNew)) return false;
+  if (Date.now() - lastNew < MQTT_MIRROR_SETTLE_QUIET_MS) return false;
   if (countMirrorDiscoverableDevices() < MQTT_MIRROR_MIN_DEVICES) return false;
   return true;
 }
@@ -1275,7 +1277,10 @@ function canReuseMqttMirrorForScan(host, port) {
 }
 
 async function runMqttTopicScanViaMirrorWait({ host, port, scanMs, ackMaxEntries, markShield }) {
-  await new Promise((resolve) => setTimeout(resolve, scanMs));
+  const deadline = Date.now() + scanMs;
+  while (Date.now() < deadline && !isMqttMirrorSettledForScan()) {
+    await new Promise((resolve) => setTimeout(resolve, 200));
+  }
   const allEntries = [...mqttMirrorState.entriesByPath.values()];
   if (markShield) {
     return buildChunkedOrSingleScanAck(allEntries, {
@@ -1365,6 +1370,7 @@ function ingestMqttMirrorMessage(topic, buf) {
     else if (raw === "1") lastValue = 1;
     else if (raw && /^-?\d+(\.\d+)?$/.test(raw)) lastValue = Number(raw);
     else if (raw) lastValue = raw;
+    if (!mqttMirrorState.entriesByPath.has(topicPath)) mqttMirrorState.lastNewPathAtMs = Date.now();
     mqttMirrorState.entriesByPath.set(topicPath, {
       id: `${deviceTopicKey}:__device_meta_error`,
       deviceTopicKey,
@@ -1400,6 +1406,7 @@ function ingestMqttMirrorMessage(topic, buf) {
   else if (raw === "1") lastValue = 1;
   else if (raw && /^-?\d+(\.\d+)?$/.test(raw)) lastValue = Number(raw);
   else if (raw) lastValue = raw;
+  if (!mqttMirrorState.entriesByPath.has(topicPath)) mqttMirrorState.lastNewPathAtMs = Date.now();
   mqttMirrorState.entriesByPath.set(topicPath, {
     id: `${deviceTopicKey}:${controlId}`,
     deviceTopicKey,
@@ -3143,6 +3150,7 @@ async function main() {
     deviceId,
     projectId,
     cloudBaseUrl: baseUrl,
+    agentVersion: EDGE_AGENT_VERSION,
     mqttMirror: mqttMirrorHealth(),
   }));
   setRuntimeMqttScanHandler(async (body) => {
@@ -3204,6 +3212,7 @@ export const __test = {
   },
   seedMqttMirrorEntry(entry) {
     if (!entry?.topicPath) return;
+    if (!mqttMirrorState.entriesByPath.has(entry.topicPath)) mqttMirrorState.lastNewPathAtMs = Date.now();
     mqttMirrorState.entriesByPath.set(entry.topicPath, entry);
     mqttMirrorState.topicCount = mqttMirrorState.entriesByPath.size;
   },
@@ -3219,6 +3228,7 @@ export const __test = {
     mqttMirrorState.pendingRemovedPaths.clear();
     mqttMirrorState.bootstrapSent.clear();
     mqttMirrorState.topicCount = 0;
+    mqttMirrorState.lastNewPathAtMs = null;
   },
   setMqttMirrorReuseProbe(probe) {
     mqttMirrorState.connected = probe?.connected === true;

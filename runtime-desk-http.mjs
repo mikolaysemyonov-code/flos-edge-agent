@@ -4,7 +4,12 @@
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { applyMarksToShelves, readDeskMarking, upsertDeskShelfMark } from "./runtime-desk-marking.mjs";
+import {
+  applyMarksToShelves,
+  deskMarkingPath,
+  readDeskMarking,
+  upsertDeskShelfMark,
+} from "./runtime-desk-marking.mjs";
 import { groupDeskShelves } from "./runtime-desk-shelves.mjs";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
@@ -32,7 +37,52 @@ export function serveCommissionDesk(_req, res) {
   }
 }
 
+function lastShelvesPath() {
+  return path.join(path.dirname(deskMarkingPath()), "desk-last-shelves.json");
+}
+
+export function readLastDeskShelves() {
+  try {
+    const json = JSON.parse(fs.readFileSync(lastShelvesPath(), "utf8"));
+    const shelves = Array.isArray(json?.shelves) ? json.shelves : [];
+    return {
+      ok: true,
+      cached: true,
+      brokerLabel: typeof json?.brokerLabel === "string" ? json.brokerLabel : "",
+      shelves,
+    };
+  } catch {
+    return { ok: true, cached: true, shelves: [] };
+  }
+}
+
+export function writeLastDeskShelves(shelves, brokerLabel) {
+  const file = lastShelvesPath();
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  fs.writeFileSync(
+    file,
+    JSON.stringify(
+      {
+        version: 1,
+        savedAt: new Date().toISOString(),
+        brokerLabel: brokerLabel || "",
+        shelves: Array.isArray(shelves) ? shelves : [],
+      },
+      null,
+      2,
+    ) + "\n",
+    "utf8",
+  );
+}
+
 export async function handleRuntimeMqttScan(req, res) {
+  const method = (req.method ?? "GET").toUpperCase();
+  if (method === "GET") {
+    const last = readLastDeskShelves();
+    last.shelves = applyMarksToShelves(last.shelves);
+    jsonEnd(res, 200, last);
+    return;
+  }
   if (typeof mqttScanHandler !== "function") {
     res.statusCode = 501;
     res.setHeader("content-type", "application/json; charset=utf-8");
@@ -40,7 +90,7 @@ export async function handleRuntimeMqttScan(req, res) {
     return;
   }
   let body = {};
-  if (req.method === "POST") {
+  if (method === "POST") {
     const chunks = [];
     for await (const c of req) chunks.push(c);
     const raw = Buffer.concat(chunks).toString("utf8");
@@ -59,6 +109,10 @@ export async function handleRuntimeMqttScan(req, res) {
     const out = await mqttScanHandler(body);
     if (out?.ok && Array.isArray(out.snapshot?.entries)) {
       out.shelves = applyMarksToShelves(groupDeskShelves(out.snapshot.entries));
+      writeLastDeskShelves(
+        out.shelves.map(({ name: _n, room: _r, ...row }) => row),
+        out.brokerLabel,
+      );
     }
     res.statusCode = out?.ok ? 200 : 409;
     res.setHeader("content-type", "application/json; charset=utf-8");

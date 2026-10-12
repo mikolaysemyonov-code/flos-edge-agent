@@ -98,7 +98,6 @@
       $("scan").disabled = true;
       $("bus").textContent = "Снимаю шину…";
       $("bus").className = "muted";
-      $("shelves").innerHTML = "";
       try {
         const r = await fetch("/runtime/mqtt-scan", {
           method: "POST",
@@ -111,11 +110,7 @@
           $("bus").textContent = j.error || "Скан не вышел";
           return;
         }
-        const shelves = j.shelves || [];
-        $("bus").className = "ok";
-        $("bus").textContent = "На шине " + shelves.length + " модулей" +
-          (j.brokerLabel ? " · " + j.brokerLabel : "");
-        renderShelves(shelves);
+        showShelves(j, false);
       } catch (e) {
         $("bus").className = "bad";
         $("bus").textContent = String(e.message || e);
@@ -123,7 +118,24 @@
         $("scan").disabled = false;
       }
     };
+    function showShelves(j, cached) {
+      const shelves = j.shelves || [];
+      $("bus").className = "ok";
+      $("bus").textContent = "На шине " + shelves.length + " модулей" +
+        (j.brokerLabel ? " · " + j.brokerLabel : "") +
+        (cached ? " · с щита" : "");
+      renderShelves(shelves);
+      if (shelves.length) $("scan").textContent = "Обновить шину";
+    }
+    async function loadLast() {
+      try {
+        const r = await fetch("/runtime/mqtt-scan");
+        const j = await r.json();
+        if (j.ok && j.shelves && j.shelves.length) showShelves(j, true);
+      } catch (_) { /* first open — пусто, жмут «Снять шину» */ }
+    }
     loadHealth();
+    loadLast();
   </script>
 </body>
 </html>
