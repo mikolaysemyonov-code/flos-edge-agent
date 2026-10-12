@@ -5,6 +5,14 @@
 import fs from "node:fs";
 import path from "node:path";
 import { deskMarkingPath, isDeskDeviceKey, readDeskDocument, upsertDeskShelfMark } from "./runtime-desk-marking.mjs";
+import { exclusiveDeskCards, isLoadControl } from "./runtime-desk-rules-marks.mjs";
+
+function isPourLoad(controlId) {
+  const c = String(controlId ?? "").trim();
+  if (/^(On|Off|Toggle) K\d+$/i.test(c)) return false;
+  if (/^Input /i.test(c)) return false;
+  return isLoadControl(c);
+}
 
 const L = (id, cat, title, summary, extra = {}) => ({ id, cat, title, summary, multi: false, ...extra });
 const M = (id, cat, title, summary, extra = {}) => L(id, cat, title, summary, { multi: true, ...extra });
@@ -102,7 +110,7 @@ export function upsertDeskSolution(input) {
   const rawTargets = Array.isArray(input?.targets) ? input.targets : input?.target ? [input.target] : [];
   const targets = rawTargets.map(contactOf).filter(Boolean);
   if (!targets.length) return { ok: false, error: "need_target" };
-  if (targets.some((t) => /^Input /i.test(t.controlId))) return { ok: false, error: "need_load" };
+  if (targets.some((t) => !isPourLoad(t.controlId))) return { ok: false, error: "need_load" };
   const doc = readDeskDocument();
   const id = String(input?.id ?? "").trim() || `sol_${Date.now().toString(36)}`;
   const row = { id, solutionId: card.id, title: card.title, trigger: trigger || null, targets, savedAt: new Date().toISOString() };
@@ -116,12 +124,14 @@ export function upsertDeskSolution(input) {
       binds: targets,
     });
   }
-  if (/^light_button_toggle|light_dim_hold_mcm|light_all_off$/.test(card.id)) {
+  const stamp = exclusiveDeskCards([card.id]);
+  if (stamp.length) {
     targets.forEach((t) => {
+      if (!isPourLoad(t.controlId)) return;
       upsertDeskShelfMark({
         deviceTopicKey: t.deviceTopicKey,
         controlId: t.controlId,
-        cards: [card.id],
+        cards: stamp,
       });
     });
   }

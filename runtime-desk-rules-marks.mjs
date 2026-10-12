@@ -244,11 +244,23 @@ function contactSort(a, b) {
   return na - nb;
 }
 
-export const DESK_CARD_IDS = ["light_button_toggle", "light_dim_hold_mcm", "light_all_off"];
+export const DESK_CARD_IDS = [
+  "light_button_toggle",
+  "light_dim_hold_mcm",
+  "light_all_off",
+  "socket_button_toggle",
+  "curtain_button_open",
+  "curtain_button_close",
+  "curtain_button_stop",
+];
 export const DESK_CARD_RU = {
   light_button_toggle: "Переключение",
   light_dim_hold_mcm: "Дим-удержание",
   light_all_off: "Все выкл",
+  socket_button_toggle: "Розетка",
+  curtain_button_open: "Штора открыть",
+  curtain_button_close: "Штора закрыть",
+  curtain_button_stop: "Штора стоп",
 };
 
 export function cardsFromHints(hints) {

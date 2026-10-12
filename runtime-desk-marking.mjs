@@ -190,6 +190,31 @@ function cardRu(ids) {
   return (ids || []).map((id) => DESK_CARD_RU[id] || id);
 }
 
+function drivePairKey(deviceTopicKey, controlId) {
+  const m = /^(Curtain|Actuator)\s+(\d+)\s+(Open|Close)$/i.exec(String(controlId || "").trim());
+  return m ? String(deviceTopicKey) + "::" + m[1].toLowerCase() + ":" + m[2] : "";
+}
+
+function collapseDrivePairs(list) {
+  const seen = new Set();
+  const out = [];
+  for (const r of Array.isArray(list) ? list : []) {
+    const k = drivePairKey(r.deviceTopicKey, r.controlId);
+    if (k) {
+      if (seen.has(k)) continue;
+      seen.add(k);
+    }
+    out.push(r);
+  }
+  return out;
+}
+
+function markNameOf(deskCh, pouredCh, controlId) {
+  const deskName = typeof deskCh?.[controlId]?.name === "string" ? deskCh[controlId].name : "";
+  const pouredName = typeof pouredCh?.[controlId] === "string" ? pouredCh[controlId] : "";
+  return deskName || pouredName;
+}
+
 /** Стол vs диск. Никогда не пишет wb-rules. */
 export function buildDeskPourPreview(doc = readDeskMarking(), poured = readPouredChannelMarks(), rules) {
   const ruleRows = rules || readPouredDeskSnapshot().rules || [];
@@ -237,14 +262,41 @@ export function buildDeskPourPreview(doc = readDeskMarking(), poured = readPoure
     if (sa !== sb) return sa - sb;
     const d = String(a.deviceTopicKey).localeCompare(String(b.deviceTopicKey));
     if (d) return d;
-    const na = Number(/(\d+)\s*$/.exec(a.controlId)?.[1] || 0);
-    const nb = Number(/(\d+)\s*$/.exec(b.controlId)?.[1] || 0);
+    const na = Number(/(\d+)/.exec(a.controlId)?.[1] || 0);
+    const nb = Number(/(\d+)/.exec(b.controlId)?.[1] || 0);
     return na - nb;
   });
+  for (const deviceTopicKey of Object.keys(deskShelves)) {
+    const deskCh = deskShelves[deviceTopicKey]?.channels || {};
+    const pouredCh = poured?.[deviceTopicKey] || poured?.[liveDeskDeviceKey(deviceTopicKey)] || {};
+    for (const controlId of Object.keys(deskCh)) {
+      const binds = deskCh[controlId]?.binds;
+      if (!Array.isArray(binds) || !binds.length) continue;
+      if (markNameOf(deskCh, pouredCh, controlId)) continue;
+      rows.push({
+        deviceTopicKey,
+        controlId,
+        name: "",
+        pouredName: "",
+        cards: [],
+        pouredCards: [],
+        status: "blocked",
+      });
+    }
+  }
+  const nextRows = collapseDrivePairs(rows);
+  const nextGaps = collapseDrivePairs(gaps);
+  const solutions = readDeskDocument().solutions;
   return {
     canPour: false,
     reason: "Превью. Диск не трогаем.",
-    rows,
-    gaps,
+    rows: nextRows,
+    gaps: nextGaps,
+    ready: {
+      blocked: nextRows.filter((r) => r.status === "blocked").length,
+      gaps: nextGaps.length,
+      solutions: Array.isArray(solutions) ? solutions.length : 0,
+      diffs: nextRows.length,
+    },
   };
 }

@@ -440,8 +440,9 @@
     function familyOf(s) {
       const k = String(s.deviceTopicKey || "");
       if (/led|ampled|dali|mdm/i.test(k)) return "light";
-      if (/mcm|gpio|mdi/i.test(k)) return "buttons";
-      return "relays";
+      if (/mcm|gpio|mdi|mwac/i.test(k)) return "buttons";
+      if (/mr6|mr12|mrm|mrps/i.test(k)) return "relays";
+      return "";
     }
     function splitShelves(rows) {
       const out = { light: [], buttons: [], relays: [] };
@@ -479,7 +480,7 @@
       title.textContent = label;
       const sub = document.createElement("div");
       sub.className = "meta";
-      sub.textContent = shelfLabel(r.deviceTopicKey) + " · " + r.controlId +
+      sub.textContent = shelfLabel(r.deviceTopicKey) + " · " + prettyControlId(r.controlId) +
         (r.pouredName && r.pouredName !== r.name ? " · на диске " + r.pouredName : "") +
         (r.pouredCards && r.pouredCards.length ? " · на диске " + r.pouredCards.join(" · ") : "");
       if (r.status === "blocked") sub.className = "meta orphan";
@@ -542,10 +543,16 @@
       const gaps = j.gaps || [];
       $("pour").disabled = true;
       $("previewHead").style.color = "";
+      const ready = j.ready || {};
+      const readyBits = [
+        (ready.solutions || 0) + " типовых на столе",
+        (ready.blocked || 0) + " без имени",
+        (ready.gaps || 0) + " без карточки",
+      ].join(" · ");
       if (!rows.length) {
-        $("previewHead").textContent = (j.reason || "Превью. Диск не трогаем.") + " · стол совпадает с диском";
+        $("previewHead").textContent = (j.reason || "Превью. Диск не трогаем.") + " · " + readyBits;
       } else {
-        $("previewHead").textContent = (j.reason || "Превью. Диск не трогаем.") + " · " + rows.length + " отличий";
+        $("previewHead").textContent = (j.reason || "Превью. Диск не трогаем.") + " · " + readyBits + " · " + rows.length + " отличий";
         appendRoomList(ul, rows, (r) => nameRoom(r.name), previewRow);
       }
       $("gapsHead").hidden = !gaps.length;
