@@ -720,9 +720,9 @@
       fillList("shelves-light", split.light, "Света на шине нет.");
       fillList("shelves-buttons", split.buttons, "Кнопок на шине нет.");
       fillList("shelves-relays", split.relays, "Реле на шине нет.");
-      $("n-light").textContent = split.light.length || "";
-      $("n-buttons").textContent = split.buttons.length || "";
-      $("n-relays").textContent = split.relays.length || "";
+      $("n-light").textContent = split.light.filter(hasFeatured).length || "";
+      $("n-buttons").textContent = split.buttons.filter(hasFeatured).length || "";
+      $("n-relays").textContent = split.relays.filter(hasFeatured).length || "";
     }
     async function scanNow() {
       $("scan").disabled = true;
