@@ -89,6 +89,7 @@
       background: rgb(255 255 255 / .05);
     }
     .chip { opacity: .42; }
+    .chips.need .chip { opacity: .82; }
     .chip[aria-pressed="true"] {
       opacity: 1;
       color: rgb(186 230 253);
@@ -550,7 +551,7 @@
       grow.appendChild(input);
       const selected = new Set(Array.isArray(ch.cards) ? ch.cards : []);
       const chips = document.createElement("div");
-      chips.className = "chips";
+      chips.className = "chips" + (original && selected.size === 0 && !loads.length ? " need" : "");
       chips.setAttribute("role", "group");
       chips.setAttribute("aria-label", "Типовая карточка");
       CARDS.forEach((card) => {
@@ -564,6 +565,7 @@
           else selected.add(card.id);
           btn.setAttribute("aria-pressed", selected.has(card.id) ? "true" : "false");
           const hint = grow.querySelector(".loads");
+          chips.classList.toggle("need", original && selected.size === 0 && !loads.length);
           if (hint && hint.textContent === "на диске нет карточки") {
             if (selected.size) hint.remove();
           } else if (!selected.size && original && !loads.length && (!hint || hint.textContent !== "на диске нет карточки")) {
