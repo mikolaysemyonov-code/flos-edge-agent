@@ -115,6 +115,7 @@
     #poured li:first-child, #preview li:first-child, #pouredMarks li:first-child, #gaps li:first-child { border-top: 0; }
     details.more { margin: .1rem 0 .35rem; }
     details.more summary { color: var(--mute); font-size: .8rem; cursor: pointer; }
+    details.more p.meta { margin: .35rem 0 .2rem; }
     .empty { margin: 2.5rem 1rem; text-align: center; color: var(--mute); }
     .dock {
       position: fixed; left: 50%; bottom: 0; transform: translateX(-50%);
@@ -512,7 +513,7 @@
       };
       requestAnimationFrame(() => requestAnimationFrame(go));
     }
-    function channelRow(s, ch, room, spare) {
+    function channelRow(s, ch, room) {
       const row = document.createElement("li");
       row.dataset.contact = contactKey(s.deviceTopicKey, ch.controlId);
       const knob = document.createElement("span");
@@ -522,7 +523,7 @@
       input.type = "text";
       input.maxLength = 80;
       const loads = Array.isArray(ch.loads) ? ch.loads.filter(Boolean) : [];
-      input.placeholder = spare ? "запас" : "Имя контакта";
+      input.placeholder = "Имя контакта";
       const original = String(ch.name || "").trim();
       const pretty = prettyContactName(original);
       const stripped = room ? titleUnderRoom(pretty, room) : pretty;
@@ -546,46 +547,44 @@
       const grow = document.createElement("div");
       grow.appendChild(input);
       const selected = new Set(Array.isArray(ch.cards) ? ch.cards : []);
-      if (!spare) {
-        const chips = document.createElement("div");
-        chips.className = "chips";
-        chips.setAttribute("role", "group");
-        chips.setAttribute("aria-label", "Типовая карточка");
-        CARDS.forEach((card) => {
-          const btn = document.createElement("button");
-          btn.type = "button";
-          btn.className = "chip";
-          btn.textContent = card.ru;
+      const chips = document.createElement("div");
+      chips.className = "chips";
+      chips.setAttribute("role", "group");
+      chips.setAttribute("aria-label", "Типовая карточка");
+      CARDS.forEach((card) => {
+        const btn = document.createElement("button");
+        btn.type = "button";
+        btn.className = "chip";
+        btn.textContent = card.ru;
+        btn.setAttribute("aria-pressed", selected.has(card.id) ? "true" : "false");
+        btn.addEventListener("click", () => {
+          if (selected.has(card.id)) selected.delete(card.id);
+          else selected.add(card.id);
           btn.setAttribute("aria-pressed", selected.has(card.id) ? "true" : "false");
-          btn.addEventListener("click", () => {
-            if (selected.has(card.id)) selected.delete(card.id);
-            else selected.add(card.id);
-            btn.setAttribute("aria-pressed", selected.has(card.id) ? "true" : "false");
-            const hint = grow.querySelector(".loads");
-            if (hint && hint.textContent === "на диске нет карточки") {
-              if (selected.size) hint.remove();
-            } else if (!selected.size && original && !loads.length && (!hint || hint.textContent !== "на диске нет карточки")) {
-              const sub = document.createElement("span");
-              sub.className = "loads";
-              sub.textContent = "на диске нет карточки";
-              grow.appendChild(sub);
-            }
-            saveCards(s.deviceTopicKey, ch.controlId, [...selected]).catch(() => {});
-          });
-          chips.appendChild(btn);
+          const hint = grow.querySelector(".loads");
+          if (hint && hint.textContent === "на диске нет карточки") {
+            if (selected.size) hint.remove();
+          } else if (!selected.size && original && !loads.length && (!hint || hint.textContent !== "на диске нет карточки")) {
+            const sub = document.createElement("span");
+            sub.className = "loads";
+            sub.textContent = "на диске нет карточки";
+            grow.appendChild(sub);
+          }
+          saveCards(s.deviceTopicKey, ch.controlId, [...selected]).catch(() => {});
         });
-        grow.appendChild(chips);
-        if (loads.length) {
-          const sub = document.createElement("span");
-          sub.className = "loads";
-          sub.textContent = loads.map(prettyContactName).join(" · ");
-          grow.appendChild(sub);
-        } else if (ch.name && selected.size === 0) {
-          const sub = document.createElement("span");
-          sub.className = "loads";
-          sub.textContent = "на диске нет карточки";
-          grow.appendChild(sub);
-        }
+        chips.appendChild(btn);
+      });
+      grow.appendChild(chips);
+      if (loads.length) {
+        const sub = document.createElement("span");
+        sub.className = "loads";
+        sub.textContent = loads.map(prettyContactName).join(" · ");
+        grow.appendChild(sub);
+      } else if (ch.name && selected.size === 0) {
+        const sub = document.createElement("span");
+        sub.className = "loads";
+        sub.textContent = "на диске нет карточки";
+        grow.appendChild(sub);
       }
       row.appendChild(grow);
       return row;
@@ -681,10 +680,10 @@
           ? "ещё " + rest.length + " в запасе"
           : rest.length + " контактов в запасе";
         det.appendChild(sum);
-        const inner = document.createElement("ul");
-        inner.className = "channels";
-        rest.forEach((ch) => inner.appendChild(channelRow(s, ch, "", true)));
-        det.appendChild(inner);
+        const spare = document.createElement("p");
+        spare.className = "meta";
+        spare.textContent = rest.map((ch) => ch.controlId).join(" · ");
+        det.appendChild(spare);
         li.appendChild(det);
       }
       return li;
