@@ -6,6 +6,7 @@ import path from "node:path";
 import {
   canonicalDeskShelfKey,
   formatDeskShelfLabel,
+  isDeskDriveControl,
   isDeskShelfChannelControl,
   parseDeskDeviceKey,
 } from "./runtime-desk-shelves.mjs";
@@ -266,7 +267,8 @@ export function exclusiveDeskCards(ids) {
 }
 
 export function isLoadControl(controlId) {
-  return /^Channel \d+$/i.test(controlId) || /^K\d+$/i.test(controlId);
+  const c = String(controlId ?? "").trim();
+  return /^Channel \d+$/i.test(c) || /^K\d+$/i.test(c) || isDeskDriveControl(c);
 }
 
 /** «Спальня · линия 1» + «Спальня · линия 2» → «Спальня · линия 1 · 2». */

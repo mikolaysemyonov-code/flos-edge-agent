@@ -74,7 +74,22 @@ function isLedFamily(type) {
   return /^(led|ampled)$/i.test(String(type ?? ""));
 }
 
-/** Силовой/входной канал. У реле только K1… — не Input/Safety. У LED — Channel, не CCT/RGB. */
+/** Фазная штора на MR: Curtain N Open/Close (в веб — «Открыть привод N»). */
+export function isDeskDriveControl(controlId) {
+  return /^(Curtain|Actuator) \d+ (Open|Close)$/i.test(String(controlId ?? "").trim());
+}
+
+function slavedKByDrives(controlId, driveIds) {
+  const k = /^K(\d+)$/i.exec(String(controlId ?? "").trim());
+  if (!k) return false;
+  const pair = Math.ceil(Number(k[1]) / 2);
+  return driveIds.some((id) => {
+    const m = /^(?:Curtain|Actuator)\s+(\d+)\s+/i.exec(id);
+    return m && Number(m[1]) === pair;
+  });
+}
+
+/** Силовой/входной канал. У реле — K и привод. У LED — Channel, не CCT/RGB. */
 export function isDeskShelfChannelControl(controlId, deviceTopicKey) {
   const c = String(controlId ?? "").trim();
   if (!c) return false;
@@ -82,9 +97,9 @@ export function isDeskShelfChannelControl(controlId, deviceTopicKey) {
     return false;
   }
   const type = parseDeskDeviceKey(deviceTopicKey)?.type ?? "";
-  if (isRelayFamily(type)) return /^K\d+$/i.test(c);
+  if (isRelayFamily(type)) return /^K\d+$/i.test(c) || isDeskDriveControl(c);
   if (isLedFamily(type)) return /^Channel \d+$/i.test(c);
-  if (/^K\d+$/i.test(c)) return true;
+  if (/^K\d+$/i.test(c) || isDeskDriveControl(c)) return true;
   if (/^Channel \d+$/i.test(c)) return true;
   if (/^(CCT|RGB)\d+$/i.test(c)) return true;
   if (/^Input [A-Z]?\d+$/i.test(c)) return true;
@@ -114,11 +129,16 @@ function ruShiny(n) {
   return `${n} шин`;
 }
 
+function controlOrder(id) {
+  const d = /^(?:Curtain|Actuator)\s+(\d+)\s+(Open|Close)$/i.exec(String(id ?? ""));
+  if (d) return Number(d[1]) * 2 - (d[2].toLowerCase() === "open" ? 1.5 : 1.4);
+  return Number((/(\d+)\s*$/.exec(String(id ?? "")) || [])[1] || 0);
+}
+
 function sortControlIds(a, b) {
-  const pa = String(a).replace(/\d+\s*$/, "");
-  const pb = String(b).replace(/\d+\s*$/, "");
-  if (pa !== pb) return pa.localeCompare(pb);
-  return (Number((/(\d+)\s*$/.exec(a) || [])[1]) || 0) - (Number((/(\d+)\s*$/.exec(b) || [])[1]) || 0);
+  const d = controlOrder(a) - controlOrder(b);
+  if (d) return d;
+  return String(a).localeCompare(String(b));
 }
 
 export function groupDeskShelves(entries) {
@@ -147,8 +167,16 @@ export function groupDeskShelves(entries) {
     const cid = controlIdOf(entry);
     if (isDeskShelfChannelControl(cid, raw) && !row.controls.has(cid)) {
       row.controls.add(cid);
-      row.channelCount += 1;
     }
+  }
+  for (const row of map.values()) {
+    const drives = [...row.controls].filter(isDeskDriveControl);
+    if (drives.length) {
+      for (const id of [...row.controls]) {
+        if (slavedKByDrives(id, drives)) row.controls.delete(id);
+      }
+    }
+    row.channelCount = row.controls.size;
   }
   return [...map.values()]
     .map(({ controls, buses, type: _t, slave: _s, ...rest }) => ({

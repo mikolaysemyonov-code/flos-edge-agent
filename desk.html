@@ -275,7 +275,7 @@
       <ul id="shelves-buttons"></ul>
     </section>
     <section id="panel-relays" class="panel glass" hidden data-tab="relays">
-      <p id="relaysHead" class="meta">Силовые K — свет и трек, фазная штора (два K), серво, тёплый пол, розетка.</p>
+      <p id="relaysHead" class="meta">Силовые K и привод MR — открыть / закрыть, свет, розетка, пол.</p>
       <ul id="shelves-relays"></ul>
     </section>
     <section id="panel-cards" class="panel glass" hidden data-tab="cards">
@@ -348,8 +348,22 @@
       "Клапан", "Замок", "Антилёд",
     ];
     const BUTTON_TYPES = ["Кнопка", "Клавиша", "Геркон", "Датчик движения", "Сценарий"];
+    function isDeskDrive(id) {
+      return /^(Curtain|Actuator) \d+ (Open|Close)$/i.test(String(id || "").trim());
+    }
+    function isDeskRelay(id) {
+      return /^K\d+$/i.test(id) || isDeskDrive(id);
+    }
+    function isDeskLoad(id) {
+      return /^(Channel \d+|K\d+)$/i.test(id) || isDeskDrive(id);
+    }
+    function prettyControlId(id) {
+      const m = /^(?:Curtain|Actuator)\s+(\d+)\s+(Open|Close)$/i.exec(String(id || "").trim());
+      if (!m) return id;
+      return "Привод " + m[1] + (m[2].toLowerCase() === "open" ? " открыть" : " закрыть");
+    }
     function markTypes(ch, isLoad) {
-      if (/^K\d+$/i.test(ch.controlId)) return RELAY_TYPES;
+      if (isDeskRelay(ch.controlId)) return RELAY_TYPES;
       return isLoad ? LOAD_TYPES : BUTTON_TYPES;
     }
     const CARDS = [
@@ -692,16 +706,16 @@
       const s = lastShelvesRows.find((r) => r.deviceTopicKey === c.deviceTopicKey);
       const ch = s && (s.channels || []).find((x) => x.controlId === c.controlId);
       const name = ch && String(ch.name || "").trim();
-      if (name && /^(Channel\s+\d+|K\d+)$/i.test(c.controlId)) return shortLoadName(name, c.controlId);
+      if (name && isDeskLoad(c.controlId)) return shortLoadName(name, c.controlId);
       if (name) return prettyContactName(name);
-      return ((s && s.label) || c.deviceTopicKey) + " · " + c.controlId;
+      return ((s && s.label) || c.deviceTopicKey) + " · " + prettyControlId(c.controlId);
     }
     function namedTriggers() {
       const named = [];
       const rest = [];
       (lastShelvesRows || []).forEach((s) => {
         (s.channels || []).forEach((ch) => {
-          if (/^(Channel\s+\d+|K\d+)$/i.test(ch.controlId)) return;
+          if (isDeskLoad(ch.controlId)) return;
           const name = String(ch.name || "").trim();
           const row = {
             deviceTopicKey: s.deviceTopicKey,
@@ -1014,7 +1028,7 @@
       const raw = [];
       (lastShelvesRows || []).forEach((s) => {
         (s.channels || []).forEach((ch) => {
-          if (!/^(Channel\s+\d+|K\d+)$/i.test(ch.controlId)) return;
+          if (!isDeskLoad(ch.controlId)) return;
           const name = String(ch.name || "").trim();
           if (!name) return;
           raw.push({
@@ -1023,7 +1037,7 @@
             name: shortLoadName(name, ch.controlId),
             room: nameRoom(name),
             slave: Number((/_(\d+)$/.exec(s.deviceTopicKey) || [])[1] || 0),
-            ch: Number((/(\d+)\s*$/.exec(ch.controlId) || [])[1] || 0),
+            ch: Number((/(\d+)/.exec(ch.controlId) || [])[1] || 0),
           });
         });
       });
@@ -1040,7 +1054,7 @@
         deviceTopicKey: r.deviceTopicKey,
         controlId: r.controlId,
         label: counts[r.name] > 1
-          ? r.name + " · " + r.controlId.replace(/^Channel\s+/i, "Ch")
+          ? r.name + " · " + prettyControlId(r.controlId).replace(/^Channel\s+/i, "Ch")
           : r.name,
       }));
     }
@@ -1119,9 +1133,9 @@
       row.dataset.contact = contactKey(s.deviceTopicKey, ch.controlId);
       const knob = document.createElement("span");
       knob.className = "knob";
-      knob.textContent = ch.controlId;
+      knob.textContent = prettyControlId(ch.controlId);
       const loads = Array.isArray(ch.loads) ? ch.loads.filter(Boolean) : [];
-      const isLoad = /^(Channel\s+\d+|K\d+)$/i.test(ch.controlId);
+      const isLoad = isDeskLoad(ch.controlId);
       const original = String(ch.name || "").trim();
       row.appendChild(knob);
       const grow = document.createElement("div");
@@ -1259,7 +1273,7 @@
       roomSel.setAttribute("aria-label", "Комната");
       const typeSel = document.createElement("select");
       typeSel.className = "bind";
-      typeSel.setAttribute("aria-label", /^K\d+$/i.test(ch.controlId) ? "Тип реле" : isLoad ? "Тип линии" : "Тип входа");
+      typeSel.setAttribute("aria-label", isDeskRelay(ch.controlId) ? "Тип реле" : isLoad ? "Тип линии" : "Тип входа");
       const current = splitMark(ch.name);
       fillRoomTypeSelects(roomSel, typeSel, markTypes(ch, isLoad), current);
       const persist = () => {
@@ -1349,7 +1363,10 @@
       return nameRoom(ch.name);
     }
     function knobNum(ch) {
-      return Number((/(\d+)\s*$/.exec(ch.controlId || "") || [])[1] || 0);
+      const c = String(ch.controlId || "");
+      const d = /^(?:Curtain|Actuator)\s+(\d+)\s+(Open|Close)$/i.exec(c);
+      if (d) return Number(d[1]) * 2 - (d[2].toLowerCase() === "open" ? 1.5 : 1.4);
+      return Number((/(\d+)\s*$/.exec(c) || [])[1] || 0);
     }
     function appendNamedChannels(ul, s, channels) {
       const minCh = {};
