@@ -175,7 +175,7 @@
       <ul id="shelves-light"></ul>
     </section>
     <section id="panel-buttons" class="panel glass" hidden data-tab="buttons">
-      <p class="meta">Входы MCM — кнопки сценариев.</p>
+      <p class="meta">Выключатель. Под входом — какую линию он уже ведёт.</p>
       <ul id="shelves-buttons"></ul>
     </section>
     <section id="panel-relays" class="panel glass" hidden data-tab="relays">
@@ -226,6 +226,30 @@
       { id: "light_dim_hold_mcm", ru: "Дим-удержание" },
       { id: "light_all_off", ru: "Все выкл" },
     ];
+    const ALL_OFF = "light_all_off";
+    function exclusiveCards(ids) {
+      const out = [...new Set(ids || [])].filter((id) => CARDS.some((c) => c.id === id));
+      if (out.includes(ALL_OFF) && out.length > 1) return out.filter((id) => id !== ALL_OFF);
+      return out;
+    }
+    function toggleDeskCard(selected, cardId) {
+      if (cardId === ALL_OFF) {
+        if (selected.has(ALL_OFF) && selected.size === 1) selected.clear();
+        else {
+          selected.clear();
+          selected.add(ALL_OFF);
+        }
+      } else {
+        selected.delete(ALL_OFF);
+        if (selected.has(cardId)) selected.delete(cardId);
+        else selected.add(cardId);
+      }
+    }
+    function paintChips(chips, selected) {
+      chips.querySelectorAll("[data-card]").forEach((btn) => {
+        btn.setAttribute("aria-pressed", selected.has(btn.dataset.card) ? "true" : "false");
+      });
+    }
     function enrollRu(s) {
       if (s === "restored" || s === "online" || s === "enrolled_awaiting_heartbeat") return "на связи";
       if (s === "enrolling") return "подключаюсь";
@@ -300,7 +324,7 @@
           }
         });
         const ru = new Set(r.cards || []);
-        const selected = new Set(CARDS.filter((c) => ru.has(c.ru)).map((c) => c.id));
+        const selected = new Set(exclusiveCards(CARDS.filter((c) => ru.has(c.ru)).map((c) => c.id)));
         const chips = document.createElement("div");
         chips.className = "chips" + (selected.size === 0 ? " need" : "");
         chips.setAttribute("role", "group");
@@ -309,12 +333,14 @@
           const btn = document.createElement("button");
           btn.type = "button";
           btn.className = "chip";
+          btn.dataset.card = card.id;
           btn.textContent = card.ru;
           btn.setAttribute("aria-pressed", selected.has(card.id) ? "true" : "false");
           btn.addEventListener("click", (e) => {
             e.stopPropagation();
-            if (selected.has(card.id)) selected.delete(card.id);
-            else selected.add(card.id);
+            toggleDeskCard(selected, card.id);
+            paintChips(chips, selected);
+            chips.classList.toggle("need", selected.size === 0);
             saveCards(r.deviceTopicKey, r.controlId, [...selected]).then(() => {
               fetch("/runtime/mqtt-scan").then((res) => res.json()).then((j) => {
                 if (j.ok && j.shelves) showShelves(j);
@@ -344,7 +370,7 @@
       if (!rows.length) {
         $("previewHead").textContent = (j.reason || "Превью. Диск не трогаем.") + " · стол совпадает с диском";
       } else {
-        $("previewHead").textContent = (j.reason || "Превью. Диск не трогаем.") + " · " + rows.length + " отличий · чип правит стол, диск не трогаем";
+        $("previewHead").textContent = (j.reason || "Превью. Диск не трогаем.") + " · " + rows.length + " отличий · тип на столе, кнопка — в сценарии";
         appendRoomList(ul, rows, (r) => prettyRoom(String(r.name || "").split(/\s*·\s*/)[0] || ""), previewRow);
       }
       $("gapsHead").hidden = !gaps.length;
@@ -582,8 +608,9 @@
       row.appendChild(knob);
       const grow = document.createElement("div");
       grow.appendChild(input);
-      const selected = new Set(Array.isArray(ch.cards) ? ch.cards : []);
+      const selected = new Set(exclusiveCards(Array.isArray(ch.cards) ? ch.cards : []));
       const poured = Array.isArray(ch.hints) && ch.hints.length > 0;
+      const buttons = Array.isArray(ch.buttons) ? ch.buttons.filter(Boolean) : [];
       const chips = document.createElement("div");
       chips.className = "chips" + (original && selected.size === 0 && !loads.length ? " need" : "");
       chips.setAttribute("role", "group");
@@ -592,12 +619,12 @@
         const btn = document.createElement("button");
         btn.type = "button";
         btn.className = "chip";
+        btn.dataset.card = card.id;
         btn.textContent = card.ru;
         btn.setAttribute("aria-pressed", selected.has(card.id) ? "true" : "false");
         btn.addEventListener("click", () => {
-          if (selected.has(card.id)) selected.delete(card.id);
-          else selected.add(card.id);
-          btn.setAttribute("aria-pressed", selected.has(card.id) ? "true" : "false");
+          toggleDeskCard(selected, card.id);
+          paintChips(chips, selected);
           chips.classList.toggle("need", original && selected.size === 0 && !loads.length);
           saveCards(s.deviceTopicKey, ch.controlId, [...selected]).catch(() => {});
         });
@@ -607,12 +634,17 @@
       if (loads.length) {
         const sub = document.createElement("span");
         sub.className = "loads";
-        sub.textContent = loads.map(prettyContactName).join(" · ");
+        sub.textContent = "линия · " + loads.map(prettyContactName).join(" · ");
+        grow.appendChild(sub);
+      } else if (buttons.length) {
+        const sub = document.createElement("span");
+        sub.className = "loads";
+        sub.textContent = "кнопка · " + buttons.map(prettyContactName).join(" · ");
         grow.appendChild(sub);
       } else if (ch.name && !poured) {
         const sub = document.createElement("span");
         sub.className = "loads";
-        sub.textContent = "на диске нет карточки";
+        sub.textContent = "нет кнопки в заливке";
         grow.appendChild(sub);
       }
       row.appendChild(grow);

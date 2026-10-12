@@ -255,6 +255,16 @@ export function cardsFromHints(hints) {
   return DESK_CARD_IDS.filter((id) => set.has(DESK_CARD_RU[id]));
 }
 
+/** Все выкл не живёт вместе с кликом/димом на одном контакте. */
+export function exclusiveDeskCards(ids) {
+  const allow = new Set(DESK_CARD_IDS);
+  const out = [...new Set((Array.isArray(ids) ? ids : []).map((id) => String(id)).filter((id) => allow.has(id)))];
+  if (out.includes("light_all_off") && out.length > 1) {
+    return out.filter((id) => id !== "light_all_off");
+  }
+  return out;
+}
+
 function isLoadControl(controlId) {
   return /^Channel \d+$/i.test(controlId) || /^K\d+$/i.test(controlId);
 }
@@ -302,6 +312,33 @@ export function pouredLoadsForContact(rules, marks, deviceTopicKey, controlId) {
     }
   }
   return compactLoadNames(names);
+}
+
+/** На линии — какие входы из той же карточки, без выдумки. */
+export function pouredButtonsForContact(rules, marks, deviceTopicKey, controlId) {
+  const key = liveDeskDeviceKey(deviceTopicKey);
+  const cid = String(controlId ?? "").trim();
+  if (!key || !cid || !isLoadControl(cid)) return [];
+  const names = [];
+  const seen = new Set();
+  for (const r of Array.isArray(rules) ? rules : []) {
+    if (r.kind === "marking") continue;
+    const contacts = r.contacts || [];
+    const hit = contacts.some(
+      (c) => liveDeskDeviceKey(c.deviceTopicKey) === key && String(c.controlId) === cid,
+    );
+    if (!hit) continue;
+    for (const c of contacts) {
+      if (isLoadControl(c.controlId)) continue;
+      const dev = liveDeskDeviceKey(c.deviceTopicKey);
+      const mark = marks?.[dev]?.[c.controlId] || marks?.[c.deviceTopicKey]?.[c.controlId] || "";
+      const label = mark || `${formatDeskShelfLabel(dev) || dev} · ${c.controlId}`;
+      if (seen.has(label)) continue;
+      seen.add(label);
+      names.push(label);
+    }
+  }
+  return names;
 }
 
 /** На полке — имя карточки, без комнаты и без SKU. */

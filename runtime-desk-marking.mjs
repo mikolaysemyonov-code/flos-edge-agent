@@ -5,8 +5,8 @@ import fs from "node:fs";
 import path from "node:path";
 import {
   cardsFromHints,
-  DESK_CARD_IDS,
   DESK_CARD_RU,
+  exclusiveDeskCards,
   liveDeskDeviceKey,
   pouredHintsForContact,
   readPouredChannelMarks,
@@ -51,8 +51,7 @@ function writeDoc(doc) {
 
 function cleanCards(value) {
   if (!Array.isArray(value)) return null;
-  const allow = new Set(DESK_CARD_IDS);
-  return [...new Set(value.map((id) => String(id)).filter((id) => allow.has(id)))];
+  return exclusiveDeskCards(value);
 }
 
 /** Merge one contact. Never deletes sibling channels. Never writes wb-rules. */

@@ -14,6 +14,7 @@ import {
 import {
   cardsFromHints,
   pouredHintsForContact,
+  pouredButtonsForContact,
   pouredLoadsForContact,
   readPouredChannelMarks,
   readPouredDeskSnapshot,
@@ -74,6 +75,7 @@ function withPouredHints(shelves) {
       const deskCards = Array.isArray(ch.cards) && ch.cards.length ? ch.cards : [];
       const cards = deskCards.length ? deskCards : cardsFromHints(hints);
       const loads = pouredLoadsForContact(rules, marks, s.deviceTopicKey, ch.controlId);
+      const buttons = pouredButtonsForContact(rules, marks, s.deviceTopicKey, ch.controlId);
       const fromLoads = !ch.name && loads.length;
       return {
         ...ch,
@@ -83,6 +85,7 @@ function withPouredHints(shelves) {
         name: fromLoads ? loads.join(" · ") : ch.name,
         source: ch.source || (fromLoads ? "loads" : ""),
         loads: fromLoads ? [] : loads,
+        buttons,
       };
     }),
   }));
