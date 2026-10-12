@@ -24,7 +24,7 @@
       color: var(--ink);
       -webkit-font-smoothing: antialiased;
     }
-    main { max-width: 42rem; margin: 0 auto; padding: 1.25rem 1.15rem 11rem; }
+    main { max-width: 64rem; margin: 0 auto; padding: 1.25rem 1.15rem 11rem; }
     .kicker { margin: 0; color: var(--mute); font-size: .72rem; letter-spacing: .08em; text-transform: uppercase; }
     .top { display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; margin: .35rem 0 1rem; }
     h1 { font-size: 1.85rem; font-weight: 650; letter-spacing: -.03em; margin: 0; }
@@ -134,7 +134,7 @@
     .empty { margin: 2.5rem 1rem; text-align: center; color: var(--mute); }
     .dock {
       position: fixed; left: 50%; bottom: 0; transform: translateX(-50%);
-      width: min(42rem, 100%);
+      width: min(64rem, 100%);
       padding: .45rem .7rem calc(.55rem + env(safe-area-inset-bottom));
       background: rgb(10 10 12 / .78);
       border-top: 1px solid rgb(255 255 255 / .08);
@@ -173,11 +173,12 @@
     }
     .vitrine { display: grid; gap: .7rem; }
     @media (min-width: 640px) { .vitrine { grid-template-columns: 1fr 1fr; } }
+    @media (min-width: 900px) { .vitrine { grid-template-columns: 1fr 1fr 1fr; } }
     button.vcard {
       appearance: none; border: 1px solid rgb(255 255 255 / .12);
       background: linear-gradient(180deg, rgb(255 255 255 / .07), rgb(255 255 255 / .025));
       color: inherit; font: inherit; text-align: left; cursor: pointer;
-      min-height: 8.1rem; border-radius: 1.15rem; padding: .85rem .9rem .95rem;
+      min-height: 7.2rem; border-radius: 1.15rem; padding: .75rem .85rem .85rem;
       display: flex; flex-direction: column; gap: .55rem;
     }
     button.vcard:hover {
