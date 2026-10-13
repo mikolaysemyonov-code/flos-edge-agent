@@ -99,6 +99,12 @@
       background: rgb(255 255 255 / .05);
       border: 1px solid rgb(255 255 255 / .1);
     }
+    .chips.need {
+      outline: 1px solid rgb(var(--sky) / .55);
+      border-radius: .85rem;
+      padding: .28rem;
+      animation: needpulse .9s ease;
+    }
     .chips.need .chip {
       color: var(--ink);
       background: rgb(255 255 255 / .1);
