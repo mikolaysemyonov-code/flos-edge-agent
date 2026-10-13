@@ -281,9 +281,9 @@
       canRepairDesk = j.canRepair === true || canPourDesk;
       $("pour").disabled = !(canPourDesk || canRepairDesk);
       $("pour").title = canPourDesk
-        ? "Пуш на main: имена и типовые (переключение / все выкл)"
+        ? "Записать на щит: имена и типовые (переключение / все выкл)"
         : canRepairDesk
-          ? "Починить FORM LOGIC OS: спрятать дубли в MQTT (meta.hidden)"
+          ? "Убрать дубли FORM LOGIC OS"
           : (j.reason || "");
       $("previewHead").style.color = "";
       const ready = j.ready || {};
@@ -809,7 +809,7 @@
       if (!lastReleases.length) {
         const empty = document.createElement("p");
         empty.className = "empty";
-        empty.textContent = "На main пока HEAD на диске. Следующая заливка — первый пуш.";
+        empty.textContent = "Пока нет заливок. Первая появится после «Залить на щит».";
         box.appendChild(empty);
         return;
       }
@@ -846,7 +846,7 @@
         left.append(ttl, hint);
         const st = document.createElement("span");
         st.className = "st" + (rel.current ? " ok" : "");
-        st.textContent = rel.current ? "HEAD · main" : "push";
+        st.textContent = rel.current ? "Сейчас" : "Было";
         top.append(left, st);
         cap.appendChild(top);
         li.appendChild(cap);
@@ -854,8 +854,8 @@
           const go = document.createElement("button");
           go.type = "button";
           go.className = "ghost";
-          go.textContent = "checkout";
-          go.title = "Откат на этот пуш + спрятать MQTT-призраки FORM LOGIC OS";
+          go.textContent = "Вернуть";
+          go.title = "Вернуть эту заливку на щит и спрятать лишнее в FORM LOGIC OS";
           go.addEventListener("click", () => {
             go.disabled = true;
             fetch("/runtime/rollback?revisionId=" + encodeURIComponent(rel.revisionId), { method: "POST" })
@@ -863,7 +863,7 @@
               .then((j) => {
                 if (!j || (j.status !== "applied" && !j.ok)) {
                   go.disabled = false;
-                  go.title = (j && (j.error || (j.reasons || []).join(" · "))) || "Не откатил";
+                  go.title = (j && (j.error || (j.reasons || []).join(" · "))) || "Не вернул";
                   return;
                 }
                 loadPoured();
@@ -999,7 +999,7 @@
         { id: "mark", ru: "Разметка" },
         { id: "rules", ru: "Сценарии" },
         { id: "send", ru: "Новое" + (sendN ? " · " + sendN : "") },
-        { id: "hist", ru: "main" + (lastReleases.length ? " · " + lastReleases.length : "") },
+        { id: "hist", ru: "Журнал" + (lastReleases.length ? " · " + lastReleases.length : "") },
       ];
       if (!tabs.some((t) => t.id === pouredPane)) pouredPane = "mark";
       bar.hidden = pouredOpen();
@@ -1019,25 +1019,25 @@
       });
       const wrap = $("pourWrap");
       if (wrap) {
-        // Пуш виден на «Новое» и на main; на разметке/сценариях — нет.
+        // «Залить» виден на «Новое» и в журнале; на разметке/сценариях — нет.
         const showPour = (pouredPane === "send" || pouredPane === "hist") && !pouredOpen();
         wrap.hidden = !showPour;
         const pourBtn = $("pour");
         const canAct = canPourDesk || canRepairDesk;
         pourBtn.disabled = !canAct;
         if (pouredPane === "hist" && canPourDesk) {
-          pourBtn.textContent = "Залить · пуш";
-          pourBtn.title = "Пуш на main: имена и типовые со стола";
+          pourBtn.textContent = "Залить на щит";
+          pourBtn.title = "Записать имена и типовые со стола на щит";
         } else if (pouredPane === "hist") {
-          pourBtn.textContent = "Починить · пуш";
+          pourBtn.textContent = "Убрать дубли";
           pourBtn.title = canRepairDesk
-            ? "Спрятать дубли FORM LOGIC OS в MQTT"
-            : (lastPreview.reason || "Нечего чинить");
+            ? "Спрятать лишние строки FORM LOGIC OS"
+            : (lastPreview.reason || "Нечего убирать");
         } else {
-          pourBtn.textContent = "Залить · пуш";
+          pourBtn.textContent = "Залить на щит";
           pourBtn.title = canPourDesk
-            ? "Пуш на main: имена и типовые"
-            : (lastPreview.reason || "Пока не льём");
+            ? "Записать имена и типовые на щит"
+            : (lastPreview.reason || "Пока нечего лить");
         }
       }
       $("n-poured").textContent = diskN || "";
@@ -1303,10 +1303,10 @@
         if (head) {
           head.style.color = "";
           head.textContent = canPourDesk
-            ? "main · HEAD сверху. «Залить · пуш» = пуш, checkout = откат. Стрелка — к разметке."
+            ? "Сверху — что сейчас на щите. «Залить на щит» — сохранить. «Вернуть» — откатить. Стрелка — к разметке."
             : canRepairDesk
-              ? "main · HEAD сверху. checkout = откат · «Починить» спрячет дубли. Стрелка — к разметке."
-              : "main · HEAD сверху. checkout = откат на пуш. Стрелка — к разметке.";
+              ? "Сверху — что сейчас на щите. «Вернуть» — откатить. «Убрать дубли» — спрятать лишнее. Стрелка — к разметке."
+              : "Сверху — что сейчас на щите. «Вернуть» — откатить к этой заливке. Стрелка — к разметке.";
         }
         return;
       }
@@ -1373,7 +1373,7 @@
         head.style.color = "";
         if (pouredPane === "send") {
           const noCard = items.filter((i) => !i.scene && !(i.cards || []).length && !(i.hints || []).length).length;
-          head.textContent = (canPourDesk ? "Новое. Залить = пуш на main." : "Новое. " + (lastPreview.reason || "Пока не льём."))
+          head.textContent = (canPourDesk ? "Новое на столе. «Залить на щит» — записать сюда." : "Новое. " + (lastPreview.reason || "Пока нечего лить."))
             + (noCard ? " · " + noCard + " без карточки" : "");
         } else {
           head.textContent = (pouredPane === "rules"
@@ -2342,11 +2342,11 @@
       if ((!canPourDesk && !canRepairDesk) || $("pour").disabled) return;
       const onHist = pouredPane === "hist";
       $("pour").disabled = true;
-      $("pour").textContent = onHist ? "Чиню…" : "Лью…";
+      $("pour").textContent = onHist && !canPourDesk ? "Убираю…" : "Заливаю…";
       fetch("/runtime/desk-pour", { method: "POST" })
         .then((r) => r.json())
         .then((j) => {
-          $("pour").textContent = onHist ? "Починить · пуш" : "Залить · пуш";
+          $("pour").textContent = onHist && !canPourDesk ? "Убрать дубли" : "Залить на щит";
           if (!j.ok) {
             $("pour").disabled = !(canPourDesk || canRepairDesk);
             $("previewHead").style.color = "rgb(var(--bad))";
@@ -2355,10 +2355,9 @@
           }
           $("previewHead").style.color = "";
           const bits = [
-            j.mqttOnly ? "MQTT-hide" : ("Пуш · " + (j.appliedRevisionId || "")),
-            j.restarted ? "wb-rules" : "",
+            j.mqttOnly ? "Дубли спрятаны" : ("Залито · " + (j.appliedRevisionId || "").replace(/^fnv1a32:/i, "").slice(0, 8)),
+            j.restarted ? "правила перезапущены" : "",
             j.hiddenGhosts ? ("скрыто " + j.hiddenGhosts) : "",
-            j.mqttPublished ? ("mqtt " + j.mqttPublished) : "",
           ].filter(Boolean);
           $("previewHead").textContent = bits.join(" · ") || "Готово";
           pouredPane = "hist";
@@ -2366,7 +2365,7 @@
           loadPreview();
         })
         .catch((e) => {
-          $("pour").textContent = onHist ? "Починить · пуш" : "Залить · пуш";
+          $("pour").textContent = onHist && !canPourDesk ? "Убрать дубли" : "Залить на щит";
           $("pour").disabled = !(canPourDesk || canRepairDesk);
           $("previewHead").style.color = "rgb(var(--bad))";
           $("previewHead").textContent = String(e.message || e);

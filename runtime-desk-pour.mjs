@@ -114,10 +114,10 @@ export function assessDeskCanPour(preview) {
   if (blocked > 0) hints.push(blocked + " без имени — пропустим");
   if (canPour) {
     hints.unshift(
-      blocked > 0 ? "Пуш на main (частичный: только с именами)." : "Готово к пушу на main.",
+      blocked > 0 ? "Можно залить на щит (частично: только с именами)." : "Можно залить на щит.",
     );
   } else if (canRepair) {
-    hints.unshift("Починить FORM LOGIC OS (JSON meta.hidden в MQTT)");
+    hints.unshift("Убрать дубли FORM LOGIC OS");
   }
   return {
     canPour,
