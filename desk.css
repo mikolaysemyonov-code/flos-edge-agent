@@ -191,6 +191,14 @@
     }
     #ready .channels { margin: 0 0 .2rem; }
     #ready .chips { margin: 0; padding: 0 1rem .8rem; }
+    .ch-cap .vtop { display: flex; align-items: flex-start; justify-content: space-between; gap: .6rem; }
+    .st {
+      flex: none; margin-top: .15rem;
+      font-size: .62rem; font-weight: 700; letter-spacing: .06em;
+      text-transform: uppercase; color: var(--mute);
+    }
+    .st.send { color: rgb(var(--sky)); }
+    .st.ok { color: rgb(var(--ok)); }
     #poured li.roomh, #gaps li.roomh, #preview li.roomh {
       display: block; border-top: 0; padding: .85rem 0 .15rem;
       color: var(--mute); font-size: .72rem;

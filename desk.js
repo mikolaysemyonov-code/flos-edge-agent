@@ -18,6 +18,7 @@
     let markPending = {};
     let roomFilter = "";
     let openMod = "";
+    let pouredPane = "mark";
     const LED_TYPES = [
       "Световая линия",
       "Подсветка зеркала", "Подсветка ниши", "Подсветка полки",
@@ -403,6 +404,21 @@
       if (f === "light" || f === "buttons" || f === "relays") return f;
       return "light";
     }
+    function guessRoom(text) {
+      const direct = nameRoom(text);
+      if (direct) return direct;
+      const known = roomsFromBus();
+      const low = String(text || "").toLowerCase();
+      return known.find((r) => low.includes(r.toLowerCase())) || "";
+    }
+    function pourLane(item) {
+      if (item.scene) return "disk";
+      const s = item.status;
+      if (s === "new_name" || s === "name" || s === "card" || s === "no_card" || s === "blocked") return "send";
+      if (item.pouredName || (item.hints && item.hints.length)) return "disk";
+      if (item.title) return "send";
+      return "disk";
+    }
     function collectReadyItems() {
       const items = [];
       (lastShelvesRows || []).forEach((s) => {
@@ -412,10 +428,11 @@
           const cards = Array.isArray(ch.cards) ? ch.cards : [];
           if (!name && !hints.length && !cards.length) return;
           const prev = previewHit(s.deviceTopicKey, ch.controlId);
+          const title = name ? prettyContactName(name) : prettyControlId(ch.controlId);
           items.push({
-            room: nameRoom(name) || "",
+            room: guessRoom(name) || guessRoom(prev && prev.pouredName) || "",
             bucket: readyBucket(s.deviceTopicKey, ch.controlId),
-            title: name ? prettyContactName(name) : prettyControlId(ch.controlId),
+            title: title,
             sub: (s.label || s.deviceTopicKey) + " · " + prettyControlId(ch.controlId),
             deviceTopicKey: s.deviceTopicKey,
             controlId: ch.controlId,
@@ -430,7 +447,7 @@
       pouredRules.filter((r) => r.kind === "user").forEach((r) => {
         const c0 = (r.contacts || [])[0] || {};
         items.push({
-          room: roomFromContacts(r.contacts) || roomFromTitle(r.title) || "",
+          room: roomFromContacts(r.contacts) || roomFromTitle(r.title) || guessRoom(r.title) || "",
           bucket: "scenes",
           title: r.title || r.id,
           sub: (r.contacts || []).map(solContactLabel).join(" · ") || "нет контакта на шине",
@@ -442,6 +459,18 @@
         });
       });
       return items;
+    }
+    function paneItems(items) {
+      if (pouredPane === "rules") {
+        return items.filter((i) => i.scene || (i.isLoad && (
+          (i.cards && i.cards.length) || (i.hints && i.hints.length) ||
+          i.status === "no_card" || i.status === "card"
+        )));
+      }
+      if (pouredPane === "send") {
+        return items.filter((i) => !i.scene && pourLane(i) === "send");
+      }
+      return items.filter((i) => !i.scene);
     }
     function readyCard(item, room) {
       const li = document.createElement("li");
@@ -459,6 +488,9 @@
       }
       const cap = document.createElement("div");
       cap.className = "ch-cap";
+      const top = document.createElement("div");
+      top.className = "vtop";
+      const left = document.createElement("div");
       const ttl = document.createElement("div");
       ttl.className = "ttl";
       ttl.textContent = room ? titleUnderRoom(item.title, room) : item.title;
@@ -469,19 +501,19 @@
         bits.push("на диске " + prettyContactName(item.pouredName));
       }
       if (item.status === "blocked") hint.classList.add("orphan");
-      if (item.status === "new_name") bits.push("новое на столе");
       hint.textContent = bits.filter(Boolean).join(" · ");
-      cap.append(ttl, hint);
+      left.append(ttl, hint);
+      const st = document.createElement("span");
+      const lane = pourLane(item);
+      st.className = "st" + (item.status === "blocked" ? "" : lane === "send" ? " send" : " ok");
+      st.textContent = item.scene ? "на диске" : item.status === "blocked" ? "блок"
+        : lane === "send" ? "к заливке" : "на диске";
+      top.append(left, st);
+      cap.appendChild(top);
       li.appendChild(cap);
-      if (item.isLoad && (item.status === "no_card" || item.status === "card" || (item.cards && item.cards.length))) {
-        const ru = new Set((item.hints || []).concat(item.cards || []).map((c) => {
-          const hit = CARDS.find((x) => x.id === c || x.ru === c);
-          return hit ? hit.ru : c;
-        }));
-        const selected = new Set(exclusiveCards(CARDS.filter((c) => ru.has(c.ru) || (item.cards || []).includes(c.id)).map((c) => c.id)));
-        if ((item.cards || []).length) {
-          exclusiveCards(item.cards).forEach((id) => selected.add(id));
-        }
+      const showCards = pouredPane === "rules" && item.isLoad && !item.scene;
+      if (showCards) {
+        const selected = new Set(exclusiveCards(Array.isArray(item.cards) ? item.cards : []));
         const chips = document.createElement("div");
         chips.className = "chips" + (selected.size === 0 ? " need" : "");
         CARDS.forEach((card) => {
@@ -508,14 +540,40 @@
       }
       return li;
     }
+    function renderPouredTabs() {
+      const bar = $("pouredTabs");
+      if (!bar) return;
+      const all = collectReadyItems();
+      const sendN = all.filter((i) => !i.scene && pourLane(i) === "send").length;
+      const tabs = [
+        { id: "mark", ru: "Разметка" },
+        { id: "rules", ru: "Правила" },
+        { id: "send", ru: "К заливке" + (sendN ? " · " + sendN : "") },
+      ];
+      if (!tabs.some((t) => t.id === pouredPane)) pouredPane = "mark";
+      bar.replaceChildren();
+      tabs.forEach((t) => {
+        const b = document.createElement("button");
+        b.type = "button";
+        b.textContent = t.ru;
+        b.setAttribute("aria-pressed", pouredPane === t.id ? "true" : "false");
+        b.addEventListener("click", () => {
+          pouredPane = t.id;
+          renderReady();
+        });
+        bar.appendChild(b);
+      });
+      const wrap = $("pourWrap");
+      if (wrap) wrap.hidden = pouredPane !== "send";
+      $("n-poured").textContent = sendN || "";
+    }
     function renderReady() {
       const box = $("ready");
       if (!box) return;
+      renderPouredTabs();
       box.replaceChildren();
-      const items = collectReadyItems();
-      const rooms = [];
-      const known = roomsFromBus();
-      known.forEach((r) => rooms.push(r));
+      const items = paneItems(collectReadyItems());
+      const rooms = roomsFromBus().slice();
       if (items.some((i) => !i.room)) rooms.push("");
       rooms.forEach((room) => {
         const mine = items.filter((i) => (i.room || "") === room);
@@ -540,12 +598,25 @@
       if (!items.length) {
         const empty = document.createElement("p");
         empty.className = "empty";
-        empty.textContent = "На столе и на диске пока пусто.";
+        empty.textContent = pouredPane === "send" ? "К заливке ничего нет — стол совпадает с диском."
+          : pouredPane === "rules" ? "Правил на диске и карточек на столе пока нет."
+          : "Разметки пока нет.";
         box.appendChild(empty);
       }
-      const scenes = pouredRules.filter((r) => r.kind === "user").length;
-      const namedRooms = rooms.filter((r) => r && items.some((i) => i.room === r)).length;
-      $("n-poured").textContent = namedRooms || scenes || "";
+      const head = $("previewHead");
+      if (head) {
+        const ready = lastPreview.ready || {};
+        const bits = [
+          (ready.blocked || 0) + " без имени",
+          (ready.gaps || 0) + " без карточки",
+        ].join(" · ");
+        head.style.color = "";
+        head.textContent = (pouredPane === "send"
+          ? "К заливке. Диск не пишем."
+          : pouredPane === "rules"
+            ? "Правила. Ткни строку — править."
+            : "Разметка. Ткни строку — править в модуле.") + " · " + bits;
+      }
     }
     function renderPoured() {
       const wrap = $("pouredMarksWrap");
