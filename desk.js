@@ -782,7 +782,7 @@
         const hint = document.createElement("span");
         hint.className = "hint";
         const n = rel.fileCount || (rel.files || []).length;
-        const parent = rel.parentId ? "parent " + String(rel.parentId).slice(0, 12) : "";
+        const parent = rel.parentId ? "parent " + rel.parentId : "";
         hint.textContent = [relWhen(rel.savedAt), parent, n ? n + " файл." : ""].filter(Boolean).join(" · ");
         left.append(ttl, hint);
         const st = document.createElement("span");
@@ -2397,7 +2397,7 @@
         const files = (j.files || []).map((f) => f.filename).join(", ");
         $("pouredHead").style.color = "";
         $("pouredHead").textContent = (j.ruleCount || pouredRules.length) + " правил" +
-          (j.revisionId ? " · " + String(j.revisionId).slice(0, 12) : "") +
+          (j.revisionId ? " · " + j.revisionId : "") +
           (files ? " · " + files : "");
         await loadReleases();
         renderPoured();

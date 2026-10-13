@@ -78,7 +78,15 @@ export function importLastManifest() {
 export function listReleaseSummaries(currentId) {
   importLastManifest();
   const cur = String(currentId || "").trim();
-  return readReleaseRing().map((r, i, ring) => ({
+  const ring = [...readReleaseRing()].sort((a, b) => {
+    const ta = Date.parse(a.savedAt || "") || 0;
+    const tb = Date.parse(b.savedAt || "") || 0;
+    if (tb !== ta) return tb - ta;
+    if (cur && a.revisionId === cur) return -1;
+    if (cur && b.revisionId === cur) return 1;
+    return 0;
+  });
+  return ring.map((r, i) => ({
     revisionId: r.revisionId,
     savedAt: r.savedAt || "",
     fileCount: Array.isArray(r.files) ? r.files.length : 0,
