@@ -503,7 +503,7 @@
     function sceneLines(contacts, room) {
       const p = sceneParts(contacts);
       const buttons = sceneButtons(contacts);
-      const btn = uniqText(buttons.map(solContactLabel)).join(" · ") || "нет кнопки";
+      const btn = uniqText(buttons.map(solContactLabel)).join(" · ");
       const lights = compactPhrase(p.loads.map((c) => {
         const n = loadListLabel(c);
         return room ? (titleUnderRoom(n, room) || n) : n;
@@ -732,9 +732,21 @@
       ttl.className = "ttl";
       ttl.textContent = room ? titleUnderRoom(item.title, room) : item.title;
       if (item.scene) {
-        const btn = document.createElement("span");
-        btn.className = "hint" + (item.btnLine === "нет кнопки" ? " orphan" : "");
-        btn.textContent = "кнопка · " + (item.btnLine || "нет кнопки");
+        const missing = !item.btnLine;
+        const btn = missing ? document.createElement("button") : document.createElement("span");
+        btn.className = "hint" + (missing ? " orphan" : "");
+        btn.textContent = missing ? "кнопка · нет в разметке" : "кнопка · " + item.btnLine;
+        if (missing) {
+          btn.type = "button";
+          btn.addEventListener("click", (e) => {
+            e.stopPropagation();
+            const load = sceneParts(item.contacts).loads[0];
+            if (!load) return;
+            openSceneId = "";
+            pouredPane = "mark";
+            jumpToContact(load.deviceTopicKey, load.controlId);
+          });
+        }
         left.append(ttl, btn);
       } else {
         const hint = document.createElement("span");

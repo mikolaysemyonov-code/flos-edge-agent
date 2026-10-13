@@ -127,7 +127,7 @@ export function parsePouredRuleRows(source, filename) {
     const id = m[1];
     if (/^fl_rt_(mir|bri|temp)_/.test(id)) continue;
     const contacts = [];
-    const cellRe = /['"](wb-[a-z0-9-]+_\d+(?:_\d+)?)\/([^'"]+)['"]/gi;
+    const cellRe = /['"](wb-[a-z0-9-]+(?:_\d+(?:_\d+)?)?)\/([^'"]+)['"]/gi;
     let c;
     while ((c = cellRe.exec(m[0]))) {
       const deviceTopicKey = liveDeskDeviceKey(c[1]);
