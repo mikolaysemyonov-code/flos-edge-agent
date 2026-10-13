@@ -465,6 +465,32 @@
       const hit = namedLoads().find((r) => contactKey(r.deviceTopicKey, r.controlId) === want);
       return hit ? hit.label : solContactLabel({ deviceTopicKey: c.deviceTopicKey, controlId: cid });
     }
+    function bindLoadHint(c, btnRoom) {
+      const n = loadListLabel(c);
+      const rm = nameRoom(n) || "";
+      const short = rm ? (titleUnderRoom(n, rm) || n) : n;
+      const cid = prettyControlId(c.controlId);
+      const core = rm && rm !== btnRoom ? rm + " · " + (short || "") : (short || "");
+      if (cid && core && !core.includes(cid)) return core + " · " + cid;
+      return core || cid;
+    }
+    function contactOrd(item) {
+      const s = String(item.controlId || "");
+      let m = /^Channel (\d+)/i.exec(s);
+      if (m) return [0, Number(m[1])];
+      m = /^K(\d+)/i.exec(s);
+      if (m) return [1, Number(m[1])];
+      m = /^Input (\d+)/i.exec(s);
+      if (m) return [2, Number(m[1])];
+      return [8, 0];
+    }
+    function byContact(a, b) {
+      const aa = contactOrd(a);
+      const bb = contactOrd(b);
+      if (aa[0] !== bb[0]) return aa[0] - bb[0];
+      if (aa[1] !== bb[1]) return aa[1] - bb[1];
+      return String(a.controlId || "").localeCompare(String(b.controlId || ""), "en", { numeric: true });
+    }
     function buttonsFromBinds(loads) {
       const seen = new Set();
       const out = [];
@@ -706,13 +732,19 @@
           const prev = previewHit(s.deviceTopicKey, ch.controlId);
           const title = name ? prettyContactName(name) : prettyControlId(ch.controlId);
           const isLoad = isDeskLoad(ch.controlId);
+          const room = guessRoom(name) || guessRoom(prev && prev.pouredName) || "";
+          const sku = s.label || s.deviceTopicKey;
           const trigs = isLoad ? triggersBoundTo(s.deviceTopicKey, ch.controlId) : [];
           const src = trigs.length ? trigs : (isLoad ? pouredTriggersForLoad(s.deviceTopicKey, ch.controlId) : []);
           items.push({
-            room: guessRoom(name) || guessRoom(prev && prev.pouredName) || "",
+            room: room,
             bucket: readyBucket(s.deviceTopicKey, ch.controlId),
             title: title,
-            sub: (s.label || s.deviceTopicKey) + " · " + prettyControlId(ch.controlId),
+            sku: sku,
+            sub: sku + " · " + prettyControlId(ch.controlId),
+            bindLine: isLoad
+              ? ""
+              : uniqText(bindsOf(s.deviceTopicKey, ch.controlId).map((b) => bindLoadHint(b, room))).join(" · "),
             deviceTopicKey: s.deviceTopicKey,
             controlId: ch.controlId,
             cards: cards,
@@ -795,8 +827,10 @@
         const hint = document.createElement("span");
         hint.className = "hint";
         const n = rel.fileCount || (rel.files || []).length;
-        const parent = rel.current && rel.parentId ? "^ " + rel.parentId : "";
-        hint.textContent = [relWhen(rel.savedAt), parent, n ? fileRu(n) : ""].filter(Boolean).join(" · ");
+        const parent = lastReleases.find((p) => p.revisionId === rel.parentId);
+        const caret = rel.current && rel.parentId ? "^ " + rel.parentId : "";
+        const sameWhen = rel.current && parent && relWhen(rel.savedAt) === relWhen(parent.savedAt);
+        hint.textContent = [sameWhen ? "" : relWhen(rel.savedAt), caret, n ? fileRu(n) : ""].filter(Boolean).join(" · ");
         left.append(ttl, hint);
         const st = document.createElement("span");
         st.className = "st" + (rel.current ? " ok" : "");
@@ -862,7 +896,8 @@
       const left = document.createElement("div");
       const ttl = document.createElement("div");
       ttl.className = "ttl";
-      ttl.textContent = markTitle(item, room);
+      const ttlText = markTitle(item, room);
+      ttl.textContent = ttlText;
       if (item.scene) {
         const missing = !item.btnLine;
         const btn = missing ? document.createElement("button") : document.createElement("span");
@@ -881,7 +916,10 @@
       } else {
         const hint = document.createElement("span");
         hint.className = "hint";
-        const bits = [item.sub];
+        const cid = prettyControlId(item.controlId);
+        const skuBit = (cid && ttlText && ttlText.includes(cid)) ? (item.sku || "") : item.sub;
+        const bits = [skuBit];
+        if (item.bindLine) bits.push("линия · " + item.bindLine);
         if (item.pouredName && item.title && prettyContactName(item.pouredName) !== prettyContactName(item.title)) {
           bits.push("на контроллере " + prettyContactName(item.pouredName));
         }
@@ -1236,7 +1274,7 @@
           if (pouredPane === "rules") {
             const ul = document.createElement("ul");
             ul.className = "channels";
-            mine.forEach((i) => ul.appendChild(readyCard(i, room)));
+            mine.slice().sort(byContact).forEach((i) => ul.appendChild(readyCard(i, room)));
             box.appendChild(ul);
             return;
           }
@@ -1249,7 +1287,7 @@
             box.appendChild(sech);
             const ul = document.createElement("ul");
             ul.className = "channels";
-            chunk.forEach((i) => ul.appendChild(readyCard(i, room)));
+            chunk.slice().sort(byContact).forEach((i) => ul.appendChild(readyCard(i, room)));
             box.appendChild(ul);
           });
         });
