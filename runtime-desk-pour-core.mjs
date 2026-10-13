@@ -1,5 +1,6 @@
 /**
- * Имена стола → ячейки form_logic_os в 00_core. Без облачного компилятора.
+ * Имена стола → titles в существующем form_logic_os.
+ * Новые ячейки не плодим, если физика уже в 00_core — иначе дубли в UI.
  */
 import { liveDeskDeviceKey } from "./runtime-desk-rules-marks.mjs";
 
@@ -13,24 +14,41 @@ export function cellId(deviceTopicKey, controlId) {
     .trim()
     .replace(/Channel\s+/i, "ch")
     .replace(/Curtain\s+(\d+)\s+Open/i, "cu$1o")
+    .replace(/Actuator\s+(\d+)\s+Open/i, "ac$1o")
     .replace(/[^a-z0-9]+/gi, "_")
     .replace(/^_|_$/g, "");
   return ("d_" + d + "_" + c).slice(0, 48);
 }
 
-function physPath(deviceTopicKey, controlId) {
+export function physPath(deviceTopicKey, controlId) {
   return liveDeskDeviceKey(deviceTopicKey) + "/" + String(controlId || "").trim();
+}
+
+function isDriveClose(controlId) {
+  return /^(Curtain|Actuator)\s+\d+\s+Close$/i.test(String(controlId || "").trim());
 }
 
 function isLedChannel(controlId) {
   return /^Channel \d+$/i.test(String(controlId || ""));
 }
 
+/** Физика уже в ядре — только переименовать title, не добавлять desk_* ячейку. */
+export function pathAlreadyInCore(src, deviceTopicKey, controlId) {
+  const path = physPath(deviceTopicKey, controlId);
+  if (!path || path.endsWith("/")) return false;
+  if (src.includes(`"${path}"`) || src.includes(`'${path}'`)) return true;
+  if (isLedChannel(controlId)) {
+    const bri = path + " Brightness";
+    if (src.includes(`"${bri}"`) || src.includes(`'${bri}'`)) return true;
+  }
+  return false;
+}
+
 function patchCellTitle(src, id, title) {
   const needle = `"${id}"`;
   const i = src.indexOf(needle);
   if (i < 0) return { src, changed: false };
-  const slice = src.slice(i, i + 280);
+  const slice = src.slice(i, i + 320);
   const m = /title:\s*"((?:\\.|[^"\\])*)"/.exec(slice);
   if (!m) return { src, changed: false };
   if (m[1] === title) return { src, changed: false };
@@ -38,15 +56,13 @@ function patchCellTitle(src, id, title) {
   return { src: src.slice(0, i) + from + src.slice(i + slice.length), changed: true };
 }
 
-/** Rename title on the virtual cell that already bridges this physical path. */
-function patchTitleByPhysPath(src, deviceTopicKey, controlId, title) {
-  const path = physPath(deviceTopicKey, controlId);
+function cellIdForPhysPath(src, deviceTopicKey, controlId) {
+  const path = physPath(deviceTopicKey, controlId).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   const re = new RegExp(
-    `defineRule\\s*\\(\\s*['"]fl_rt_(?:cmd|mir)_([^'"]+)['"][\\s\\S]*?${path.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`,
+    `defineRule\\s*\\(\\s*['"]fl_rt_(?:cmd|mir)_([^'"]+)['"][\\s\\S]{0,1200}?["']${path}["']`,
   );
   const m = re.exec(src);
-  if (!m) return { src, changed: false, found: false };
-  return { ...patchCellTitle(src, m[1], title), found: true };
+  return m ? m[1] : "";
 }
 
 function emitBridge(deviceTopicKey, controlId, name) {
@@ -111,32 +127,75 @@ function emitBridge(deviceTopicKey, controlId, name) {
       "});",
     );
   }
-  return { cellLines, ruleLines };
+  return { id, cellLines, ruleLines };
+}
+
+function pathQuotedIn(src, path) {
+  return src.includes(`"${path}"`) || src.includes(`'${path}'`);
+}
+
+/**
+ * Убрать desk_* мосты, если та же физика уже есть у «облачной» ячейки.
+ * Иначе после пуша в FORM LOGIC OS два одинаковых title.
+ */
+export function stripDuplicateDeskBridges(src) {
+  let text = String(src || "");
+  const deskCmd = [...text.matchAll(/defineRule\s*\(\s*['"]fl_rt_cmd_(d_[^'"]+)['"]/g)].map((m) => m[1]);
+  let changed = false;
+  const removedIds = [];
+  for (const id of deskCmd) {
+    const idEsc = id.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const blockRe = new RegExp(
+      `defineRule\\s*\\(\\s*['"]fl_rt_(?:cmd|mir)_${idEsc}['"][\\s\\S]*?(?=defineRule\\s*\\(|$)`,
+      "g",
+    );
+    const blocks = [...text.matchAll(blockRe)].map((m) => m[0]);
+    const paths = [...blocks.join("\n").matchAll(/["'](wb-[^"']+\/[^"']+)["']/g)].map((m) => m[1]);
+    if (!paths.length) continue;
+    const bases = [...new Set(paths.map((p) => p.replace(/ Brightness$/i, "")))];
+    const withoutDesk = text.replace(blockRe, "");
+    const stillHas = bases.some((p) => pathQuotedIn(withoutDesk, p));
+    if (!stillHas) continue;
+    text = withoutDesk;
+    const cellRe = new RegExp(`\\s*${esc(id).replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\s*:\\s*\\{[^}]*\\},?\\n?`);
+    const briRe = new RegExp(
+      `\\s*${esc(id + "_bri").replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\s*:\\s*\\{[^}]*\\},?\\n?`,
+    );
+    text = text.replace(cellRe, "\n").replace(briRe, "\n");
+    removedIds.push(id, id + "_bri");
+    changed = true;
+  }
+  return { content: text.replace(/\n{3,}/g, "\n\n"), changed, removedIds };
 }
 
 /** @param {string} coreSrc @param {{deviceTopicKey:string,controlId:string,name:string}[]} named */
 export function mergeDeskNamesIntoCore(coreSrc, named) {
   let src = String(coreSrc || "");
   if (!/defineVirtualDevice\s*\(\s*["']form_logic_os["']/.test(src)) {
-    return { ok: false, error: "no_form_logic_os", content: src, changed: false };
+    return { ok: false, error: "no_form_logic_os", content: src, changed: false, removedIds: [] };
   }
   let changed = false;
   const addCells = [];
   const addRules = [];
+  const removedIds = [];
   for (const row of named || []) {
     const name = String(row.name || "").trim();
     if (!name || !row.deviceTopicKey || !row.controlId) continue;
+    if (isDriveClose(row.controlId)) continue;
     const id = cellId(row.deviceTopicKey, row.controlId);
-    if (src.includes(`"${id}"`)) {
+    if (src.includes(`"${id}"`) || src.includes(`'${id}'`)) {
       const next = patchCellTitle(src, id, name);
       src = next.src;
       if (next.changed) changed = true;
       continue;
     }
-    const byPath = patchTitleByPhysPath(src, row.deviceTopicKey, row.controlId, name);
-    if (byPath.found) {
-      src = byPath.src;
-      if (byPath.changed) changed = true;
+    if (pathAlreadyInCore(src, row.deviceTopicKey, row.controlId)) {
+      const existing = cellIdForPhysPath(src, row.deviceTopicKey, row.controlId);
+      if (existing) {
+        const next = patchCellTitle(src, existing, name);
+        src = next.src;
+        if (next.changed) changed = true;
+      }
       continue;
     }
     const emit = emitBridge(row.deviceTopicKey, row.controlId, name);
@@ -149,5 +208,11 @@ export function mergeDeskNamesIntoCore(coreSrc, named) {
     src = withCells !== src ? withCells : src + "\n";
   }
   if (addRules.length) src = src.trimEnd() + "\n\n" + addRules.join("\n") + "\n";
-  return { ok: true, content: src, changed };
+  const stripped = stripDuplicateDeskBridges(src);
+  if (stripped.changed) {
+    src = stripped.content;
+    removedIds.push(...(stripped.removedIds || []));
+    changed = true;
+  }
+  return { ok: true, content: src, changed, removedIds };
 }

@@ -13,6 +13,7 @@ import {
   readPouredDeskSnapshot,
 } from "./runtime-desk-rules-marks.mjs";
 import { mergeDeskNamesIntoCore } from "./runtime-desk-pour-core.mjs";
+import { appendFormLogicOsStaleHide } from "./runtime-desk-pour-stale.mjs";
 import { mergeDeskSolutionsIntoUser, supportedDeskSolution } from "./runtime-desk-pour-user.mjs";
 
 function deployDir() {
@@ -31,16 +32,26 @@ function readShard(name) {
   }
 }
 
+function isDriveClose(controlId) {
+  return /^(Curtain|Actuator)\s+\d+\s+Close$/i.test(String(controlId || "").trim());
+}
+
 function namedLoadsFromDesk() {
   const shelves = readDeskMarking()?.shelves || {};
   const out = [];
+  const seenNamePath = new Set();
   for (const [deviceTopicKey, shelf] of Object.entries(shelves)) {
     const chs = shelf?.channels || {};
     for (const [controlId, ch] of Object.entries(chs)) {
       if (!isLoadControl(controlId)) continue;
+      if (isDriveClose(controlId)) continue;
       const name = typeof ch?.name === "string" ? ch.name.trim() : "";
       if (!name) continue;
-      out.push({ deviceTopicKey: liveDeskDeviceKey(deviceTopicKey), controlId, name });
+      const key = liveDeskDeviceKey(deviceTopicKey);
+      const path = key + "/" + String(controlId).trim();
+      if (seenNamePath.has(path)) continue;
+      seenNamePath.add(path);
+      out.push({ deviceTopicKey: key, controlId, name });
     }
   }
   return out;
@@ -90,13 +101,19 @@ export function buildDeskPourPackage() {
   const named = namedLoadsFromDesk();
   const core = mergeDeskNamesIntoCore(coreSrc, named);
   if (!core.ok) return { ok: false, canPour: false, reason: core.error || "core", shards: [] };
+  let coreContent = core.content;
+  if (core.removedIds?.length) {
+    const hid = appendFormLogicOsStaleHide(coreContent, core.removedIds);
+    coreContent = hid.content;
+  }
   const sols = listDeskSolutions().filter(supportedDeskSolution);
   const user = mergeDeskSolutionsIntoUser(userSrc, sols);
-  if (!core.changed && !user.changed) {
+  const coreChanged = core.changed || coreContent !== coreSrc;
+  if (!coreChanged && !user.changed) {
     return { ok: false, canPour: false, reason: "стол уже совпадает с диском", shards: [] };
   }
   const shards = [];
-  if (core.changed) shards.push({ filename: "00_core.js", content: core.content });
+  if (coreChanged) shards.push({ filename: "00_core.js", content: coreContent });
   if (user.changed) shards.push({ filename: "40_rules_user.js", content: user.content });
   const revisionId = fnvRevision(shards.map((s) => s.filename + "\n" + s.content));
   return {
@@ -108,5 +125,6 @@ export function buildDeskPourPackage() {
     shards,
     emittedSolutions: user.emitted,
     namedCount: named.length,
+    hiddenGhosts: core.removedIds?.length || 0,
   };
 }

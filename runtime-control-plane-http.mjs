@@ -10,6 +10,11 @@ import path from "node:path";
 import { buildRulesInventory } from "./runtime-rules-inventory.mjs";
 import { filesSavedAt, listReleaseSummaries, readRelease, recordRelease } from "./runtime-desk-releases.mjs";
 import {
+  appendFormLogicOsStaleHide,
+  extractFormLogicOsCellIds,
+  staleGhostIds,
+} from "./runtime-desk-pour-stale.mjs";
+import {
   buildDeskPourPackage,
   assessDeskCanPour,
   handleRuntimeDeskMarking,
@@ -154,10 +159,23 @@ export function rollbackToPreviousBackup() {
   const manifest = loadBackupManifest();
   if (!manifest?.files?.length) throw new Error("No backup available for rollback");
   const deployDir = wbRulesDeployDir();
+  const beforeCore = listIntegratorRuleFiles().find((f) => f.filename === "00_core.js")?.content || "";
+  const beforeIds = extractFormLogicOsCellIds(beforeCore);
   const keep = [];
+  let hiddenGhosts = 0;
   for (const file of manifest.files) {
     validateShardFilename(file.filename);
-    atomicWriteFile(path.join(deployDir, file.filename), file.content);
+    let content = file.content;
+    if (file.filename === "00_core.js") {
+      const nextIds = extractFormLogicOsCellIds(content);
+      const ghosts = staleGhostIds(beforeIds, nextIds);
+      if (ghosts.length) {
+        const hid = appendFormLogicOsStaleHide(content, ghosts);
+        content = hid.content;
+        hiddenGhosts = hid.ghostCount;
+      }
+    }
+    atomicWriteFile(path.join(deployDir, file.filename), content);
     keep.push(file.filename);
   }
   removeStaleIntegratorShards(deployDir, keep);
@@ -178,6 +196,7 @@ export function rollbackToPreviousBackup() {
     ackCount: manifest.files.length,
     deployMode: manifest.deployMode ?? "monolith",
     restarted: restarted != null,
+    hiddenGhosts,
   };
 }
 
@@ -494,6 +513,13 @@ export function handleRuntimeDeskPour(_req, res) {
     const result = applyShardBundle(pkg.shards, pkg.loadOrder, pkg.revisionId, {
       preserveOtherShards: true,
     });
+    // HEAD пуша в кольце — иначе checkout уходит в старый снимок без пути назад.
+    recordRelease({
+      revisionId: pkg.revisionId,
+      deployMode: result.deployMode,
+      savedAt: new Date().toISOString(),
+      files: listIntegratorRuleFiles(),
+    });
     console.log(
       `[runtime-control-plane] desk-pour revision=${pkg.revisionId} acks=${result.ackCount}`,
     );
@@ -506,6 +532,7 @@ export function handleRuntimeDeskPour(_req, res) {
       restarted: result.restarted,
       emittedSolutions: pkg.emittedSolutions,
       namedCount: pkg.namedCount,
+      hiddenGhosts: pkg.hiddenGhosts || 0,
     });
   } catch (err) {
     const message = err instanceof Error ? err.message : "deploy failed";
@@ -538,6 +565,7 @@ export async function handleRuntimeRollback(req, res) {
       deployMode: result.deployMode,
       restarted: result.restarted,
       rolledBack: true,
+      hiddenGhosts: result.hiddenGhosts || 0,
     });
   } catch (err) {
     const message = err instanceof Error ? err.message : "rollback failed";

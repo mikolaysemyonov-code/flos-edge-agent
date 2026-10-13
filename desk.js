@@ -838,7 +838,7 @@
           go.type = "button";
           go.className = "ghost";
           go.textContent = "checkout";
-          go.title = "Откатить диск на этот пуш";
+          go.title = "Откат на этот пуш (прячет MQTT-призраки FORM LOGIC OS)";
           go.addEventListener("click", () => {
             go.disabled = true;
             fetch("/runtime/rollback?revisionId=" + encodeURIComponent(rel.revisionId), { method: "POST" })
@@ -1265,7 +1265,7 @@
         if (head) {
           head.style.color = "";
           head.textContent = canPourDesk
-            ? "main · HEAD сверху. checkout — откат на пуш."
+            ? "main · HEAD сверху. checkout — откат на пуш (без перемешивания)."
             : "main · HEAD сверху. Стрелка — к разметке.";
         }
         return;
