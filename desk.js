@@ -543,6 +543,9 @@
           if (!name && !hints.length && !cards.length) return;
           const prev = previewHit(s.deviceTopicKey, ch.controlId);
           const title = name ? prettyContactName(name) : prettyControlId(ch.controlId);
+          const isLoad = isDeskLoad(ch.controlId);
+          const trigs = isLoad ? triggersBoundTo(s.deviceTopicKey, ch.controlId) : [];
+          const src = trigs.length ? trigs : (isLoad ? pouredTriggersForLoad(s.deviceTopicKey, ch.controlId) : []);
           items.push({
             room: guessRoom(name) || guessRoom(prev && prev.pouredName) || "",
             bucket: readyBucket(s.deviceTopicKey, ch.controlId),
@@ -552,7 +555,8 @@
             controlId: ch.controlId,
             cards: cards,
             hints: hints,
-            isLoad: isDeskLoad(ch.controlId),
+            isLoad: isLoad,
+            btnLine: uniqText(src.map((t) => t.label || solContactLabel(t))).join(" · "),
             status: prev && prev.status,
             pouredName: prev && prev.pouredName,
           });
@@ -675,6 +679,12 @@
         if (item.status === "blocked") hint.classList.add("orphan");
         hint.textContent = bits.filter(Boolean).join(" · ");
         left.append(ttl, hint);
+        if (item.btnLine) {
+          const b = document.createElement("span");
+          b.className = "hint";
+          b.textContent = "кнопка · " + item.btnLine;
+          left.appendChild(b);
+        }
       }
       const st = document.createElement("span");
       const lane = pourLane(item);
@@ -693,7 +703,7 @@
       const sendN = all.filter((i) => pourLane(i) === "send").length;
       const tabs = [
         { id: "mark", ru: "Разметка" },
-        { id: "rules", ru: "Правила" },
+        { id: "rules", ru: "Сценарии" },
         { id: "send", ru: "К заливке" + (sendN ? " · " + sendN : "") },
       ];
       if (!tabs.some((t) => t.id === pouredPane)) pouredPane = "mark";
@@ -772,8 +782,8 @@
       const back = document.createElement("button");
       back.type = "button";
       back.className = "back";
-      back.setAttribute("aria-label", "К правилам");
-      back.innerHTML = "<svg viewBox='0 0 24 24'><path d='M15 18l-6-6 6-6'/></svg><span>К правилам</span>";
+      back.setAttribute("aria-label", "К сценариям");
+      back.innerHTML = "<svg viewBox='0 0 24 24'><path d='M15 18l-6-6 6-6'/></svg><span>К сценариям</span>";
       back.addEventListener("click", closeScene);
       const head = document.createElement("div");
       head.className = "vcard on";
@@ -971,7 +981,7 @@
         const empty = document.createElement("p");
         empty.className = "empty";
         empty.textContent = pouredPane === "send" ? "К заливке ничего нет — стол совпадает с диском."
-          : pouredPane === "rules" ? "Правил на диске пока нет."
+          : pouredPane === "rules" ? "Сценариев на диске пока нет."
           : "Разметки пока нет.";
         box.appendChild(empty);
       }
@@ -986,8 +996,8 @@
         head.textContent = (pouredPane === "send"
           ? "К заливке. Диск не пишем."
           : pouredPane === "rules"
-            ? "Правила. Ткни сценарий — кнопка и свет."
-            : "Разметка. Ткни строку — править в модуле.") + " · " + bits;
+            ? "Сценарии. Жест, кнопка и свет этого правила."
+            : "Разметка. Комната, тип и кнопка на линии.") + " · " + bits;
       }
     }
     function renderPoured() {
@@ -1730,7 +1740,7 @@
         !!(current.room && !current.type),
       ));
       if (!isLoad && original) {
-        fields.appendChild(makeLoadPicks(s, ch, current.room));
+        fields.appendChild(makeBindSelect(s, ch, Array.isArray(ch.loads) ? ch.loads.filter(Boolean) : [], current.room));
       }
       if (isLoad && original) {
         fields.appendChild(makeTriggerSelect(s, ch));
@@ -1991,7 +2001,7 @@
       fillList("shelves-relays", split.relays, "Реле на шине нет.");
       const openRelay = split.relays.some((s) => s.deviceTopicKey === openMod);
       $("relaysHead").textContent = openRelay
-        ? "На канале — комната и тип. Ошибся — ткни другое."
+        ? "На канале — комната, тип и кнопка. Сценарии — на Залито."
         : "Реле — свет 220 В и силовые. Ткни модуль.";
       $("n-light").textContent = split.light.length || "";
       $("n-buttons").textContent = split.buttons.length || "";
