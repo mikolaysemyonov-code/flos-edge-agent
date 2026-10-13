@@ -796,46 +796,76 @@
       const hit = all.filter((r) => r.room === room);
       return hit.length ? hit : all;
     }
+    function makeField(label, items, value, placeholder, onPick, addText, onAdd, need, allowEmpty) {
+      const row = document.createElement("div");
+      row.className = "fldrow" + (need ? " need" : "");
+      const lab = document.createElement("span");
+      lab.className = "fldlab";
+      lab.textContent = label;
+      const sel = document.createElement("select");
+      sel.className = "fldsel" + (value ? "" : " empty");
+      sel.setAttribute("aria-label", label);
+      const z = document.createElement("option");
+      z.value = "";
+      z.textContent = placeholder;
+      if (value && !allowEmpty) z.disabled = true;
+      sel.appendChild(z);
+      items.forEach((item) => {
+        const o = document.createElement("option");
+        if (typeof item === "string") {
+          o.value = item;
+          o.textContent = item;
+        } else {
+          o.value = item.value;
+          o.textContent = item.label;
+        }
+        sel.appendChild(o);
+      });
+      if (addText) {
+        const add = document.createElement("option");
+        add.value = "__add__";
+        add.textContent = addText;
+        sel.appendChild(add);
+      }
+      sel.value = value || "";
+      sel.addEventListener("change", () => {
+        if (sel.value === "__add__") {
+          sel.value = value || "";
+          if (onAdd) onAdd();
+          return;
+        }
+        onPick(sel.value);
+      });
+      row.append(lab, sel);
+      return row;
+    }
     function makeBindSelect(s, ch, pouredLoads, room) {
-      const wrap = document.createElement("div");
-      wrap.className = "mark";
-      const h = document.createElement("p");
-      h.className = "steph";
-      h.textContent = "Линия";
-      wrap.appendChild(h);
       const cur = (Array.isArray(ch.binds) && ch.binds[0])
         ? contactKey(ch.binds[0].deviceTopicKey, ch.binds[0].controlId)
         : "";
       const loads = loadsForRoom(room || roomFilter);
-      const bar = document.createElement("div");
-      bar.className = "chips";
-      if (pouredLoads.length && !loads.length) {
-        const note = document.createElement("p");
-        note.className = "loads";
-        note.textContent = pouredLoads.map(prettyContactName).join(" · ");
-        wrap.appendChild(note);
+      const items = loads.map((load) => ({
+        value: contactKey(load.deviceTopicKey, load.controlId),
+        label: load.label,
+      }));
+      if (!items.length && pouredLoads.length) {
+        const note = document.createElement("div");
+        note.className = "fldrow";
+        note.innerHTML = "<span class=\"fldlab\">Линия</span>";
+        const v = document.createElement("span");
+        v.className = "fldsel empty";
+        v.textContent = pouredLoads.map(prettyContactName).join(" · ");
+        note.appendChild(v);
+        return note;
       }
-      loads.forEach((load) => {
-        const key = contactKey(load.deviceTopicKey, load.controlId);
-        const b = document.createElement("button");
-        b.type = "button";
-        b.className = "chip";
-        b.textContent = load.label;
-        b.setAttribute("aria-pressed", key === cur ? "true" : "false");
-        b.addEventListener("click", () => {
-          if (key === cur) {
-            saveBinds(s.deviceTopicKey, ch.controlId, []).catch(() => {});
-            return;
-          }
-          saveBinds(s.deviceTopicKey, ch.controlId, [{
-            deviceTopicKey: load.deviceTopicKey,
-            controlId: load.controlId,
-          }]).catch(() => {});
-        });
-        bar.appendChild(b);
-      });
-      wrap.appendChild(bar);
-      return wrap;
+      return makeField("Линия", items, cur, "Не привязана", (v) => {
+        if (!v) {
+          saveBinds(s.deviceTopicKey, ch.controlId, []).catch(() => {});
+          return;
+        }
+        const b = parseBindValue(v);
+        saveBinds(s.deviceTopicKey, ch.controlId, b ? [b] : []).catch(() => {});
+      }, "", null, false, true);
     }
     function contactKey(key, cid) {
       return String(key) + "::" + String(cid);
@@ -870,7 +900,7 @@
         if (det) det.open = true;
         el.scrollIntoView({ block: "center" });
         el.classList.add("jump");
-        const inp = el.querySelector(".namebtn") || el.querySelector("select.bind") || el.querySelector("button.chip");
+        const inp = el.querySelector("select.fldsel") || el.querySelector("button.chip");
         if (inp) inp.focus();
         setTimeout(() => el.classList.remove("jump"), 1400);
       };
@@ -916,17 +946,30 @@
     }
     function typeSteph(s, ch, isLoad) {
       if (isDeskDrive(ch.controlId)) return "Подпись";
-      if (/^K\d+$/i.test(ch.controlId)) return "Тип 220 В";
-      if (/dali/i.test(String(s.deviceTopicKey || ""))) return "Тип DALI";
-      if (isLoad) return "Подсветка";
       return "Тип";
+    }
+    function channelHint(s, ch, isLoad, original, poured) {
+      const loads = Array.isArray(ch.loads) ? ch.loads.filter(Boolean) : [];
+      const buttons = Array.isArray(ch.buttons) ? ch.buttons.filter(Boolean) : [];
+      const deskTriggers = isLoad ? triggersBoundTo(s.deviceTopicKey, ch.controlId) : [];
+      const selected = new Set(exclusiveCards(Array.isArray(ch.cards) ? ch.cards : []));
+      const diskIds = exclusiveCards(CARDS.filter((c) => (ch.hints || []).includes(c.ru)).map((c) => c.id));
+      const deskDiverged = poured && [...selected].sort().join(",") !== diskIds.slice().sort().join(",");
+      if (deskTriggers.length) {
+        return { text: "кнопка · " + deskTriggers.map((t) => t.label).join(" · "), go: deskTriggers[0] };
+      }
+      if (buttons.length) return { text: "кнопка · " + buttons.map(prettyContactName).join(" · ") };
+      if (deskDiverged) return { text: "на диске · " + (ch.hints || []).join(" · ") };
+      if (original && isLoad && !poured) return { text: "нет кнопки" };
+      if (!isLoad && !original && Array.isArray(ch.binds) && ch.binds.length) {
+        return { text: "сначала комната и тип", bad: true };
+      }
+      if (loads.length && isLoad) return { text: loads.map(prettyContactName).join(" · ") };
+      return null;
     }
     function channelRow(s, ch, room) {
       const row = document.createElement("li");
       row.dataset.contact = contactKey(s.deviceTopicKey, ch.controlId);
-      const knob = document.createElement("span");
-      knob.className = "knob";
-      knob.textContent = prettyControlId(ch.controlId);
       const loads = Array.isArray(ch.loads) ? ch.loads.filter(Boolean) : [];
       const isLoad = isDeskLoad(ch.controlId);
       const original = pairName(s, ch);
@@ -936,85 +979,55 @@
         room: pending.room || saved.room,
         type: pending.type || saved.type,
       };
-      row.appendChild(knob);
-      const grow = document.createElement("div");
-      if (original) {
-        const title = document.createElement("div");
-        title.className = "namebtn";
-        title.textContent = prettyContactName(original);
-        grow.appendChild(title);
+      const poured = Array.isArray(ch.hints) && ch.hints.length > 0;
+      const cap = document.createElement("div");
+      cap.className = "ch-cap";
+      const knob = document.createElement("span");
+      knob.className = "knob";
+      knob.textContent = prettyControlId(ch.controlId);
+      const ttl = document.createElement("div");
+      ttl.className = "ttl" + (original ? "" : " mute");
+      ttl.textContent = original ? prettyContactName(original) : "Без имени";
+      cap.append(knob, ttl);
+      const hint = channelHint(s, ch, isLoad, original, poured);
+      if (hint) {
+        const h = hint.go ? document.createElement("button") : document.createElement("span");
+        h.className = "hint" + (hint.bad ? " orphan" : "");
+        h.textContent = hint.text;
+        if (hint.go) {
+          h.type = "button";
+          h.addEventListener("click", () => jumpToContact(hint.go.deviceTopicKey, hint.go.controlId));
+        }
+        cap.appendChild(h);
       }
-      const roomH = document.createElement("p");
-      roomH.className = "steph";
-      roomH.textContent = "Комната";
-      grow.appendChild(roomH);
-      const roomBar = document.createElement("div");
-      roomBar.className = "chips" + (current.type && !current.room ? " need" : "");
-      roomsFromBus().forEach((r) => {
-        const b = document.createElement("button");
-        b.type = "button";
-        b.className = "chip";
-        b.textContent = r;
-        b.setAttribute("aria-pressed", r === current.room ? "true" : "false");
-        b.addEventListener("click", () => pickMark(s, ch, { room: r }));
-        roomBar.appendChild(b);
-      });
-      const add = document.createElement("button");
-      add.type = "button";
-      add.className = "chip add";
-      add.textContent = "+ комната";
-      add.addEventListener("click", () => {
-        promptRoom().then((roomName) => {
-          if (!roomName) return;
-          pickMark(s, ch, { room: roomName });
-        });
-      });
-      roomBar.appendChild(add);
-      grow.appendChild(roomBar);
-      const typeH = document.createElement("p");
-      typeH.className = "steph";
-      typeH.textContent = typeSteph(s, ch, isLoad);
-      grow.appendChild(typeH);
+      const fields = document.createElement("div");
+      fields.className = "rows";
       const types = [...markTypes(s, ch, isLoad)];
       if (current.type && !types.includes(current.type)) types.push(current.type);
-      grow.appendChild(makeChipBar(types, current.type, (v) => pickMark(s, ch, { type: v })));
-      const poured = Array.isArray(ch.hints) && ch.hints.length > 0;
-      const buttons = Array.isArray(ch.buttons) ? ch.buttons.filter(Boolean) : [];
-      const deskTriggers = isLoad ? triggersBoundTo(s.deviceTopicKey, ch.controlId) : [];
-      const selected = new Set(exclusiveCards(Array.isArray(ch.cards) ? ch.cards : []));
-      const diskIds = exclusiveCards(CARDS.filter((c) => (ch.hints || []).includes(c.ru)).map((c) => c.id));
-      const deskDiverged = poured && [...selected].sort().join(",") !== diskIds.slice().sort().join(",");
+      fields.appendChild(makeField(
+        "Комната",
+        roomsFromBus(),
+        current.room,
+        "Выбрать",
+        (v) => { if (v) pickMark(s, ch, { room: v }); },
+        "Новая комната…",
+        () => promptRoom().then((name) => { if (name) pickMark(s, ch, { room: name }); }),
+        !!(current.type && !current.room),
+      ));
+      fields.appendChild(makeField(
+        typeSteph(s, ch, isLoad),
+        types,
+        current.type,
+        "Выбрать",
+        (v) => { if (v) pickMark(s, ch, { type: v }); },
+        "",
+        null,
+        !!(current.room && !current.type),
+      ));
       if (!isLoad && original) {
-        grow.appendChild(makeBindSelect(s, ch, loads, current.room));
-      } else if (!isLoad && Array.isArray(ch.binds) && ch.binds.length) {
-        const sub = document.createElement("span");
-        sub.className = "loads orphan";
-        sub.textContent = "сначала комната и тип";
-        grow.appendChild(sub);
-      } else if (deskTriggers.length) {
-        const sub = document.createElement("button");
-        sub.type = "button";
-        sub.className = "loads";
-        sub.textContent = "кнопка · " + deskTriggers.map((t) => t.label).join(" · ");
-        sub.addEventListener("click", () => jumpToContact(deskTriggers[0].deviceTopicKey, deskTriggers[0].controlId));
-        grow.appendChild(sub);
-      } else if (buttons.length) {
-        const sub = document.createElement("span");
-        sub.className = "loads";
-        sub.textContent = "кнопка · " + buttons.map(prettyContactName).join(" · ");
-        grow.appendChild(sub);
-      } else if (deskDiverged) {
-        const sub = document.createElement("span");
-        sub.className = "loads";
-        sub.textContent = "на диске · " + (ch.hints || []).join(" · ");
-        grow.appendChild(sub);
-      } else if (original && isLoad && !poured) {
-        const sub = document.createElement("span");
-        sub.className = "loads";
-        sub.textContent = "нет кнопки";
-        grow.appendChild(sub);
+        fields.appendChild(makeBindSelect(s, ch, loads, current.room));
       }
-      row.appendChild(grow);
+      row.append(cap, fields);
       return row;
     }
     function prettyRoom(s) {
