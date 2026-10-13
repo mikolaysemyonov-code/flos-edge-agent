@@ -518,11 +518,14 @@
           const binds = Array.isArray(ch.binds) ? ch.binds : [];
           const hit = binds.find((b) => !skip.has(contactKey(b.deviceTopicKey, pairOpenId(b.controlId))));
           if (!hit) return;
-          const row = {
-            gpio: /^wb-gpio$/i.test(s.deviceTopicKey),
-            text: triggerLine({ deviceTopicKey: s.deviceTopicKey, controlId: ch.controlId })
-              + " на " + (loadListLabel(hit) || solContactLabel(hit)),
-          };
+          const gpio = /^wb-gpio$/i.test(s.deviceTopicKey);
+          const trig = gpio
+            ? "GPIO · " + prettyControlId(ch.controlId)
+            : triggerLine({ deviceTopicKey: s.deviceTopicKey, controlId: ch.controlId });
+          const load = loadListLabel(hit) || solContactLabel(hit);
+          const room = nameRoom(load);
+          const short = room ? (titleUnderRoom(load, room) || load) : load;
+          const row = { gpio: gpio, text: trig + " · " + (room ? room + " · " + short : short) };
           if (row.gpio || !best) best = row;
         });
       });
@@ -532,7 +535,7 @@
       const loads = item && item.scene ? sceneParts(item.contacts).loads
         : (item && item.isLoad ? [{ deviceTopicKey: item.deviceTopicKey, controlId: item.controlId }] : []);
       const busy = otherBindLine(loads);
-      return busy ? "кнопка · нет в разметке · " + busy : "кнопка · нет в разметке";
+      return busy ? "кнопка на другой линии · " + busy : "кнопка · нет в разметке";
     }
     function sceneLines(contacts, room) {
       const p = sceneParts(contacts);
@@ -643,7 +646,18 @@
     function loadNeedsButton(item) {
       if (!item || item.scene || !item.isLoad || item.btnLine) return false;
       if (pourLane(item) === "send") return false;
-      return (item.hints || []).includes("Все выкл");
+      if (!(item.hints || []).includes("Все выкл")) return false;
+      const mates = [];
+      (lastShelvesRows || []).forEach((s) => {
+        if (s.deviceTopicKey !== item.deviceTopicKey) return;
+        visibleChannels(s).forEach((ch) => {
+          if (!isDeskLoad(ch.controlId)) return;
+          if (!(ch.hints || []).includes("Все выкл")) return;
+          mates.push(ch.controlId);
+        });
+      });
+      mates.sort((a, b) => a.localeCompare(b, "en", { numeric: true }));
+      return !mates.length || mates[0] === item.controlId;
     }
     function isNewItem(item) {
       return pourLane(item) === "send";
@@ -1877,8 +1891,14 @@
       const hasBtn = deskTriggers.length || pouredBtns.length || (buttons.length && isLoad);
       const allOff = (ch.hints || []).includes("Все выкл");
       if (isLoad && original && !hasBtn && allOff) {
-        const busy = otherBindLine([{ deviceTopicKey: s.deviceTopicKey, controlId: ch.controlId }]);
-        return { text: busy ? "кнопка · нет в разметке · " + busy : "кнопка · нет в разметке", bad: true };
+        return {
+          text: missingButtonText({
+            isLoad: true,
+            deviceTopicKey: s.deviceTopicKey,
+            controlId: ch.controlId,
+          }),
+          bad: true,
+        };
       }
       const selected = new Set(exclusiveCards(Array.isArray(ch.cards) ? ch.cards : []));
       const diskIds = exclusiveCards(CARDS.filter((c) => (ch.hints || []).includes(c.ru)).map((c) => c.id));
