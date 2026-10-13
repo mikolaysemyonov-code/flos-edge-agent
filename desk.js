@@ -1008,12 +1008,26 @@
       });
       const wrap = $("pourWrap");
       if (wrap) {
+        // Пуш виден на «Новое» и на main; на разметке/сценариях — нет.
         const showPour = (pouredPane === "send" || pouredPane === "hist") && !pouredOpen();
         wrap.hidden = !showPour;
-        $("pour").textContent = pouredPane === "hist" ? "Починить · пуш" : "Залить · пуш";
-        $("pour").title = pouredPane === "hist"
-          ? "Перезалить имена со стола и спрятать дубли/призраки FORM LOGIC OS"
-          : (canPourDesk ? "Пуш на main: имена и типовые" : ($("pour").title || ""));
+        const pourBtn = $("pour");
+        const canAct = canPourDesk || canRepairDesk;
+        pourBtn.disabled = !canAct;
+        if (pouredPane === "hist" && canPourDesk) {
+          pourBtn.textContent = "Залить · пуш";
+          pourBtn.title = "Пуш на main: имена и типовые со стола";
+        } else if (pouredPane === "hist") {
+          pourBtn.textContent = "Починить · пуш";
+          pourBtn.title = canRepairDesk
+            ? "Спрятать дубли FORM LOGIC OS в MQTT"
+            : (lastPreview.reason || "Нечего чинить");
+        } else {
+          pourBtn.textContent = "Залить · пуш";
+          pourBtn.title = canPourDesk
+            ? "Пуш на main: имена и типовые"
+            : (lastPreview.reason || "Пока не льём");
+        }
       }
       $("n-poured").textContent = diskN || "";
     }
@@ -1278,7 +1292,7 @@
         if (head) {
           head.style.color = "";
           head.textContent = canPourDesk
-            ? "main · HEAD сверху. «Залить» = пуш, checkout = откат. Стрелка — к разметке."
+            ? "main · HEAD сверху. «Залить · пуш» = пуш, checkout = откат. Стрелка — к разметке."
             : canRepairDesk
               ? "main · HEAD сверху. checkout = откат · «Починить» спрячет дубли. Стрелка — к разметке."
               : "main · HEAD сверху. checkout = откат на пуш. Стрелка — к разметке.";
