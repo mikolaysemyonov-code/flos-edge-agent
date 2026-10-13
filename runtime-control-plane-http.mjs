@@ -8,7 +8,7 @@ import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { buildRulesInventory } from "./runtime-rules-inventory.mjs";
-import { listReleaseSummaries, readRelease, recordRelease } from "./runtime-desk-releases.mjs";
+import { filesSavedAt, listReleaseSummaries, readRelease, recordRelease } from "./runtime-desk-releases.mjs";
 import {
   handleRuntimeDeskMarking,
   handleRuntimeDeskPourPreview,
@@ -462,7 +462,7 @@ export function handleRuntimeReleases(_req, res) {
       {
         revisionId,
         deployMode: files.length > 1 ? "shards" : "monolith",
-        savedAt: new Date().toISOString(),
+        savedAt: filesSavedAt(files),
         files,
       },
       { replace: false },

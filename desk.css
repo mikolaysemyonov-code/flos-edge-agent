@@ -28,7 +28,7 @@
       background: rgb(var(--sky) / .12);
       box-shadow: inset 0 1px 0 rgb(255 255 255 / .14);
     }
-    .ghost:disabled { opacity: .45; cursor: wait; }
+    .ghost:disabled { opacity: .45; cursor: not-allowed; }
     .glass {
       border-radius: 1.15rem;
       background: linear-gradient(180deg, rgb(255 255 255 / .09), rgb(255 255 255 / .03));
@@ -78,6 +78,7 @@
     .ch-cap .ttl {
       margin-top: .18rem;
       font-size: 1.05rem; font-weight: 650; letter-spacing: -.022em;
+      overflow-wrap: anywhere;
     }
     .ch-cap .ttl.mute { color: var(--mute); font-weight: 500; }
     .ch-cap .hint {
@@ -85,7 +86,13 @@
       display: block; margin-top: .22rem; color: var(--mute); font-size: .72rem;
       font: inherit; text-align: left; cursor: pointer;
     }
-    .ch-cap span.hint { cursor: default; }
+    .ch-cap span.hint { cursor: default; overflow-wrap: anywhere; }
+    .channels li > .ghost {
+      align-self: flex-start;
+      margin: 0 1rem .75rem;
+      padding: .28rem .7rem;
+      font-size: .72rem;
+    }
     .ch-cap button.hint { color: rgb(var(--sky) / .92); }
     .rows { display: flex; flex-direction: column; }
     .fldrow {

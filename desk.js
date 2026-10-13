@@ -20,6 +20,7 @@
     let openMod = "";
     let pouredPane = "mark";
     let lastReleases = [];
+    let canPourDesk = false;
     let openSceneId = "";
     let openContact = "";
     let wantButtonFocus = false;
@@ -383,9 +384,7 @@
     function titleUnderRoom(title, room) {
       const parts = String(title || "").split(/\s*·\s*/).filter(Boolean);
       const roomLc = String(room || "").toLowerCase();
-      const out = parts.filter(
-        (p) => p.toLowerCase() !== roomLc && !/^(Channel|Input|K)\s*\d+$/i.test(p),
-      );
+      const out = parts.filter((p) => p.toLowerCase() !== roomLc);
       return out.join(" · ") || title;
     }
     function previewHit(key, cid) {
@@ -516,7 +515,21 @@
     function btnPrefixLine(line, room) {
       let s = String(line || "").trim();
       if (room) s = titleUnderRoom(s, room) || s;
-      return s.replace(/^(кнопка|клавиша)\s*·\s*/i, "").trim() || s;
+      s = s.replace(/^(кнопка|клавиша)(?:\s*·\s*|$)/i, "").trim() || s;
+      return s;
+    }
+    function btnHint(line, room) {
+      const s = btnPrefixLine(line, room);
+      if (!s) return "кнопка · нет в разметке";
+      if (/^GPIO\b/i.test(s)) return s;
+      return "кнопка · " + s;
+    }
+    function fileRu(n) {
+      const x = Number(n) || 0;
+      const m = Math.abs(x) % 100;
+      const d = m % 10;
+      const w = m > 10 && m < 20 ? "файлов" : d === 1 ? "файл" : d > 1 && d < 5 ? "файла" : "файлов";
+      return x + " " + w;
     }
     function markTitle(item, room) {
       let t = room ? titleUnderRoom(item.title, room) : item.title;
@@ -705,7 +718,7 @@
             cards: cards,
             hints: hints,
             isLoad: isLoad,
-            btnLine: uniqText(src.map((t) => btnPrefixLine(triggerLine(t), guessRoom(name)))).join(" · "),
+            btnLine: uniqText(src.map((t) => triggerLine(t))).join(" · "),
             status: prev && prev.status,
             pouredName: prev && prev.pouredName,
           });
@@ -782,8 +795,8 @@
         const hint = document.createElement("span");
         hint.className = "hint";
         const n = rel.fileCount || (rel.files || []).length;
-        const parent = rel.parentId ? "parent " + rel.parentId : "";
-        hint.textContent = [relWhen(rel.savedAt), parent, n ? n + " файл." : ""].filter(Boolean).join(" · ");
+        const parent = rel.current && rel.parentId ? "^ " + rel.parentId : "";
+        hint.textContent = [relWhen(rel.savedAt), parent, n ? fileRu(n) : ""].filter(Boolean).join(" · ");
         left.append(ttl, hint);
         const st = document.createElement("span");
         st.className = "st" + (rel.current ? " ok" : "");
@@ -791,7 +804,7 @@
         top.append(left, st);
         cap.appendChild(top);
         li.appendChild(cap);
-        if (!rel.current) {
+        if (!rel.current && canPourDesk) {
           const go = document.createElement("button");
           go.type = "button";
           go.className = "ghost";
@@ -854,7 +867,7 @@
         const missing = !item.btnLine;
         const btn = missing ? document.createElement("button") : document.createElement("span");
         btn.className = "hint" + (missing ? " orphan" : "");
-        btn.textContent = missing ? missingButtonText(item) : "кнопка · " + btnPrefixLine(item.btnLine, room);
+        btn.textContent = missing ? missingButtonText(item) : btnHint(item.btnLine, room);
         if (missing) {
           btn.type = "button";
           btn.addEventListener("click", (e) => {
@@ -878,7 +891,7 @@
         if (item.btnLine) {
           const b = document.createElement("span");
           b.className = "hint";
-          b.textContent = "кнопка · " + btnPrefixLine(item.btnLine, room);
+          b.textContent = btnHint(item.btnLine, room);
           left.appendChild(b);
         } else if (loadNeedsButton(item)) {
           const b = document.createElement("button");
@@ -1205,7 +1218,7 @@
         const head = $("previewHead");
         if (head) {
           head.style.color = "";
-          head.textContent = "Ветка main. Залить = пуш. checkout на пуш откроем вместе с заливкой.";
+          head.textContent = "main · HEAD сверху. checkout — с заливкой.";
         }
         return;
       }
@@ -2411,7 +2424,10 @@
       try {
         const r = await fetch("/runtime/releases");
         const j = await r.json();
-        if (j.ok) lastReleases = j.pushes || j.releases || [];
+        if (j.ok) {
+          lastReleases = j.pushes || j.releases || [];
+          canPourDesk = j.canPour === true;
+        }
       } catch (_) {
         lastReleases = lastReleases || [];
       }
