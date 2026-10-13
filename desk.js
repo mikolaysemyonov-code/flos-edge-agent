@@ -42,12 +42,29 @@
     function prettyControlId(id) {
       const m = /^(?:Curtain|Actuator)\s+(\d+)\s+(Open|Close)$/i.exec(String(id || "").trim());
       if (!m) return id;
-      return "Привод " + m[1] + (m[2].toLowerCase() === "open" ? " открыть" : " закрыть");
+      return "Привод " + m[1];
     }
     function driveTwin(controlId) {
       const m = /^((?:Curtain|Actuator)\s+\d+\s+)(Open|Close)$/i.exec(String(controlId || "").trim());
       if (!m) return "";
       return m[1] + (/open/i.test(m[2]) ? "Close" : "Open");
+    }
+    function isDriveClose(id) {
+      return /^(Curtain|Actuator)\s+\d+\s+Close$/i.test(String(id || "").trim());
+    }
+    function pairOpenId(id) {
+      const m = /^((?:Curtain|Actuator)\s+\d+\s+)Close$/i.exec(String(id || "").trim());
+      return m ? m[1] + "Open" : id;
+    }
+    function visibleChannels(s) {
+      return (s.channels || []).filter((ch) => !isDriveClose(ch.controlId));
+    }
+    function pairName(s, ch) {
+      const name = String(ch.name || "").trim();
+      if (name) return name;
+      const twinId = driveTwin(ch.controlId);
+      const twin = twinId && (s.channels || []).find((x) => x.controlId === twinId);
+      return twin ? String(twin.name || "").trim() : "";
     }
     function markTypes(s, ch, isLoad) {
       if (isDeskDrive(ch.controlId)) return DRIVE_LABELS;
@@ -743,7 +760,8 @@
       (lastShelvesRows || []).forEach((s) => {
         (s.channels || []).forEach((ch) => {
           if (!isDeskLoad(ch.controlId)) return;
-          const name = String(ch.name || "").trim();
+          if (isDriveClose(ch.controlId)) return;
+          const name = pairName(s, ch);
           if (!name) return;
           raw.push({
             deviceTopicKey: s.deviceTopicKey,
@@ -844,6 +862,7 @@
       return out;
     }
     function jumpToContact(key, cid) {
+      cid = pairOpenId(cid);
       openMod = key;
       markEdit = contactKey(key, cid);
       const shelf = lastShelvesRows.find((r) => r.deviceTopicKey === key);
@@ -873,7 +892,7 @@
       knob.textContent = prettyControlId(ch.controlId);
       const loads = Array.isArray(ch.loads) ? ch.loads.filter(Boolean) : [];
       const isLoad = isDeskLoad(ch.controlId);
-      const original = String(ch.name || "").trim();
+      const original = pairName(s, ch);
       const editing = markEdit === contactKey(s.deviceTopicKey, ch.controlId);
       row.appendChild(knob);
       const grow = document.createElement("div");
@@ -996,7 +1015,7 @@
       box.className = "mark";
       const saved = splitMark(ch.name);
       const current = {
-        room: markDraft.room || saved.room || roomFilter,
+        room: saved.room || markDraft.room || roomFilter,
         type: markDraft.type || saved.type,
       };
       const persistName = (next) => {
@@ -1030,7 +1049,7 @@
       if (current.type && !types.includes(current.type)) types.push(current.type);
       box.appendChild(makeChipBar(types, current.type, (v) => {
         markDraft.type = v;
-        if (!markDraft.room) markDraft.room = current.room || roomFilter;
+        markDraft.room = saved.room || current.room || roomFilter;
         commit();
       }));
       const done = document.createElement("button");
@@ -1056,7 +1075,6 @@
         b.setAttribute("aria-pressed", r === roomFilter ? "true" : "false");
         b.addEventListener("click", () => {
           roomFilter = roomFilter === r ? "" : r;
-          if (markEdit && roomFilter) markDraft.room = roomFilter;
           renderRoomBars();
           renderShelves(lastShelvesRows);
         });
@@ -1178,10 +1196,10 @@
       return "LED";
     }
     function namedCount(s) {
-      return (s.channels || []).filter((c) => String(c.name || "").trim()).length;
+      return visibleChannels(s).filter((c) => String(pairName(s, c) || "").trim()).length;
     }
     function moduleRoomsOf(s) {
-      return [...new Set((s.channels || []).map(channelRoom).filter(Boolean))];
+      return [...new Set(visibleChannels(s).map((ch) => nameRoom(pairName(s, ch))).filter(Boolean))];
     }
     function sortModules(rows) {
       return rows.slice().sort((a, b) => {
@@ -1191,7 +1209,7 @@
       });
     }
     function paintModuleFace(el, s) {
-      const n = (s.channels || []).length || s.channelCount || 0;
+      const n = visibleChannels(s).length || s.channelCount || 0;
       const named = namedCount(s);
       const rooms = moduleRoomsOf(s);
       const kind = moduleKind(s);
@@ -1234,7 +1252,7 @@
       fillRooms(rooms);
       const chs = document.createElement("ul");
       chs.className = "channels";
-      appendChannelBlock(chs, s, s.channels || []);
+      appendChannelBlock(chs, s, visibleChannels(s));
       box.append(back, head, rooms, chs);
     }
     function fillList(id, rows, emptyText) {
