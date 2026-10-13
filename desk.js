@@ -1444,12 +1444,12 @@
       return String(key) + "::" + String(cid);
     }
     function triggersBoundTo(loadKey, loadCid) {
-      const want = contactKey(loadKey, loadCid);
+      const want = contactKey(loadKey, pairOpenId(loadCid));
       const out = [];
       (lastShelvesRows || []).forEach((s) => {
         (s.channels || []).forEach((ch) => {
           (Array.isArray(ch.binds) ? ch.binds : []).forEach((b) => {
-            if (contactKey(b.deviceTopicKey, b.controlId) !== want) return;
+            if (contactKey(b.deviceTopicKey, pairOpenId(b.controlId)) !== want) return;
             out.push({
               deviceTopicKey: s.deviceTopicKey,
               controlId: ch.controlId,
@@ -1459,6 +1459,133 @@
         });
       });
       return out;
+    }
+    function bindsOf(key, cid) {
+      const s = lastShelvesRows.find((r) => r.deviceTopicKey === key);
+      const ch = s && (s.channels || []).find((c) => c.controlId === cid);
+      return Array.isArray(ch && ch.binds) ? ch.binds.map((b) => ({
+        deviceTopicKey: b.deviceTopicKey,
+        controlId: pairOpenId(b.controlId),
+      })) : [];
+    }
+    function pouredTriggersForLoad(loadKey, loadCid) {
+      const want = contactKey(loadKey, pairOpenId(loadCid));
+      const seen = new Set();
+      const out = [];
+      pouredRules.filter((r) => r.kind === "user").forEach((r) => {
+        const p = sceneParts(r.contacts);
+        if (!p.loads.some((c) => contactKey(c.deviceTopicKey, pairOpenId(c.controlId)) === want)) return;
+        sceneButtons(r.contacts).forEach((b) => {
+          const k = contactKey(b.deviceTopicKey, b.controlId);
+          if (seen.has(k)) return;
+          seen.add(k);
+          out.push(b);
+        });
+      });
+      return out;
+    }
+    function pouredLoadsForButton(btnKey, btnCid) {
+      const want = contactKey(btnKey, btnCid);
+      const seen = new Set();
+      const out = [];
+      pouredRules.filter((r) => r.kind === "user").forEach((r) => {
+        const p = sceneParts(r.contacts);
+        if (!p.buttons.some((c) => contactKey(c.deviceTopicKey, c.controlId) === want)) return;
+        p.loads.forEach((c) => {
+          const k = contactKey(c.deviceTopicKey, pairOpenId(c.controlId));
+          if (seen.has(k)) return;
+          seen.add(k);
+          out.push({ deviceTopicKey: c.deviceTopicKey, controlId: pairOpenId(c.controlId) });
+        });
+      });
+      return out;
+    }
+    async function rebindLoad(loadKey, loadCid, trigVal) {
+      const load = { deviceTopicKey: loadKey, controlId: pairOpenId(loadCid) };
+      const want = contactKey(load.deviceTopicKey, load.controlId);
+      const current = triggersBoundTo(loadKey, loadCid);
+      const trig = parseBindValue(trigVal);
+      for (const t of current) {
+        if (trig && contactKey(t.deviceTopicKey, t.controlId) === contactKey(trig.deviceTopicKey, trig.controlId)) continue;
+        const next = bindsOf(t.deviceTopicKey, t.controlId).filter((b) => contactKey(b.deviceTopicKey, b.controlId) !== want);
+        await saveMark({ deviceTopicKey: t.deviceTopicKey, controlId: t.controlId, binds: next });
+      }
+      if (trig) {
+        const next = bindsOf(trig.deviceTopicKey, trig.controlId);
+        if (!next.some((b) => contactKey(b.deviceTopicKey, b.controlId) === want)) next.push(load);
+        await saveMark({ deviceTopicKey: trig.deviceTopicKey, controlId: trig.controlId, binds: next });
+      }
+      await loadLast();
+    }
+    function makeTriggerSelect(s, ch) {
+      const desk = triggersBoundTo(s.deviceTopicKey, ch.controlId);
+      const cur = desk.length ? desk : pouredTriggersForLoad(s.deviceTopicKey, ch.controlId);
+      const items = mergeContactRows(namedTriggers(), cur).map((t) => ({
+        value: contactKey(t.deviceTopicKey, t.controlId),
+        label: t.label,
+      }));
+      const value = cur[0] ? contactKey(cur[0].deviceTopicKey, cur[0].controlId) : "";
+      const wrap = document.createElement("div");
+      wrap.appendChild(makeField("Кнопка", items, value, "Не привязана", (v) => {
+        rebindLoad(s.deviceTopicKey, ch.controlId, v).catch(() => {});
+      }, "", null, !value, true));
+      if (cur.length > 1) {
+        const extra = document.createElement("p");
+        extra.className = "meta scene-extra";
+        extra.textContent = "ещё · " + cur.slice(1).map(solContactLabel).join(" · ");
+        wrap.appendChild(extra);
+      }
+      return wrap;
+    }
+    function makeLoadPicks(s, ch, room) {
+      const desk = bindsOf(s.deviceTopicKey, ch.controlId);
+      const cur = desk.length ? desk : pouredLoadsForButton(s.deviceTopicKey, ch.controlId);
+      const want = contactSet(cur);
+      const wrap = document.createElement("div");
+      wrap.className = "io-picks";
+      const h = document.createElement("p");
+      h.className = "sech";
+      h.textContent = "Свет";
+      const picks = document.createElement("div");
+      picks.className = "picks";
+      const loads = namedLoads().slice().sort((a, b) => {
+        const aHome = room && a.room === room ? 0 : 1;
+        const bHome = room && b.room === room ? 0 : 1;
+        if (aHome !== bHome) return aHome - bHome;
+        return (a.room || "").localeCompare(b.room || "", "ru") || (a.label || "").localeCompare(b.label || "", "ru");
+      });
+      if (!loads.length) {
+        const empty = document.createElement("p");
+        empty.className = "meta";
+        empty.textContent = "Сначала имя линии на вкладке Свет.";
+        picks.appendChild(empty);
+      }
+      let lastRoom = "\0";
+      loads.forEach((load) => {
+        const rm = load.room || "Без комнаты";
+        if (rm !== lastRoom) {
+          lastRoom = rm;
+          const rh = document.createElement("p");
+          rh.className = "roomh";
+          rh.textContent = rm;
+          picks.appendChild(rh);
+        }
+        const lab = document.createElement("label");
+        const cb = document.createElement("input");
+        cb.type = "checkbox";
+        cb.value = contactKey(load.deviceTopicKey, load.controlId);
+        cb.checked = want.has(cb.value);
+        if (cb.checked) lab.classList.add("on");
+        cb.addEventListener("change", () => {
+          lab.classList.toggle("on", cb.checked);
+          const targets = [...picks.querySelectorAll("input:checked")].map((o) => parseBindValue(o.value)).filter(Boolean);
+          saveBinds(s.deviceTopicKey, ch.controlId, targets).catch(() => {});
+        });
+        lab.append(cb, document.createTextNode(titleUnderRoom(load.label, rm) || load.label));
+        picks.appendChild(lab);
+      });
+      wrap.append(h, picks);
+      return wrap;
     }
     function jumpToContact(key, cid) {
       cid = pairOpenId(cid);
@@ -1536,10 +1663,8 @@
       const selected = new Set(exclusiveCards(Array.isArray(ch.cards) ? ch.cards : []));
       const diskIds = exclusiveCards(CARDS.filter((c) => (ch.hints || []).includes(c.ru)).map((c) => c.id));
       const deskDiverged = poured && [...selected].sort().join(",") !== diskIds.slice().sort().join(",");
-      if (deskTriggers.length) {
-        return { text: "кнопка · " + deskTriggers.map((t) => t.label).join(" · "), go: deskTriggers[0] };
-      }
-      if (buttons.length) return { text: "кнопка · " + buttons.map(prettyContactName).join(" · ") };
+      if (deskTriggers.length || (isLoad && original)) return null;
+      if (buttons.length && isLoad) return null;
       if (deskDiverged) return { text: "на диске · " + (ch.hints || []).join(" · ") };
       if (original && isLoad && !poured) return { text: "нет кнопки" };
       if (!isLoad && !original && Array.isArray(ch.binds) && ch.binds.length) {
@@ -1551,7 +1676,6 @@
     function channelRow(s, ch, room) {
       const row = document.createElement("li");
       row.dataset.contact = contactKey(s.deviceTopicKey, ch.controlId);
-      const loads = Array.isArray(ch.loads) ? ch.loads.filter(Boolean) : [];
       const isLoad = isDeskLoad(ch.controlId);
       const original = pairName(s, ch);
       const saved = splitMark(original);
@@ -1606,7 +1730,10 @@
         !!(current.room && !current.type),
       ));
       if (!isLoad && original) {
-        fields.appendChild(makeBindSelect(s, ch, loads, current.room));
+        fields.appendChild(makeLoadPicks(s, ch, current.room));
+      }
+      if (isLoad && original) {
+        fields.appendChild(makeTriggerSelect(s, ch));
       }
       row.append(cap, fields);
       return row;

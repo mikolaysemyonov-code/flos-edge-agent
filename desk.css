@@ -214,6 +214,26 @@
       font-size: .86rem;
     }
     #ready .scene-card .picks label.on { background: rgb(var(--sky) / .1); }
+    .io-picks .sech {
+      margin: .55rem 1rem .1rem;
+      font-size: .68rem; font-weight: 600;
+      letter-spacing: .07em; text-transform: uppercase; color: var(--mute);
+    }
+    .io-picks .picks { margin: 0; gap: 0; }
+    .io-picks .picks .roomh {
+      font-size: .68rem; font-weight: 600; letter-spacing: .07em;
+      text-transform: uppercase; color: var(--mute);
+      padding: .7rem 1rem .15rem; margin: 0;
+      border-top: .5px solid rgb(84 84 88 / .55);
+    }
+    .io-picks .picks .roomh:first-child { border-top: 0; padding-top: .45rem; }
+    .io-picks .picks label {
+      min-height: 2.7rem;
+      padding: 0 1rem;
+      border-top: .5px solid rgb(84 84 88 / .35);
+      font-size: .86rem;
+    }
+    .io-picks .picks label.on { background: rgb(var(--sky) / .1); }
     #ready .scene-extra, #ready .scene-err { margin: 0; padding: .35rem 1rem .7rem; }
     #ready .scene-foot {
       position: sticky;
