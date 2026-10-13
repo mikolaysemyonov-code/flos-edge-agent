@@ -509,6 +509,31 @@
       if (/^(Input |EXT|[A-D]\d+_IN)/i.test(String(t.controlId || ""))) return sku + " · " + cid;
       return sku;
     }
+    function otherBindLine(exceptLoads) {
+      const skip = contactSet(exceptLoads);
+      let best = null;
+      (lastShelvesRows || []).forEach((s) => {
+        (s.channels || []).forEach((ch) => {
+          if (isDeskLoad(ch.controlId)) return;
+          const binds = Array.isArray(ch.binds) ? ch.binds : [];
+          const hit = binds.find((b) => !skip.has(contactKey(b.deviceTopicKey, pairOpenId(b.controlId))));
+          if (!hit) return;
+          const row = {
+            gpio: /^wb-gpio$/i.test(s.deviceTopicKey),
+            text: triggerLine({ deviceTopicKey: s.deviceTopicKey, controlId: ch.controlId })
+              + " на " + (loadListLabel(hit) || solContactLabel(hit)),
+          };
+          if (row.gpio || !best) best = row;
+        });
+      });
+      return best ? best.text : "";
+    }
+    function missingButtonText(item) {
+      const loads = item && item.scene ? sceneParts(item.contacts).loads
+        : (item && item.isLoad ? [{ deviceTopicKey: item.deviceTopicKey, controlId: item.controlId }] : []);
+      const busy = otherBindLine(loads);
+      return busy ? "кнопка · нет в разметке · " + busy : "кнопка · нет в разметке";
+    }
     function sceneLines(contacts, room) {
       const p = sceneParts(contacts);
       const buttons = sceneButtons(contacts);
@@ -747,7 +772,7 @@
         const missing = !item.btnLine;
         const btn = missing ? document.createElement("button") : document.createElement("span");
         btn.className = "hint" + (missing ? " orphan" : "");
-        btn.textContent = missing ? "кнопка · нет в разметке" : "кнопка · " + item.btnLine;
+        btn.textContent = missing ? missingButtonText(item) : "кнопка · " + item.btnLine;
         if (missing) {
           btn.type = "button";
           btn.addEventListener("click", (e) => {
@@ -777,7 +802,7 @@
           const b = document.createElement("button");
           b.type = "button";
           b.className = "hint orphan";
-          b.textContent = "кнопка · нет в разметке";
+          b.textContent = missingButtonText(item);
           b.addEventListener("click", (e) => {
             e.stopPropagation();
             openButtonOnLoad(item.deviceTopicKey, item.controlId);
@@ -1153,11 +1178,15 @@
           (ready.gaps || 0) + " без карточки",
         ].join(" · ");
         head.style.color = "";
-        head.textContent = (pouredPane === "send"
-          ? "Новое. На контроллер не пишем."
-          : pouredPane === "rules"
+        if (pouredPane === "send") {
+          const noCard = items.filter((i) => !i.scene && !(i.cards || []).length && !(i.hints || []).length).length;
+          head.textContent = "Новое. На контроллер не пишем."
+            + (noCard ? " · " + noCard + " без карточки" : "");
+        } else {
+          head.textContent = (pouredPane === "rules"
             ? "Сценарии. Сначала на контроллере, затем новое."
             : "Разметка. Комната, тип и кнопка на линии.") + " · " + bits;
+        }
       }
     }
     function renderPoured() {
@@ -1848,7 +1877,8 @@
       const hasBtn = deskTriggers.length || pouredBtns.length || (buttons.length && isLoad);
       const allOff = (ch.hints || []).includes("Все выкл");
       if (isLoad && original && !hasBtn && allOff) {
-        return { text: "кнопка · нет в разметке", bad: true };
+        const busy = otherBindLine([{ deviceTopicKey: s.deviceTopicKey, controlId: ch.controlId }]);
+        return { text: busy ? "кнопка · нет в разметке · " + busy : "кнопка · нет в разметке", bad: true };
       }
       const selected = new Set(exclusiveCards(Array.isArray(ch.cards) ? ch.cards : []));
       const diskIds = exclusiveCards(CARDS.filter((c) => (ch.hints || []).includes(c.ru)).map((c) => c.id));
