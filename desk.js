@@ -10,6 +10,7 @@
     let deskRooms = [];
     let markEdit = "";
     let markDraft = { room: "", type: "" };
+    let roomFilter = "";
     const LOAD_TYPES = [
       "Световая линия", "Трек", "Точечные", "Люстра", "Подвес", "Потолочный",
       "Бра", "Торшер", "Подсветка", "Подсветка ниши", "Лента",
@@ -755,38 +756,45 @@
       }));
     }
     function makeBindSelect(s, ch, pouredLoads) {
-      const sel = document.createElement("select");
-      sel.className = "bind";
-      sel.setAttribute("aria-label", "Линия света");
-      const empty = document.createElement("option");
-      empty.value = "";
-      empty.textContent = pouredLoads.length
-        ? pouredLoads.map(prettyContactName).join(" · ")
-        : "Привязать линию";
-      sel.appendChild(empty);
+      const wrap = document.createElement("div");
+      wrap.className = "mark";
+      const h = document.createElement("p");
+      h.className = "steph";
+      h.textContent = "3 · Линия";
+      wrap.appendChild(h);
       const cur = (Array.isArray(ch.binds) && ch.binds[0])
         ? contactKey(ch.binds[0].deviceTopicKey, ch.binds[0].controlId)
         : "";
-      namedLoads().forEach((load) => {
-        const opt = document.createElement("option");
-        opt.value = contactKey(load.deviceTopicKey, load.controlId);
-        opt.textContent = load.label;
-        sel.appendChild(opt);
+      const loads = namedLoads();
+      const bar = document.createElement("div");
+      bar.className = "chips";
+      if (pouredLoads.length && !loads.length) {
+        const note = document.createElement("p");
+        note.className = "loads";
+        note.textContent = pouredLoads.map(prettyContactName).join(" · ");
+        wrap.appendChild(note);
+      }
+      loads.forEach((load) => {
+        const key = contactKey(load.deviceTopicKey, load.controlId);
+        const b = document.createElement("button");
+        b.type = "button";
+        b.className = "chip";
+        b.textContent = load.label;
+        b.setAttribute("aria-pressed", key === cur ? "true" : "false");
+        b.addEventListener("click", () => {
+          if (key === cur) {
+            saveBinds(s.deviceTopicKey, ch.controlId, []).catch(() => {});
+            return;
+          }
+          saveBinds(s.deviceTopicKey, ch.controlId, [{
+            deviceTopicKey: load.deviceTopicKey,
+            controlId: load.controlId,
+          }]).catch(() => {});
+        });
+        bar.appendChild(b);
       });
-      sel.value = cur;
-      sel.addEventListener("change", () => {
-        const v = sel.value;
-        if (!v) {
-          saveBinds(s.deviceTopicKey, ch.controlId, []).catch(() => {});
-          return;
-        }
-        const i = v.indexOf("::");
-        saveBinds(s.deviceTopicKey, ch.controlId, [{
-          deviceTopicKey: v.slice(0, i),
-          controlId: v.slice(i + 2),
-        }]).catch(() => {});
-      });
-      return sel;
+      wrap.appendChild(bar);
+      return wrap;
     }
     function contactKey(key, cid) {
       return String(key) + "::" + String(cid);
@@ -987,12 +995,16 @@
       const rooms = roomsFromBus();
       const roomBar = makeChipBar(rooms, current.room, (v) => {
         markDraft.room = v;
+        roomFilter = v;
         if (markDraft.type || current.type) commit();
-        else renderShelves(lastShelvesRows);
+        else {
+          renderRoomBars();
+          renderShelves(lastShelvesRows);
+        }
       });
       const add = document.createElement("button");
       add.type = "button";
-      add.className = "chip";
+      add.className = "chip add";
       add.textContent = "+ комната";
       add.addEventListener("click", () => {
         const typed = window.prompt("Комната");
@@ -1026,7 +1038,7 @@
       }));
       const done = document.createElement("button");
       done.type = "button";
-      done.className = "loads";
+      done.className = "chip";
       done.textContent = "Готово";
       done.addEventListener("click", () => {
         markEdit = "";
@@ -1038,20 +1050,26 @@
     }
     function renderRoomBars() {
       const rooms = roomsFromBus();
-      ["rooms-light", "rooms-buttons"].forEach((id) => {
+      ["rooms-light", "rooms-buttons", "rooms-relays"].forEach((id) => {
         const bar = $(id);
         if (!bar) return;
         bar.replaceChildren();
         rooms.forEach((r) => {
-          const b = document.createElement("span");
+          const b = document.createElement("button");
+          b.type = "button";
           b.className = "chip";
-          b.style.opacity = "1";
           b.textContent = r;
+          b.setAttribute("aria-pressed", r === roomFilter ? "true" : "false");
+          b.addEventListener("click", () => {
+            roomFilter = roomFilter === r ? "" : r;
+            renderRoomBars();
+            renderShelves(lastShelvesRows);
+          });
           bar.appendChild(b);
         });
         const add = document.createElement("button");
         add.type = "button";
-        add.className = "ghost";
+        add.className = "chip add";
         add.textContent = "+ комната";
         add.addEventListener("click", () => {
           const typed = window.prompt("Комната");
@@ -1063,6 +1081,7 @@
           }).then((r) => r.json()).then((j) => {
             if (!j.ok) return;
             deskRooms = j.rooms || deskRooms;
+            roomFilter = prettyRoom(typed);
             renderRoomBars();
             renderShelves(lastShelvesRows);
           });
@@ -1137,12 +1156,18 @@
         ul.appendChild(channelRow(s, ch, room));
       });
     }
+    function channelInFilter(s, ch) {
+      if (!roomFilter) return true;
+      if (markEdit === contactKey(s.deviceTopicKey, ch.controlId)) return true;
+      return channelRoom(ch) === roomFilter;
+    }
     function appendNamedChannels(ul, s, channels) {
+      const scoped = channels.filter((ch) => channelInFilter(s, ch));
       const live = [];
       const idle = [];
-      channels.forEach((ch) => (channelBusy(s, ch) ? live : idle).push(ch));
+      scoped.forEach((ch) => (channelBusy(s, ch) ? live : idle).push(ch));
       appendChannelBlock(ul, s, live);
-      if (!idle.length) return;
+      if (!idle.length || roomFilter) return;
       const det = document.createElement("details");
       det.className = "more";
       const sum = document.createElement("summary");
@@ -1194,8 +1219,11 @@
         ul.appendChild(p);
         return;
       }
-      const live = rows.filter(hasFeatured);
-      const idle = rows.filter((s) => !hasFeatured(s)).slice().sort((a, b) => {
+      const visible = roomFilter
+        ? rows.filter((s) => (s.channels || []).some((ch) => channelInFilter(s, ch)))
+        : rows;
+      const live = visible.filter(hasFeatured);
+      const idle = visible.filter((s) => !hasFeatured(s)).slice().sort((a, b) => {
         const na = Number((/№(\d+)/.exec(a.label || "") || [])[1] || 0);
         const nb = Number((/№(\d+)/.exec(b.label || "") || [])[1] || 0);
         return na - nb || String(a.label || "").localeCompare(String(b.label || ""), "ru");
