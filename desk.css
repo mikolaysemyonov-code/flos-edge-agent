@@ -172,6 +172,21 @@
     .steph { margin: .2rem 0 .25rem; color: var(--mute); font-size: .68rem; letter-spacing: .04em; text-transform: uppercase; }
     .mark .chips { margin: 0 0 .45rem; }
     .rooms { display: flex; flex-wrap: wrap; gap: .35rem; margin: 0 0 .85rem; }
+    .rooms.need {
+      outline: 1px solid rgb(var(--sky) / .55);
+      border-radius: .85rem;
+      padding: .28rem;
+      animation: needpulse .9s ease;
+    }
+    @keyframes needpulse {
+      from { box-shadow: 0 0 0 0 rgb(var(--sky) / .4); }
+      to { box-shadow: 0 0 0 14px rgb(var(--sky) / 0); }
+    }
+    .done {
+      appearance: none; border: 0; background: none;
+      color: rgb(var(--sky) / .95); font: inherit; font-size: .78rem; font-weight: 650;
+      padding: .15rem 0 .35rem; cursor: pointer;
+    }
     .filters { display: flex; flex-wrap: wrap; gap: .35rem; margin: .15rem 0 .85rem; }
     .filters button {
       appearance: none; border: 1px solid rgb(255 255 255 / .1); background: rgb(255 255 255 / .04);
