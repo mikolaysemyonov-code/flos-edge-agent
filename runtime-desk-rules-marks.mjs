@@ -131,7 +131,11 @@ export function parsePouredRuleRows(source, filename) {
     let c;
     while ((c = cellRe.exec(m[0]))) {
       const deviceTopicKey = liveDeskDeviceKey(c[1]);
-      const controlId = c[2];
+      const controlId = String(c[2] ?? "")
+        .trim()
+        .replace(/\s+(?:Long|Short|Double|Shortlong)?\s*Press(?:\s+Counter)?$/i, "")
+        .replace(/\s+Counter$/i, "")
+        .trim();
       if (!isDeskShelfChannelControl(controlId, deviceTopicKey)) continue;
       contacts.push({ deviceTopicKey, controlId });
     }

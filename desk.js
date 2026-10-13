@@ -481,14 +481,33 @@
       const p = sceneParts(contacts);
       return p.buttons.length ? p.buttons : buttonsFromBinds(p.loads);
     }
+    function compactPhrase(names) {
+      const groups = [];
+      uniqText(names).forEach((n) => {
+        const m = /^(.*?)(\d+)\s*$/.exec(n);
+        if (!m) {
+          groups.push({ text: n });
+          return;
+        }
+        const stem = m[1].replace(/[\s·]+$/, "");
+        const prev = groups[groups.length - 1];
+        if (prev && prev.stem === stem) prev.nums.push(m[2]);
+        else groups.push({ stem: stem, nums: [m[2]] });
+      });
+      return groups.map((g) => {
+        if (!g.stem) return g.text;
+        const nums = [...new Set(g.nums)].sort((a, b) => Number(a) - Number(b));
+        return g.stem + " " + nums.join(" · ");
+      }).join(" · ");
+    }
     function sceneLines(contacts, room) {
       const p = sceneParts(contacts);
       const buttons = sceneButtons(contacts);
       const btn = uniqText(buttons.map(solContactLabel)).join(" · ") || "нет кнопки";
-      const lights = uniqText(p.loads.map((c) => {
+      const lights = compactPhrase(p.loads.map((c) => {
         const n = loadListLabel(c);
         return room ? (titleUnderRoom(n, room) || n) : n;
-      })).join(" · ") || "нет света";
+      })) || "нет света";
       return { btn: btn, lights: lights };
     }
     function sceneKey(item) {
