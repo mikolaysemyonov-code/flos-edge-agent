@@ -465,15 +465,6 @@
       const hit = namedLoads().find((r) => contactKey(r.deviceTopicKey, r.controlId) === want);
       return hit ? hit.label : solContactLabel({ deviceTopicKey: c.deviceTopicKey, controlId: cid });
     }
-    function bindLoadHint(c, btnRoom) {
-      const n = loadListLabel(c);
-      const rm = nameRoom(n) || "";
-      const short = rm ? (titleUnderRoom(n, rm) || n) : n;
-      const cid = prettyControlId(c.controlId);
-      const core = rm && rm !== btnRoom ? rm + " · " + (short || "") : (short || "");
-      if (cid && core && !core.includes(cid)) return core + " · " + cid;
-      return core || cid;
-    }
     function contactOrd(item) {
       const s = String(item.controlId || "");
       let m = /^Channel (\d+)/i.exec(s);
@@ -491,22 +482,29 @@
       if (aa[1] !== bb[1]) return aa[1] - bb[1];
       return String(a.controlId || "").localeCompare(String(b.controlId || ""), "en", { numeric: true });
     }
-    function buttonsFromBinds(loads) {
+    function sceneButtons(contacts) {
+      const p = sceneParts(contacts);
+      if (p.buttons.length) return p.buttons;
       const seen = new Set();
       const out = [];
-      (loads || []).forEach((load) => {
-        triggersBoundTo(load.deviceTopicKey, load.controlId).forEach((t) => {
+      p.loads.forEach((load) => {
+        pouredTriggersForLoad(load.deviceTopicKey, load.controlId).forEach((t) => {
           const k = contactKey(t.deviceTopicKey, t.controlId);
           if (seen.has(k)) return;
           seen.add(k);
           out.push(t);
         });
+        deskSolutions.forEach((sol) => {
+          const want = contactKey(load.deviceTopicKey, pairOpenId(load.controlId));
+          if (!(sol.targets || []).some((x) => contactKey(x.deviceTopicKey, pairOpenId(x.controlId)) === want)) return;
+          if (!sol.trigger) return;
+          const k = contactKey(sol.trigger.deviceTopicKey, sol.trigger.controlId);
+          if (seen.has(k)) return;
+          seen.add(k);
+          out.push(sol.trigger);
+        });
       });
       return out;
-    }
-    function sceneButtons(contacts) {
-      const p = sceneParts(contacts);
-      return p.buttons.length ? p.buttons : buttonsFromBinds(p.loads);
     }
     function compactPhrase(names) {
       const groups = [];
@@ -702,17 +700,7 @@
       if (!item || item.scene || !item.isLoad || item.btnLine) return false;
       if (pourLane(item) === "send") return false;
       if (!(item.hints || []).includes("Все выкл")) return false;
-      const mates = [];
-      (lastShelvesRows || []).forEach((s) => {
-        if (s.deviceTopicKey !== item.deviceTopicKey) return;
-        visibleChannels(s).forEach((ch) => {
-          if (!isDeskLoad(ch.controlId)) return;
-          if (!(ch.hints || []).includes("Все выкл")) return;
-          mates.push(ch.controlId);
-        });
-      });
-      mates.sort((a, b) => a.localeCompare(b, "en", { numeric: true }));
-      return !mates.length || mates[0] === item.controlId;
+      return false;
     }
     function isNewItem(item) {
       return pourLane(item) === "send";
@@ -734,23 +722,18 @@
           const isLoad = isDeskLoad(ch.controlId);
           const room = guessRoom(name) || guessRoom(prev && prev.pouredName) || "";
           const sku = s.label || s.deviceTopicKey;
-          const trigs = isLoad ? triggersBoundTo(s.deviceTopicKey, ch.controlId) : [];
-          const src = trigs.length ? trigs : (isLoad ? pouredTriggersForLoad(s.deviceTopicKey, ch.controlId) : []);
           items.push({
             room: room,
             bucket: readyBucket(s.deviceTopicKey, ch.controlId),
             title: title,
             sku: sku,
             sub: sku + " · " + prettyControlId(ch.controlId),
-            bindLine: isLoad
-              ? ""
-              : uniqText(bindsOf(s.deviceTopicKey, ch.controlId).map((b) => bindLoadHint(b, room))).join(" · "),
             deviceTopicKey: s.deviceTopicKey,
             controlId: ch.controlId,
             cards: cards,
             hints: hints,
             isLoad: isLoad,
-            btnLine: uniqText(src.map((t) => triggerLine(t))).join(" · "),
+            btnLine: "",
             status: prev && prev.status,
             pouredName: prev && prev.pouredName,
           });
@@ -805,6 +788,16 @@
       return p(d.getDate()) + "." + p(d.getMonth() + 1) + " " + p(d.getHours()) + ":" + p(d.getMinutes());
     }
     function renderHistory(box) {
+      const back = document.createElement("button");
+      back.type = "button";
+      back.className = "back";
+      back.setAttribute("aria-label", "К разметке");
+      back.innerHTML = "<svg viewBox='0 0 24 24'><path d='M15 18l-6-6 6-6'/></svg><span>К разметке</span>";
+      back.addEventListener("click", () => {
+        pouredPane = "mark";
+        renderReady();
+      });
+      box.appendChild(back);
       if (!lastReleases.length) {
         const empty = document.createElement("p");
         empty.className = "empty";
@@ -919,7 +912,6 @@
         const cid = prettyControlId(item.controlId);
         const skuBit = (cid && ttlText && ttlText.includes(cid)) ? (item.sku || "") : item.sub;
         const bits = [skuBit];
-        if (item.bindLine) bits.push("линия · " + item.bindLine);
         if (item.pouredName && item.title && prettyContactName(item.pouredName) !== prettyContactName(item.title)) {
           bits.push("на контроллере " + prettyContactName(item.pouredName));
         }
@@ -1256,7 +1248,7 @@
         const head = $("previewHead");
         if (head) {
           head.style.color = "";
-          head.textContent = "main · HEAD сверху. checkout — с заливкой.";
+          head.textContent = "main · HEAD сверху. Стрелка — к разметке. checkout — с заливкой.";
         }
         return;
       }
@@ -1650,12 +1642,6 @@
     async function saveCards(key, controlId, cards) {
       await saveMark({ deviceTopicKey: key, controlId: controlId, cards: cards });
     }
-    async function saveBinds(key, controlId, binds) {
-      await saveMark({ deviceTopicKey: key, controlId: controlId, binds: binds });
-      fetch("/runtime/mqtt-scan").then((res) => res.json()).then((j) => {
-        if (j.ok && j.shelves) showShelves(j);
-      }).catch(() => {});
-    }
     function shortLoadName(name, controlId) {
       const pretty = prettyContactName(name);
       const parts = pretty.split(/\s*·\s*/).filter(Boolean);
@@ -1754,61 +1740,8 @@
       row.append(lab, sel);
       return row;
     }
-    function makeBindSelect(s, ch, pouredLoads, room) {
-      const cur = (Array.isArray(ch.binds) && ch.binds[0])
-        ? contactKey(ch.binds[0].deviceTopicKey, ch.binds[0].controlId)
-        : "";
-      const loads = loadsForRoom(room || roomFilter);
-      const items = loads.map((load) => ({
-        value: contactKey(load.deviceTopicKey, load.controlId),
-        label: load.label,
-      }));
-      if (!items.length && pouredLoads.length) {
-        const note = document.createElement("div");
-        note.className = "fldrow";
-        note.innerHTML = "<span class=\"fldlab\">Линия</span>";
-        const v = document.createElement("span");
-        v.className = "fldsel empty";
-        v.textContent = pouredLoads.map(prettyContactName).join(" · ");
-        note.appendChild(v);
-        return note;
-      }
-      return makeField("Линия", items, cur, "Не привязана", (v) => {
-        if (!v) {
-          saveBinds(s.deviceTopicKey, ch.controlId, []).catch(() => {});
-          return;
-        }
-        const b = parseBindValue(v);
-        saveBinds(s.deviceTopicKey, ch.controlId, b ? [b] : []).catch(() => {});
-      }, "", null, false, true);
-    }
     function contactKey(key, cid) {
       return String(key) + "::" + String(cid);
-    }
-    function triggersBoundTo(loadKey, loadCid) {
-      const want = contactKey(loadKey, pairOpenId(loadCid));
-      const out = [];
-      (lastShelvesRows || []).forEach((s) => {
-        (s.channels || []).forEach((ch) => {
-          (Array.isArray(ch.binds) ? ch.binds : []).forEach((b) => {
-            if (contactKey(b.deviceTopicKey, pairOpenId(b.controlId)) !== want) return;
-            out.push({
-              deviceTopicKey: s.deviceTopicKey,
-              controlId: ch.controlId,
-              label: solContactLabel({ deviceTopicKey: s.deviceTopicKey, controlId: ch.controlId }),
-            });
-          });
-        });
-      });
-      return out;
-    }
-    function bindsOf(key, cid) {
-      const s = lastShelvesRows.find((r) => r.deviceTopicKey === key);
-      const ch = s && (s.channels || []).find((c) => c.controlId === cid);
-      return Array.isArray(ch && ch.binds) ? ch.binds.map((b) => ({
-        deviceTopicKey: b.deviceTopicKey,
-        controlId: pairOpenId(b.controlId),
-      })) : [];
     }
     function pouredTriggersForLoad(loadKey, loadCid) {
       const want = contactKey(loadKey, pairOpenId(loadCid));
@@ -1817,7 +1750,7 @@
       pouredRules.filter((r) => r.kind === "user").forEach((r) => {
         const p = sceneParts(r.contacts);
         if (!p.loads.some((c) => contactKey(c.deviceTopicKey, pairOpenId(c.controlId)) === want)) return;
-        sceneButtons(r.contacts).forEach((b) => {
+        p.buttons.forEach((b) => {
           const k = contactKey(b.deviceTopicKey, b.controlId);
           if (seen.has(k)) return;
           seen.add(k);
@@ -1825,117 +1758,6 @@
         });
       });
       return out;
-    }
-    function pouredLoadsForButton(btnKey, btnCid) {
-      const want = contactKey(btnKey, btnCid);
-      const seen = new Set();
-      const out = [];
-      pouredRules.filter((r) => r.kind === "user").forEach((r) => {
-        const p = sceneParts(r.contacts);
-        if (!p.buttons.some((c) => contactKey(c.deviceTopicKey, c.controlId) === want)) return;
-        p.loads.forEach((c) => {
-          const k = contactKey(c.deviceTopicKey, pairOpenId(c.controlId));
-          if (seen.has(k)) return;
-          seen.add(k);
-          out.push({ deviceTopicKey: c.deviceTopicKey, controlId: pairOpenId(c.controlId) });
-        });
-      });
-      return out;
-    }
-    async function rebindLoad(loadKey, loadCid, trigVal) {
-      const load = { deviceTopicKey: loadKey, controlId: pairOpenId(loadCid) };
-      const want = contactKey(load.deviceTopicKey, load.controlId);
-      const current = triggersBoundTo(loadKey, loadCid);
-      const trig = parseBindValue(trigVal);
-      for (const t of current) {
-        if (trig && contactKey(t.deviceTopicKey, t.controlId) === contactKey(trig.deviceTopicKey, trig.controlId)) continue;
-        const next = bindsOf(t.deviceTopicKey, t.controlId).filter((b) => contactKey(b.deviceTopicKey, b.controlId) !== want);
-        await saveMark({ deviceTopicKey: t.deviceTopicKey, controlId: t.controlId, binds: next });
-      }
-      if (trig) {
-        const next = bindsOf(trig.deviceTopicKey, trig.controlId);
-        if (!next.some((b) => contactKey(b.deviceTopicKey, b.controlId) === want)) next.push(load);
-        await saveMark({ deviceTopicKey: trig.deviceTopicKey, controlId: trig.controlId, binds: next });
-      }
-      await loadLast();
-    }
-    function makeTriggerSelect(s, ch) {
-      const desk = triggersBoundTo(s.deviceTopicKey, ch.controlId);
-      const cur = desk.length ? desk : pouredTriggersForLoad(s.deviceTopicKey, ch.controlId);
-      const items = mergeContactRows(namedTriggers(), cur).map((t) => ({
-        value: contactKey(t.deviceTopicKey, t.controlId),
-        label: triggerLine(t),
-      }));
-      const value = cur[0] ? contactKey(cur[0].deviceTopicKey, cur[0].controlId) : "";
-      const allOff = (ch.hints || []).includes("Все выкл") || (ch.cards || []).includes("light_all_off");
-      if (allOff && !value) {
-        items.sort((a, b) => {
-          const ag = /wb-gpio::/i.test(a.value) ? 0 : 1;
-          const bg = /wb-gpio::/i.test(b.value) ? 0 : 1;
-          return ag - bg;
-        });
-      }
-      const wrap = document.createElement("div");
-      wrap.appendChild(makeField("Кнопка", items, value, "Не привязана", (v) => {
-        rebindLoad(s.deviceTopicKey, ch.controlId, v).catch(() => {});
-      }, "", null, !value, true));
-      if (cur.length > 1) {
-        const extra = document.createElement("p");
-        extra.className = "meta scene-extra";
-        extra.textContent = "ещё · " + cur.slice(1).map(solContactLabel).join(" · ");
-        wrap.appendChild(extra);
-      }
-      return wrap;
-    }
-    function makeLoadPicks(s, ch, room) {
-      const desk = bindsOf(s.deviceTopicKey, ch.controlId);
-      const cur = desk.length ? desk : pouredLoadsForButton(s.deviceTopicKey, ch.controlId);
-      const want = contactSet(cur);
-      const wrap = document.createElement("div");
-      wrap.className = "io-picks";
-      const h = document.createElement("p");
-      h.className = "sech";
-      h.textContent = "Свет";
-      const picks = document.createElement("div");
-      picks.className = "picks";
-      const loads = namedLoads().slice().sort((a, b) => {
-        const aHome = room && a.room === room ? 0 : 1;
-        const bHome = room && b.room === room ? 0 : 1;
-        if (aHome !== bHome) return aHome - bHome;
-        return (a.room || "").localeCompare(b.room || "", "ru") || (a.label || "").localeCompare(b.label || "", "ru");
-      });
-      if (!loads.length) {
-        const empty = document.createElement("p");
-        empty.className = "meta";
-        empty.textContent = "Сначала имя линии на вкладке Свет.";
-        picks.appendChild(empty);
-      }
-      let lastRoom = "\0";
-      loads.forEach((load) => {
-        const rm = load.room || "Без комнаты";
-        if (rm !== lastRoom) {
-          lastRoom = rm;
-          const rh = document.createElement("p");
-          rh.className = "roomh";
-          rh.textContent = rm;
-          picks.appendChild(rh);
-        }
-        const lab = document.createElement("label");
-        const cb = document.createElement("input");
-        cb.type = "checkbox";
-        cb.value = contactKey(load.deviceTopicKey, load.controlId);
-        cb.checked = want.has(cb.value);
-        if (cb.checked) lab.classList.add("on");
-        cb.addEventListener("change", () => {
-          lab.classList.toggle("on", cb.checked);
-          const targets = [...picks.querySelectorAll("input:checked")].map((o) => parseBindValue(o.value)).filter(Boolean);
-          saveBinds(s.deviceTopicKey, ch.controlId, targets).catch(() => {});
-        });
-        lab.append(cb, document.createTextNode(titleUnderRoom(load.label, rm) || load.label));
-        picks.appendChild(lab);
-      });
-      wrap.append(h, picks);
-      return wrap;
     }
     function openButtonOnLoad(key, cid) {
       openSceneId = "";
@@ -2013,33 +1835,10 @@
       return "Тип";
     }
     function channelHint(s, ch, isLoad, original, poured) {
-      const loads = Array.isArray(ch.loads) ? ch.loads.filter(Boolean) : [];
-      const buttons = Array.isArray(ch.buttons) ? ch.buttons.filter(Boolean) : [];
-      const deskTriggers = isLoad ? triggersBoundTo(s.deviceTopicKey, ch.controlId) : [];
-      const pouredBtns = isLoad ? pouredTriggersForLoad(s.deviceTopicKey, ch.controlId) : [];
-      const hasBtn = deskTriggers.length || pouredBtns.length || (buttons.length && isLoad);
-      const allOff = (ch.hints || []).includes("Все выкл");
-      if (isLoad && original && !hasBtn && allOff) {
-        return {
-          text: missingButtonText({
-            isLoad: true,
-            deviceTopicKey: s.deviceTopicKey,
-            controlId: ch.controlId,
-          }),
-          bad: true,
-        };
-      }
       const selected = new Set(exclusiveCards(Array.isArray(ch.cards) ? ch.cards : []));
       const diskIds = exclusiveCards(CARDS.filter((c) => (ch.hints || []).includes(c.ru)).map((c) => c.id));
       const deskDiverged = poured && [...selected].sort().join(",") !== diskIds.slice().sort().join(",");
-      if (deskTriggers.length || (isLoad && original)) return null;
-      if (buttons.length && isLoad) return null;
       if (deskDiverged) return { text: "на контроллере · " + (ch.hints || []).join(" · ") };
-      if (original && isLoad && !poured) return { text: "нет кнопки" };
-      if (!isLoad && !original && Array.isArray(ch.binds) && ch.binds.length) {
-        return { text: "сначала комната и тип", bad: true };
-      }
-      if (loads.length && isLoad) return { text: loads.map(prettyContactName).join(" · ") };
       return null;
     }
     function channelRow(s, ch, room) {
@@ -2098,12 +1897,6 @@
         null,
         !!(current.room && !current.type),
       ));
-      if (!isLoad && original) {
-        fields.appendChild(makeBindSelect(s, ch, Array.isArray(ch.loads) ? ch.loads.filter(Boolean) : [], current.room));
-      }
-      if (isLoad && original) {
-        fields.appendChild(makeTriggerSelect(s, ch));
-      }
       row.append(cap, fields);
       return row;
     }

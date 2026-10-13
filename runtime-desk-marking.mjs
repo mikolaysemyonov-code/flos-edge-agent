@@ -47,7 +47,12 @@ export function readDeskDocument() {
     const json = JSON.parse(raw);
     const shelves = json?.shelves && typeof json.shelves === "object" ? json.shelves : {};
     const solutions = Array.isArray(json?.solutions) ? json.solutions : [];
-    return { version: 3, shelves, solutions, rooms: cleanRooms(json?.rooms) };
+    return {
+      version: 3,
+      shelves: dropBindsFromShelves(shelves).shelves,
+      solutions,
+      rooms: cleanRooms(json?.rooms),
+    };
   } catch {
     return emptyDoc();
   }
@@ -82,7 +87,9 @@ function writeDoc(doc) {
   const file = deskMarkingPath();
   fs.mkdirSync(path.dirname(file), { recursive: true });
   const prev = readDeskDocument();
-  const shelves = doc?.shelves && typeof doc.shelves === "object" ? doc.shelves : {};
+  const shelves = dropBindsFromShelves(
+    doc?.shelves && typeof doc.shelves === "object" ? doc.shelves : {},
+  ).shelves;
   const solutions = Array.isArray(doc?.solutions) ? doc.solutions : prev.solutions;
   const rooms = Array.isArray(doc?.rooms) ? cleanRooms(doc.rooms) : prev.rooms;
   fs.writeFileSync(
@@ -90,6 +97,31 @@ function writeDoc(doc) {
     JSON.stringify({ version: 3, shelves, solutions, rooms }, null, 2) + "\n",
     "utf8",
   );
+}
+
+function dropBindsFromShelves(shelves) {
+  let dirty = false;
+  const next = {};
+  for (const [key, shelf] of Object.entries(shelves || {})) {
+    const src = shelf?.channels && typeof shelf.channels === "object" ? shelf.channels : {};
+    const channels = {};
+    for (const [cid, ch] of Object.entries(src)) {
+      if (!ch || typeof ch !== "object") continue;
+      const row = { ...ch };
+      if (row.binds) {
+        delete row.binds;
+        dirty = true;
+      }
+      if (!row.name && !(row.cards && row.cards.length)) {
+        if (src[cid]) dirty = true;
+        continue;
+      }
+      channels[cid] = row;
+    }
+    if (Object.keys(channels).length) next[key] = { ...shelf, channels };
+    else if (Object.keys(src).length) dirty = true;
+  }
+  return { shelves: next, dirty };
 }
 
 function cleanCards(value) {
@@ -100,23 +132,6 @@ function cleanCards(value) {
 export function isDeskDeviceKey(key) {
   const s = String(key ?? "").trim();
   return /^[a-z0-9][a-z0-9._-]{0,79}$/i.test(s) && !/\/devices\//i.test(s);
-}
-
-function cleanBinds(value) {
-  if (!Array.isArray(value)) return [];
-  const out = [];
-  const seen = new Set();
-  for (const b of value) {
-    const deviceTopicKey = String(b?.deviceTopicKey ?? "").trim();
-    const controlId = String(b?.controlId ?? "").trim();
-    if (!isDeskDeviceKey(deviceTopicKey)) continue;
-    if (!isLoadControl(controlId)) continue;
-    const id = deviceTopicKey + "::" + controlId;
-    if (seen.has(id)) continue;
-    seen.add(id);
-    out.push({ deviceTopicKey, controlId });
-  }
-  return out;
 }
 
 /** Merge one contact. Never deletes sibling channels. Never writes wb-rules. */
@@ -141,12 +156,8 @@ export function upsertDeskShelfMark(input) {
     if (!cards || cards.length === 0) delete cur.cards;
     else cur.cards = cards;
   }
-  if (input?.binds !== undefined) {
-    const binds = cleanBinds(input.binds);
-    if (!binds.length) delete cur.binds;
-    else cur.binds = binds;
-  }
-  if (!cur.name && !(cur.cards && cur.cards.length) && !(cur.binds && cur.binds.length)) {
+  delete cur.binds;
+  if (!cur.name && !(cur.cards && cur.cards.length)) {
     delete channels[controlId];
   } else channels[controlId] = cur;
   if (Object.keys(channels).length === 0) delete doc.shelves[key];
@@ -156,7 +167,21 @@ export function upsertDeskShelfMark(input) {
 }
 
 export function applyMarksToShelves(shelves, doc = readDeskMarking(), poured = readPouredChannelMarks()) {
-  const marks = doc?.shelves ?? {};
+  try {
+    const json = JSON.parse(fs.readFileSync(deskMarkingPath(), "utf8"));
+    const dropped = dropBindsFromShelves(json?.shelves && typeof json.shelves === "object" ? json.shelves : {});
+    if (dropped.dirty) {
+      writeDoc({
+        version: 3,
+        shelves: dropped.shelves,
+        solutions: Array.isArray(json.solutions) ? json.solutions : [],
+        rooms: json.rooms,
+      });
+    }
+  } catch {
+    /* no marking file yet */
+  }
+  const marks = (doc && doc.shelves) || readDeskDocument().shelves;
   return (Array.isArray(shelves) ? shelves : []).map((s) => {
     const local = marks[s.deviceTopicKey]?.channels;
     const fromRules =
@@ -168,14 +193,13 @@ export function applyMarksToShelves(shelves, doc = readDeskMarking(), poured = r
       const pouredName = typeof fromRules[ch.controlId] === "string" ? fromRules[ch.controlId] : "";
       const name = typed || pouredName;
       const deskCards = Array.isArray(local?.[ch.controlId]?.cards) ? local[ch.controlId].cards : [];
-      const binds = Array.isArray(local?.[ch.controlId]?.binds) ? local[ch.controlId].binds : [];
       return {
         ...ch,
         name,
         source: typed ? "desk" : pouredName ? "rules" : "",
         cards: deskCards,
         cardsSource: deskCards.length ? "desk" : "",
-        binds,
+        binds: [],
       };
     });
     return { ...s, channels, name: "" };
@@ -212,12 +236,6 @@ function collapseDrivePairs(list) {
     out.push(r);
   }
   return out;
-}
-
-function markNameOf(deskCh, pouredCh, controlId) {
-  const deskName = typeof deskCh?.[controlId]?.name === "string" ? deskCh[controlId].name : "";
-  const pouredName = typeof pouredCh?.[controlId] === "string" ? pouredCh[controlId] : "";
-  return deskName || pouredName;
 }
 
 /** Стол vs диск. Никогда не пишет wb-rules. */
@@ -274,24 +292,6 @@ export function buildDeskPourPreview(doc = readDeskMarking(), poured = readPoure
     const nb = Number(/(\d+)/.exec(b.controlId)?.[1] || 0);
     return na - nb;
   });
-  for (const deviceTopicKey of Object.keys(deskShelves)) {
-    const deskCh = deskShelves[deviceTopicKey]?.channels || {};
-    const pouredCh = poured?.[deviceTopicKey] || poured?.[liveDeskDeviceKey(deviceTopicKey)] || {};
-    for (const controlId of Object.keys(deskCh)) {
-      const binds = deskCh[controlId]?.binds;
-      if (!Array.isArray(binds) || !binds.length) continue;
-      if (markNameOf(deskCh, pouredCh, controlId)) continue;
-      rows.push({
-        deviceTopicKey,
-        controlId,
-        name: "",
-        pouredName: "",
-        cards: [],
-        pouredCards: [],
-        status: "blocked",
-      });
-    }
-  }
   const nextRows = collapseDrivePairs(rows);
   const nextGaps = collapseDrivePairs(gaps);
   const solutions = readDeskDocument().solutions;

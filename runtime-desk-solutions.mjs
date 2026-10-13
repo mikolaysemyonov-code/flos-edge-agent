@@ -117,13 +117,6 @@ export function upsertDeskSolution(input) {
   const next = doc.solutions.filter((s) => s.id !== id);
   next.push(row);
   writeDoc({ ...doc, solutions: next });
-  if (trigger) {
-    upsertDeskShelfMark({
-      deviceTopicKey: trigger.deviceTopicKey,
-      controlId: trigger.controlId,
-      binds: targets,
-    });
-  }
   const stamp = exclusiveDeskCards([card.id]);
   if (stamp.length) {
     targets.forEach((t) => {
