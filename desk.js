@@ -3,6 +3,13 @@
     let pouredRules = [];
     let lastShelvesRows = [];
     let lastGapCount = 0;
+    let lastPreview = { rows: [], gaps: [], ready: {}, reason: "" };
+    const READY_BUCKETS = [
+      { id: "light", ru: "Свет" },
+      { id: "relays", ru: "Реле" },
+      { id: "buttons", ru: "Кнопки" },
+      { id: "scenes", ru: "Сценарии" },
+    ];
     let activeTab = "light";
     let deskCatalog = [];
     let deskSolutions = [];
@@ -262,23 +269,12 @@
         (ready.blocked || 0) + " без имени",
         (ready.gaps || 0) + " без карточки",
       ].join(" · ");
-      if (!rows.length) {
-        $("previewHead").textContent = (j.reason || "Превью. Диск не трогаем.") + " · " + readyBits;
-      } else {
-        $("previewHead").textContent = (j.reason || "Превью. Диск не трогаем.") + " · " + readyBits + " · " + rows.length + " отличий";
-        appendRoomList(ul, rows, (r) => nameRoom(r.name), previewRow);
-      }
-      $("gapsHead").hidden = !gaps.length;
-      $("gapsHead").textContent = gaps.length
-        ? gaps.length + " линий без карточки · ткни чип, диск не трогаем"
-        : "";
-      const gapRows = gaps.map((g) => ({
-        ...g,
-        title: g.name,
-        contacts: [{ deviceTopicKey: g.deviceTopicKey, controlId: g.controlId }],
-      }));
-      appendRoomList(gapsUl, gapRows, (r) => nameRoom(r.name), previewRow);
+      lastPreview = { rows: rows, gaps: gaps, ready: ready, reason: j.reason || "" };
+      $("previewHead").textContent = (j.reason || "Диск не трогаем.") + " · " + readyBits +
+        (rows.length ? " · " + rows.length + " отличий" : "");
+      $("gapsHead").hidden = true;
       lastGapCount = gaps.length;
+      renderReady();
       stampBusGaps();
     }
     function stampBusGaps() {
@@ -295,8 +291,8 @@
       go.addEventListener("click", () => {
         setTab("poured");
         requestAnimationFrame(() => {
-          const first = [...($("gaps").children || [])].find((n) => n.className !== "roomh");
-          (first || $("gapsHead")).scrollIntoView({ block: "start" });
+          const first = $("ready") && $("ready").querySelector("[data-contact]");
+          (first || $("ready") || $("previewHead")).scrollIntoView({ block: "start" });
           if (first) first.focus();
         });
       });
@@ -378,50 +374,183 @@
       );
       return out.join(" · ") || title;
     }
-    function pouredRow(r, room) {
-      const li = document.createElement("li");
-      const left = document.createElement("div");
-      const title = document.createElement("div");
-      title.textContent = room ? titleUnderRoom(r.title || r.id, room) : (r.title || r.id);
-      const sub = document.createElement("div");
-      sub.className = "meta";
-      const bits = (r.contacts || []).map(contactLine);
-      const missing = (r.contacts || []).filter((c) => liveKeys.ready && !liveKeys[c.deviceTopicKey]);
-      sub.textContent = bits.join(", ") || "нет контакта на шине";
-      if (missing.length) {
-        sub.className = "meta orphan";
-        sub.textContent = bits.join(", ") + " · нет на этой шине";
+    function previewHit(key, cid) {
+      const want = contactKey(key, cid);
+      const rows = lastPreview.rows || [];
+      const gaps = lastPreview.gaps || [];
+      return rows.find((r) => contactKey(r.deviceTopicKey, r.controlId) === want)
+        || gaps.find((r) => contactKey(r.deviceTopicKey, r.controlId) === want)
+        || null;
+    }
+    function roomFromContacts(contacts) {
+      for (const c of contacts || []) {
+        const s = lastShelvesRows.find((r) => r.deviceTopicKey === c.deviceTopicKey);
+        const ch = s && (s.channels || []).find((x) => x.controlId === pairOpenId(c.controlId));
+        const room = nameRoom(ch && (ch.name || pairName(s, ch)));
+        if (room) return room;
       }
-      left.appendChild(title);
-      left.appendChild(sub);
-      const kind = document.createElement("span");
-      kind.className = "kind";
-      kind.textContent = kindRu(r.kind);
-      li.appendChild(left);
-      li.appendChild(kind);
+      return "";
+    }
+    function roomFromTitle(title) {
+      const known = roomsFromBus();
+      const parts = String(title || "").split(/\s*·\s*/).map((p) => prettyRoom(p)).filter(Boolean);
+      return parts.find((p) => known.includes(p)) || "";
+    }
+    function readyBucket(key, cid, kind) {
+      if (kind === "user") return "scenes";
+      if (isDeskDrive(cid)) return "relays";
+      const f = familyOf({ deviceTopicKey: key });
+      if (f === "light" || f === "buttons" || f === "relays") return f;
+      return "light";
+    }
+    function collectReadyItems() {
+      const items = [];
+      (lastShelvesRows || []).forEach((s) => {
+        visibleChannels(s).forEach((ch) => {
+          const name = pairName(s, ch);
+          const hints = Array.isArray(ch.hints) ? ch.hints : [];
+          const cards = Array.isArray(ch.cards) ? ch.cards : [];
+          if (!name && !hints.length && !cards.length) return;
+          const prev = previewHit(s.deviceTopicKey, ch.controlId);
+          items.push({
+            room: nameRoom(name) || "",
+            bucket: readyBucket(s.deviceTopicKey, ch.controlId),
+            title: name ? prettyContactName(name) : prettyControlId(ch.controlId),
+            sub: (s.label || s.deviceTopicKey) + " · " + prettyControlId(ch.controlId),
+            deviceTopicKey: s.deviceTopicKey,
+            controlId: ch.controlId,
+            cards: cards,
+            hints: hints,
+            isLoad: isDeskLoad(ch.controlId),
+            status: prev && prev.status,
+            pouredName: prev && prev.pouredName,
+          });
+        });
+      });
+      pouredRules.filter((r) => r.kind === "user").forEach((r) => {
+        const c0 = (r.contacts || [])[0] || {};
+        items.push({
+          room: roomFromContacts(r.contacts) || roomFromTitle(r.title) || "",
+          bucket: "scenes",
+          title: r.title || r.id,
+          sub: (r.contacts || []).map(solContactLabel).join(" · ") || "нет контакта на шине",
+          deviceTopicKey: c0.deviceTopicKey,
+          controlId: c0.controlId,
+          contacts: r.contacts,
+          isLoad: false,
+          scene: true,
+        });
+      });
+      return items;
+    }
+    function readyCard(item, room) {
+      const li = document.createElement("li");
+      if (item.deviceTopicKey && item.controlId) {
+        li.dataset.contact = contactKey(item.deviceTopicKey, item.controlId);
+        li.tabIndex = 0;
+        const go = () => jumpToContact(item.deviceTopicKey, item.controlId);
+        li.addEventListener("click", go);
+        li.addEventListener("keydown", (e) => {
+          if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault();
+            go();
+          }
+        });
+      }
+      const cap = document.createElement("div");
+      cap.className = "ch-cap";
+      const ttl = document.createElement("div");
+      ttl.className = "ttl";
+      ttl.textContent = room ? titleUnderRoom(item.title, room) : item.title;
+      const hint = document.createElement("span");
+      hint.className = "hint";
+      const bits = [item.sub];
+      if (item.pouredName && item.title && prettyContactName(item.pouredName) !== prettyContactName(item.title)) {
+        bits.push("на диске " + prettyContactName(item.pouredName));
+      }
+      if (item.status === "blocked") hint.classList.add("orphan");
+      if (item.status === "new_name") bits.push("новое на столе");
+      hint.textContent = bits.filter(Boolean).join(" · ");
+      cap.append(ttl, hint);
+      li.appendChild(cap);
+      if (item.isLoad && (item.status === "no_card" || item.status === "card" || (item.cards && item.cards.length))) {
+        const ru = new Set((item.hints || []).concat(item.cards || []).map((c) => {
+          const hit = CARDS.find((x) => x.id === c || x.ru === c);
+          return hit ? hit.ru : c;
+        }));
+        const selected = new Set(exclusiveCards(CARDS.filter((c) => ru.has(c.ru) || (item.cards || []).includes(c.id)).map((c) => c.id)));
+        if ((item.cards || []).length) {
+          exclusiveCards(item.cards).forEach((id) => selected.add(id));
+        }
+        const chips = document.createElement("div");
+        chips.className = "chips" + (selected.size === 0 ? " need" : "");
+        CARDS.forEach((card) => {
+          const btn = document.createElement("button");
+          btn.type = "button";
+          btn.className = "chip";
+          btn.dataset.card = card.id;
+          btn.textContent = card.ru;
+          btn.setAttribute("aria-pressed", selected.has(card.id) ? "true" : "false");
+          btn.addEventListener("click", (e) => {
+            e.stopPropagation();
+            toggleDeskCard(selected, card.id);
+            paintChips(chips, selected);
+            chips.classList.toggle("need", selected.size === 0);
+            saveCards(item.deviceTopicKey, item.controlId, [...selected]).then(() => {
+              fetch("/runtime/mqtt-scan").then((res) => res.json()).then((j) => {
+                if (j.ok && j.shelves) showShelves(j);
+              }).catch(() => {});
+            });
+          });
+          chips.appendChild(btn);
+        });
+        li.appendChild(chips);
+      }
       return li;
     }
-    function renderPoured() {
-      const ul = $("poured");
-      const marksUl = $("pouredMarks");
-      const wrap = $("pouredMarksWrap");
-      ul.innerHTML = "";
-      marksUl.innerHTML = "";
-      const scenarios = pouredRules.filter((r) => r.kind !== "marking");
-      const names = pouredRules.filter((r) => r.kind === "marking");
-      $("n-poured").textContent = scenarios.length || "";
-      if (!pouredRules.length) {
-        wrap.hidden = true;
+    function renderReady() {
+      const box = $("ready");
+      if (!box) return;
+      box.replaceChildren();
+      const items = collectReadyItems();
+      const rooms = [];
+      const known = roomsFromBus();
+      known.forEach((r) => rooms.push(r));
+      if (items.some((i) => !i.room)) rooms.push("");
+      rooms.forEach((room) => {
+        const mine = items.filter((i) => (i.room || "") === room);
+        if (!mine.length) return;
+        const h = document.createElement("p");
+        h.className = "roomh";
+        h.textContent = room || "Без комнаты";
+        box.appendChild(h);
+        READY_BUCKETS.forEach((b) => {
+          const chunk = mine.filter((i) => i.bucket === b.id);
+          if (!chunk.length) return;
+          const sech = document.createElement("p");
+          sech.className = "sech";
+          sech.textContent = b.ru;
+          box.appendChild(sech);
+          const ul = document.createElement("ul");
+          ul.className = "channels";
+          chunk.forEach((i) => ul.appendChild(readyCard(i, room)));
+          box.appendChild(ul);
+        });
+      });
+      if (!items.length) {
         const empty = document.createElement("p");
         empty.className = "empty";
-        empty.textContent = "На диске пока нет user-правил.";
-        ul.appendChild(empty);
-        return;
+        empty.textContent = "На столе и на диске пока пусто.";
+        box.appendChild(empty);
       }
-      appendRoomList(ul, scenarios, (r) => prettyRoom(String(r.title || "").split(/\s*·\s*/)[1] || ""), pouredRow);
-      wrap.hidden = !names.length;
-      $("pouredMarksSum").textContent = names.length + " имён из разметки";
-      appendRoomList(marksUl, names, (r) => prettyRoom(String(r.title || "").split(/\s*·\s*/)[0] || ""), pouredRow);
+      const scenes = pouredRules.filter((r) => r.kind === "user").length;
+      const namedRooms = rooms.filter((r) => r && items.some((i) => i.room === r)).length;
+      $("n-poured").textContent = namedRooms || scenes || "";
+    }
+    function renderPoured() {
+      const wrap = $("pouredMarksWrap");
+      if (wrap) wrap.hidden = true;
+      renderReady();
       stampDiskScenes();
     }
     function contactPretty(c) {
