@@ -244,6 +244,7 @@ export function handleRuntimeDeskPourPreview(_req, res) {
     ok: true,
     ...out,
     canPour: gate.canPour,
+    canRepair: gate.canRepair,
     reason: gate.reason,
   });
 }
