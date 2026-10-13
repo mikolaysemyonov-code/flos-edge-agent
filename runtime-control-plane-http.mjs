@@ -8,6 +8,7 @@ import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { buildRulesInventory } from "./runtime-rules-inventory.mjs";
+import { listReleaseSummaries, readRelease, recordRelease } from "./runtime-desk-releases.mjs";
 import {
   handleRuntimeDeskMarking,
   handleRuntimeDeskPourPreview,
@@ -137,12 +138,14 @@ export function backupCurrentStateBeforeApply() {
   const revisionId = readAppliedRevisionId();
   const files = listIntegratorRuleFiles();
   if (files.length === 0 && !revisionId) return;
-  saveBackupManifest({
+  const manifest = {
     revisionId: revisionId ?? "unknown",
     deployMode: files.length > 1 ? "shards" : "monolith",
     savedAt: new Date().toISOString(),
     files,
-  });
+  };
+  saveBackupManifest(manifest);
+  recordRelease(manifest);
 }
 
 export function rollbackToPreviousBackup() {
@@ -451,12 +454,45 @@ export async function handleRuntimeApply(req, res) {
   }
 }
 
+export function handleRuntimeReleases(_req, res) {
+  const files = listIntegratorRuleFiles();
+  const revisionId = readAppliedRevisionId();
+  if (revisionId && files.length) {
+    recordRelease(
+      {
+        revisionId,
+        deployMode: files.length > 1 ? "shards" : "monolith",
+        savedAt: new Date().toISOString(),
+        files,
+      },
+      { replace: false },
+    );
+  }
+  const pushes = listReleaseSummaries(revisionId);
+  jsonWrite(res, 200, {
+    ok: true,
+    canPour: false,
+    branch: "main",
+    head: revisionId || "",
+    currentId: revisionId || "",
+    pushes: pushes,
+    releases: pushes,
+  });
+}
+
 export async function handleRuntimeRollback(req, res) {
   if (!authorizeRuntimeRequest(req)) {
     jsonWrite(res, 401, { status: "blocked", reasons: ["AUTH: invalid or missing bearer token"] });
     return;
   }
   try {
+    const url = new URL(req.url || "/runtime/rollback", "http://local");
+    const want = (url.searchParams.get("revisionId") || "").trim();
+    if (want) {
+      const hit = readRelease(want);
+      if (!hit?.files?.length) throw new Error("No snapshot for that revision");
+      saveBackupManifest(hit);
+    }
     const result = rollbackToPreviousBackup();
     console.log(
       `[runtime-control-plane] rollback revision=${result.appliedRevisionId} mode=${result.deployMode}`,
@@ -487,6 +523,10 @@ export function runtimeHttpPathHandler(req, res) {
   }
   if (method === "GET" && urlPath === "/runtime/desk-poured") {
     handleRuntimeDeskPoured(req, res);
+    return true;
+  }
+  if (method === "GET" && urlPath === "/runtime/releases") {
+    handleRuntimeReleases(req, res);
     return true;
   }
   if (method === "GET" && urlPath === "/runtime/desk-pour-preview") {

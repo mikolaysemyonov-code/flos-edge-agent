@@ -19,6 +19,7 @@
     let roomFilter = "";
     let openMod = "";
     let pouredPane = "mark";
+    let lastReleases = [];
     let openSceneId = "";
     let openContact = "";
     let wantButtonFocus = false;
@@ -747,9 +748,61 @@
       return items;
     }
     function paneItems(items) {
+      if (pouredPane === "hist") return [];
       if (pouredPane === "rules") return items.filter((i) => i.scene);
       if (pouredPane === "send") return items.filter((i) => pourLane(i) === "send");
       return items.filter((i) => !i.scene);
+    }
+    function relWhen(iso) {
+      const d = new Date(iso);
+      if (Number.isNaN(d.getTime())) return "";
+      const p = (n) => (n < 10 ? "0" : "") + n;
+      return p(d.getDate()) + "." + p(d.getMonth() + 1) + " " + p(d.getHours()) + ":" + p(d.getMinutes());
+    }
+    function renderHistory(box) {
+      if (!lastReleases.length) {
+        const empty = document.createElement("p");
+        empty.className = "empty";
+        empty.textContent = "На main пока HEAD на диске. Следующая заливка — первый пуш.";
+        box.appendChild(empty);
+        return;
+      }
+      const ul = document.createElement("ul");
+      ul.className = "channels";
+      lastReleases.forEach((rel) => {
+        const li = document.createElement("li");
+        const cap = document.createElement("div");
+        cap.className = "ch-cap";
+        const top = document.createElement("div");
+        top.className = "vtop";
+        const left = document.createElement("div");
+        const ttl = document.createElement("div");
+        ttl.className = "ttl";
+        ttl.textContent = String(rel.revisionId || "");
+        const hint = document.createElement("span");
+        hint.className = "hint";
+        const n = rel.fileCount || (rel.files || []).length;
+        const parent = rel.parentId ? "parent " + String(rel.parentId).slice(0, 12) : "";
+        hint.textContent = [relWhen(rel.savedAt), parent, n ? n + " файл." : ""].filter(Boolean).join(" · ");
+        left.append(ttl, hint);
+        const st = document.createElement("span");
+        st.className = "st" + (rel.current ? " ok" : "");
+        st.textContent = rel.current ? "HEAD · main" : "push";
+        top.append(left, st);
+        cap.appendChild(top);
+        li.appendChild(cap);
+        if (!rel.current) {
+          const go = document.createElement("button");
+          go.type = "button";
+          go.className = "ghost";
+          go.disabled = true;
+          go.textContent = "checkout";
+          go.title = "На этот пуш. Откроем вместе с заливкой.";
+          li.appendChild(go);
+        }
+        ul.appendChild(li);
+      });
+      box.appendChild(ul);
     }
     function closeScene() {
       if (!openSceneId) return;
@@ -870,6 +923,7 @@
         { id: "mark", ru: "Разметка" },
         { id: "rules", ru: "Сценарии" },
         { id: "send", ru: "Новое" + (sendN ? " · " + sendN : "") },
+        { id: "hist", ru: "main" + (lastReleases.length ? " · " + lastReleases.length : "") },
       ];
       if (!tabs.some((t) => t.id === pouredPane)) pouredPane = "mark";
       bar.hidden = pouredOpen();
@@ -1146,6 +1200,15 @@
         renderPouredTabs();
       }
       setPouredChrome(false);
+      if (pouredPane === "hist") {
+        renderHistory(box);
+        const head = $("previewHead");
+        if (head) {
+          head.style.color = "";
+          head.textContent = "Ветка main. Залить = пуш. checkout на пуш откроем вместе с заливкой.";
+        }
+        return;
+      }
       const items = paneItems(all);
       function paintItems(list) {
         const rooms = roomsFromBus().slice();
@@ -2336,11 +2399,21 @@
         $("pouredHead").textContent = (j.ruleCount || pouredRules.length) + " правил" +
           (j.revisionId ? " · " + String(j.revisionId).slice(0, 12) : "") +
           (files ? " · " + files : "");
+        await loadReleases();
         renderPoured();
         loadPreview();
       } catch (e) {
         $("pouredHead").style.color = "rgb(var(--bad))";
         $("pouredHead").textContent = String(e.message || e);
+      }
+    }
+    async function loadReleases() {
+      try {
+        const r = await fetch("/runtime/releases");
+        const j = await r.json();
+        if (j.ok) lastReleases = j.pushes || j.releases || [];
+      } catch (_) {
+        lastReleases = lastReleases || [];
       }
     }
     async function loadLast() {
