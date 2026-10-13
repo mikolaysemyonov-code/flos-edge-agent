@@ -833,12 +833,12 @@
         top.append(left, st);
         cap.appendChild(top);
         li.appendChild(cap);
-        if (!rel.current && canPourDesk) {
+        if (!rel.current) {
           const go = document.createElement("button");
           go.type = "button";
           go.className = "ghost";
           go.textContent = "checkout";
-          go.title = "Откат на этот пуш (прячет MQTT-призраки FORM LOGIC OS)";
+          go.title = "Откат на этот пуш + спрятать MQTT-призраки FORM LOGIC OS";
           go.addEventListener("click", () => {
             go.disabled = true;
             fetch("/runtime/rollback?revisionId=" + encodeURIComponent(rel.revisionId), { method: "POST" })
@@ -1001,7 +1001,14 @@
         bar.appendChild(b);
       });
       const wrap = $("pourWrap");
-      if (wrap) wrap.hidden = pouredPane !== "send" || pouredOpen();
+      if (wrap) {
+        const showPour = (pouredPane === "send" || pouredPane === "hist") && !pouredOpen();
+        wrap.hidden = !showPour;
+        $("pour").textContent = pouredPane === "hist" ? "Починить · пуш" : "Залить · пуш";
+        $("pour").title = pouredPane === "hist"
+          ? "Перезалить имена со стола и спрятать дубли/призраки FORM LOGIC OS"
+          : (canPourDesk ? "Пуш на main: имена и типовые" : ($("pour").title || ""));
+      }
       $("n-poured").textContent = diskN || "";
     }
     function mergeContactRows(base, extra) {
@@ -1265,8 +1272,8 @@
         if (head) {
           head.style.color = "";
           head.textContent = canPourDesk
-            ? "main · HEAD сверху. checkout — откат на пуш (без перемешивания)."
-            : "main · HEAD сверху. Стрелка — к разметке.";
+            ? "main · HEAD сверху. checkout или «Починить · пуш». Стрелка — к разметке."
+            : "main · HEAD сверху. checkout всегда. Стрелка — к разметке.";
         }
         return;
       }

@@ -8,11 +8,17 @@ import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { buildRulesInventory } from "./runtime-rules-inventory.mjs";
-import { filesSavedAt, listReleaseSummaries, readRelease, recordRelease } from "./runtime-desk-releases.mjs";
 import {
-  appendFormLogicOsStaleHide,
+  filesSavedAt,
+  listReleaseSummaries,
+  readRelease,
+  readReleaseRing,
+  recordRelease,
+} from "./runtime-desk-releases.mjs";
+import {
+  collectFlosIdsFromReleaseRing,
   extractFormLogicOsCellIds,
-  staleGhostIds,
+  prepareCoreWithStaleHide,
 } from "./runtime-desk-pour-stale.mjs";
 import {
   buildDeskPourPackage,
@@ -161,19 +167,20 @@ export function rollbackToPreviousBackup() {
   const deployDir = wbRulesDeployDir();
   const beforeCore = listIntegratorRuleFiles().find((f) => f.filename === "00_core.js")?.content || "";
   const beforeIds = extractFormLogicOsCellIds(beforeCore);
+  const ringIds = collectFlosIdsFromReleaseRing(readReleaseRing());
   const keep = [];
   let hiddenGhosts = 0;
   for (const file of manifest.files) {
     validateShardFilename(file.filename);
     let content = file.content;
     if (file.filename === "00_core.js") {
-      const nextIds = extractFormLogicOsCellIds(content);
-      const ghosts = staleGhostIds(beforeIds, nextIds);
-      if (ghosts.length) {
-        const hid = appendFormLogicOsStaleHide(content, ghosts);
-        content = hid.content;
-        hiddenGhosts = hid.ghostCount;
-      }
+      const prepared = prepareCoreWithStaleHide(content, {
+        beforeIds,
+        ringIds,
+        persist: true,
+      });
+      content = prepared.content;
+      hiddenGhosts = prepared.ghostCount;
     }
     atomicWriteFile(path.join(deployDir, file.filename), content);
     keep.push(file.filename);
@@ -494,6 +501,8 @@ export function handleRuntimeReleases(_req, res) {
   jsonWrite(res, 200, {
     ok: true,
     canPour: gate.canPour === true,
+    canRepair: gate.canRepair === true,
+    reason: gate.reason || "",
     branch: "main",
     head: revisionId || "",
     currentId: revisionId || "",

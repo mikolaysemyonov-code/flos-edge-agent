@@ -13,8 +13,12 @@ import {
   readPouredDeskSnapshot,
 } from "./runtime-desk-rules-marks.mjs";
 import { mergeDeskNamesIntoCore } from "./runtime-desk-pour-core.mjs";
-import { appendFormLogicOsStaleHide } from "./runtime-desk-pour-stale.mjs";
+import {
+  collectFlosIdsFromReleaseRing,
+  prepareCoreWithStaleHide,
+} from "./runtime-desk-pour-stale.mjs";
 import { mergeDeskSolutionsIntoUser, supportedDeskSolution } from "./runtime-desk-pour-user.mjs";
+import { readReleaseRing } from "./runtime-desk-releases.mjs";
 
 function deployDir() {
   return (
@@ -48,9 +52,9 @@ function namedLoadsFromDesk() {
       const name = typeof ch?.name === "string" ? ch.name.trim() : "";
       if (!name) continue;
       const key = liveDeskDeviceKey(deviceTopicKey);
-      const path = key + "/" + String(controlId).trim();
-      if (seenNamePath.has(path)) continue;
-      seenNamePath.add(path);
+      const pathKey = key + "/" + String(controlId).trim();
+      if (seenNamePath.has(pathKey)) continue;
+      seenNamePath.add(pathKey);
       out.push({ deviceTopicKey: key, controlId, name });
     }
   }
@@ -60,6 +64,25 @@ function namedLoadsFromDesk() {
 function fnvRevision(parts) {
   const h = crypto.createHash("sha256").update(parts.join("\n"), "utf8").digest("hex").slice(0, 8);
   return "fnv1a32:" + h;
+}
+
+function buildCoreRepair(coreSrc, named, opts = {}) {
+  const core = mergeDeskNamesIntoCore(coreSrc, named);
+  if (!core.ok) return core;
+  const ringIds = collectFlosIdsFromReleaseRing(readReleaseRing());
+  const prepared = prepareCoreWithStaleHide(core.content, {
+    beforeIds: [...(core.removedIds || [])],
+    ringIds,
+    extraIds: core.removedIds || [],
+    persist: opts.persist === true,
+  });
+  return {
+    ok: true,
+    content: prepared.content,
+    changed: core.changed || prepared.changed || prepared.content !== coreSrc,
+    removedIds: core.removedIds || [],
+    hiddenGhosts: prepared.ghostCount,
+  };
 }
 
 export function assessDeskCanPour(preview) {
@@ -75,16 +98,24 @@ export function assessDeskCanPour(preview) {
   const unsupported = sols.filter((s) => !supportedDeskSolution(s));
   const supported = sols.filter(supportedDeskSolution);
   const diffs = (p.rows || []).filter((r) => r.status === "new_name" || r.status === "name" || r.status === "card");
-  const hasWork = diffs.length > 0 || supported.length > 0;
+  const named = namedLoadsFromDesk();
+  const repair = /form_logic_os/.test(core)
+    ? buildCoreRepair(core, named, { persist: false })
+    : { changed: false, hiddenGhosts: 0 };
+  const canRepair = Boolean(repair.changed || repair.hiddenGhosts);
+  const hasWork = diffs.length > 0 || supported.length > 0 || canRepair;
   if (!hasWork) reasons.push("нечего заливать");
-  if (unsupported.length && !supported.length && !diffs.length) {
+  if (unsupported.length && !supported.length && !diffs.length && !canRepair) {
     reasons.push("дим и прочие карточки — пока из облака");
   }
   const canPour = reasons.length === 0 && blocked === 0 && /form_logic_os/.test(core) && hasWork;
   return {
     canPour,
+    canRepair,
     reason: canPour
-      ? "Готово к пушу на main."
+      ? canRepair && !diffs.length && !supported.length
+        ? "Починить FORM LOGIC OS: убрать дубли и MQTT-призраки."
+        : "Готово к пушу на main."
       : reasons.join(" · ") || "Превью. Диск не трогаем.",
     ready: p.ready,
     rows: p.rows,
@@ -99,32 +130,27 @@ export function buildDeskPourPackage() {
   const coreSrc = readShard("00_core.js");
   const userSrc = readShard("40_rules_user.js") || readShard("40_rules_integrator.js");
   const named = namedLoadsFromDesk();
-  const core = mergeDeskNamesIntoCore(coreSrc, named);
+  const core = buildCoreRepair(coreSrc, named, { persist: true });
   if (!core.ok) return { ok: false, canPour: false, reason: core.error || "core", shards: [] };
-  let coreContent = core.content;
-  if (core.removedIds?.length) {
-    const hid = appendFormLogicOsStaleHide(coreContent, core.removedIds);
-    coreContent = hid.content;
-  }
   const sols = listDeskSolutions().filter(supportedDeskSolution);
   const user = mergeDeskSolutionsIntoUser(userSrc, sols);
-  const coreChanged = core.changed || coreContent !== coreSrc;
-  if (!coreChanged && !user.changed) {
+  if (!core.changed && !user.changed) {
     return { ok: false, canPour: false, reason: "стол уже совпадает с диском", shards: [] };
   }
   const shards = [];
-  if (coreChanged) shards.push({ filename: "00_core.js", content: coreContent });
+  if (core.changed) shards.push({ filename: "00_core.js", content: core.content });
   if (user.changed) shards.push({ filename: "40_rules_user.js", content: user.content });
   const revisionId = fnvRevision(shards.map((s) => s.filename + "\n" + s.content));
   return {
     ok: true,
     canPour: true,
+    canRepair: gate.canRepair,
     reason: gate.reason,
     revisionId,
     loadOrder: shards.map((s) => s.filename),
     shards,
     emittedSolutions: user.emitted,
     namedCount: named.length,
-    hiddenGhosts: core.removedIds?.length || 0,
+    hiddenGhosts: core.hiddenGhosts || 0,
   };
 }
