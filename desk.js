@@ -21,6 +21,7 @@
     let pouredPane = "mark";
     let lastReleases = [];
     let canPourDesk = false;
+    let canRepairDesk = false;
     let openSceneId = "";
     let openContact = "";
     let wantButtonFocus = false;
@@ -277,8 +278,13 @@
       const rows = j.rows || [];
       const gaps = j.gaps || [];
       canPourDesk = j.canPour === true;
-      $("pour").disabled = !canPourDesk;
-      $("pour").title = canPourDesk ? "Пуш на main: имена и типовые (переключение / все выкл)" : (j.reason || "");
+      canRepairDesk = j.canRepair === true || canPourDesk;
+      $("pour").disabled = !(canPourDesk || canRepairDesk);
+      $("pour").title = canPourDesk
+        ? "Пуш на main: имена и типовые (переключение / все выкл)"
+        : canRepairDesk
+          ? "Починить FORM LOGIC OS: спрятать дубли в MQTT (meta.hidden)"
+          : (j.reason || "");
       $("previewHead").style.color = "";
       const ready = j.ready || {};
       const readyBits = [
@@ -2283,6 +2289,8 @@
         if (j.ok) {
           lastReleases = j.pushes || j.releases || [];
           canPourDesk = j.canPour === true;
+          canRepairDesk = j.canRepair === true || canPourDesk;
+          if ($("pour")) $("pour").disabled = !(canPourDesk || canRepairDesk);
         }
       } catch (_) {
         lastReleases = lastReleases || [];
@@ -2300,7 +2308,7 @@
       btn.addEventListener("click", () => setTab(btn.dataset.tab));
     });
     $("pour").addEventListener("click", () => {
-      if (!canPourDesk || $("pour").disabled) return;
+      if ((!canPourDesk && !canRepairDesk) || $("pour").disabled) return;
       const onHist = pouredPane === "hist";
       $("pour").disabled = true;
       $("pour").textContent = onHist ? "Чиню…" : "Лью…";
@@ -2309,7 +2317,7 @@
         .then((j) => {
           $("pour").textContent = onHist ? "Починить · пуш" : "Залить · пуш";
           if (!j.ok) {
-            $("pour").disabled = !canPourDesk;
+            $("pour").disabled = !(canPourDesk || canRepairDesk);
             $("previewHead").style.color = "rgb(var(--bad))";
             $("previewHead").textContent = j.error || j.reason || "Не залил";
             return;
@@ -2328,7 +2336,7 @@
         })
         .catch((e) => {
           $("pour").textContent = onHist ? "Починить · пуш" : "Залить · пуш";
-          $("pour").disabled = !canPourDesk;
+          $("pour").disabled = !(canPourDesk || canRepairDesk);
           $("previewHead").style.color = "rgb(var(--bad))";
           $("previewHead").textContent = String(e.message || e);
         });

@@ -76,6 +76,10 @@ function hidePublishLines(ghostIds, activeIds) {
   const lines = [];
   for (const id of ghosts) {
     const base = `/devices/form_logic_os/controls/${id}`;
+    // JSON meta.hidden — то, что читает homeui; subtopic — запасной канал.
+    lines.push(
+      `    publish(${JSON.stringify(base + "/meta")}, ${JSON.stringify(JSON.stringify({ type: "switch", hidden: true, title: { en: id } }))}, 0, true);`,
+    );
     lines.push(`    publish(${JSON.stringify(base + "/meta/hidden")}, "1", 0, true);`);
     lines.push(`    publish(${JSON.stringify(base + "/meta/error")}, "1", 0, true);`);
   }

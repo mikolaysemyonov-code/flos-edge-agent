@@ -103,24 +103,23 @@ export function assessDeskCanPour(preview) {
   const repair = /form_logic_os/.test(core)
     ? buildCoreRepair(core, named, { persist: false })
     : { changed: false, hiddenGhosts: 0 };
-  // Починить всегда доступен при живом form_logic_os: MQTT-hide даже если диск «совпал».
-  const canRepair = /form_logic_os/.test(core) && blocked === 0;
-  const hasWork = diffs.length > 0 || supported.length > 0 || canRepair;
-  if (!hasWork) reasons.push("нечего заливать");
+  // Починить не зависит от «блоков без имени» — иначе кнопка серая при живых дублях в WB.
+  const canRepair = /form_logic_os/.test(core);
+  const hasPourWork = diffs.length > 0 || supported.length > 0 || Boolean(repair.changed || repair.hiddenGhosts);
+  if (!hasPourWork && !canRepair) reasons.push("нечего заливать");
   if (unsupported.length && !supported.length && !diffs.length && !canRepair) {
     reasons.push("дим и прочие карточки — пока из облака");
   }
-  const canPour = reasons.length === 0 && blocked === 0 && /form_logic_os/.test(core) && hasWork;
+  const canPour = reasons.length === 0 && blocked === 0 && /form_logic_os/.test(core) && hasPourWork;
   return {
     canPour,
     canRepair,
-    reason: canPour
-      ? !diffs.length && !supported.length
-        ? "Починить FORM LOGIC OS: дубли в файле + meta/hidden в MQTT."
-        : repair.changed || repair.hiddenGhosts
-          ? "Готово к пушу на main (с починкой FORM LOGIC OS)."
-          : "Готово к пушу на main."
-      : reasons.join(" · ") || "Превью. Диск не трогаем.",
+    reason: canRepair && (!canPour || blocked > 0)
+      ? "Починить FORM LOGIC OS (JSON meta.hidden в MQTT)" +
+        (blocked > 0 ? " · заливка имён ждёт имена на блоках" : "")
+      : canPour
+        ? "Готово к пушу на main."
+        : reasons.join(" · ") || "Превью. Диск не трогаем.",
     ready: p.ready,
     rows: p.rows,
     gaps: p.gaps,
