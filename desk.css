@@ -162,6 +162,16 @@
     }
     .pair { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.15fr); gap: .35rem; margin-top: .15rem; }
     .pair select.bind { margin-top: 0; }
+    .namebtn {
+      appearance: none; border: 0; background: none; padding: .05rem 0;
+      font: inherit; font-weight: 650; color: inherit; text-align: left;
+      width: 100%; cursor: pointer;
+    }
+    .namebtn.mute { color: var(--mute); font-weight: 500; }
+    .mark { margin-top: .35rem; }
+    .steph { margin: .15rem 0 .2rem; color: var(--mute); font-size: .68rem; }
+    .mark .chips { margin: 0 0 .35rem; }
+    .mark .chip { opacity: .55; color: var(--ink); background: rgb(255 255 255 / .08); }
     .rooms { display: flex; flex-wrap: wrap; gap: .35rem; margin: 0 0 .85rem; }
     .filters { display: flex; flex-wrap: wrap; gap: .35rem; margin: .15rem 0 .85rem; }
     .filters button {

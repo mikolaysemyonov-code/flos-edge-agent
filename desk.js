@@ -8,6 +8,8 @@
     let deskSolutions = [];
     let cardFilter = "Свет";
     let deskRooms = [];
+    let markEdit = "";
+    let markDraft = { room: "", type: "" };
     const LOAD_TYPES = [
       "Световая линия", "Трек", "Точечные", "Люстра", "Подвес", "Потолочный",
       "Бра", "Торшер", "Подсветка", "Подсветка ниши", "Лента",
@@ -807,6 +809,10 @@
       return out;
     }
     function jumpToContact(key, cid) {
+      markEdit = contactKey(key, cid);
+      const shelf = lastShelvesRows.find((r) => r.deviceTopicKey === key);
+      const hit = shelf && (shelf.channels || []).find((x) => x.controlId === cid);
+      markDraft = splitMark(hit && hit.name);
       setTab(familyOf({ deviceTopicKey: key }));
       const want = contactKey(key, cid);
       const go = () => {
@@ -816,7 +822,7 @@
         if (det) det.open = true;
         el.scrollIntoView({ block: "center" });
         el.classList.add("jump");
-        const inp = el.querySelector("select.bind") || el.querySelector("input[type='text']");
+        const inp = el.querySelector(".namebtn") || el.querySelector("select.bind") || el.querySelector("button.chip");
         if (inp) inp.focus();
         setTimeout(() => el.classList.remove("jump"), 1400);
       };
@@ -831,23 +837,41 @@
       const loads = Array.isArray(ch.loads) ? ch.loads.filter(Boolean) : [];
       const isLoad = isDeskLoad(ch.controlId);
       const original = String(ch.name || "").trim();
+      const editing = markEdit === contactKey(s.deviceTopicKey, ch.controlId);
       row.appendChild(knob);
       const grow = document.createElement("div");
-      grow.appendChild(makeMarkPair(s, ch, isLoad));
+      if (editing) grow.appendChild(makeMarkEditor(s, ch, isLoad));
+      else {
+        const nameBtn = document.createElement("button");
+        nameBtn.type = "button";
+        nameBtn.className = "namebtn" + (original ? "" : " mute");
+        nameBtn.textContent = original ? prettyContactName(original) : "Назвать";
+        nameBtn.addEventListener("click", () => {
+          markEdit = contactKey(s.deviceTopicKey, ch.controlId);
+          markDraft = splitMark(original);
+          renderShelves(lastShelvesRows);
+        });
+        grow.appendChild(nameBtn);
+      }
       const selected = new Set(exclusiveCards(Array.isArray(ch.cards) ? ch.cards : []));
       const poured = Array.isArray(ch.hints) && ch.hints.length > 0;
       const buttons = Array.isArray(ch.buttons) ? ch.buttons.filter(Boolean) : [];
       const deskTriggers = isLoad ? triggersBoundTo(s.deviceTopicKey, ch.controlId) : [];
       const diskIds = exclusiveCards(CARDS.filter((c) => (ch.hints || []).includes(c.ru)).map((c) => c.id));
       const deskDiverged = poured && [...selected].sort().join(",") !== diskIds.slice().sort().join(",");
-      if (!isLoad) {
+      if (!isLoad && original && editing) {
         grow.appendChild(makeBindSelect(s, ch, loads));
-        if (!original && (Array.isArray(ch.binds) && ch.binds.length)) {
-          const sub = document.createElement("span");
-          sub.className = "loads orphan";
-          sub.textContent = "комната и тип";
-          grow.appendChild(sub);
-        }
+      } else if (!isLoad && original) {
+        const sub = document.createElement("span");
+        sub.className = "loads";
+        const bind = Array.isArray(ch.binds) && ch.binds[0];
+        sub.textContent = bind ? solContactLabel(bind) : "привязать линию";
+        grow.appendChild(sub);
+      } else if (!isLoad && Array.isArray(ch.binds) && ch.binds.length) {
+        const sub = document.createElement("span");
+        sub.className = "loads orphan";
+        sub.textContent = "сначала комната и тип";
+        grow.appendChild(sub);
       } else if (deskTriggers.length) {
         const sub = document.createElement("button");
         sub.type = "button";
@@ -920,95 +944,96 @@
       });
       return [...set].sort((a, b) => a.localeCompare(b, "ru"));
     }
-    function fillRoomTypeSelects(roomSel, typeSel, types, current, typePh) {
-      const rooms = roomsFromBus();
-      roomSel.replaceChildren();
-      const z = document.createElement("option");
-      z.value = "";
-      z.textContent = "Комната";
-      roomSel.appendChild(z);
-      rooms.forEach((r) => {
-        const o = document.createElement("option");
-        o.value = r;
-        o.textContent = r;
-        roomSel.appendChild(o);
+    function makeChipBar(values, selected, onPick) {
+      const bar = document.createElement("div");
+      bar.className = "chips";
+      values.forEach((v) => {
+        const b = document.createElement("button");
+        b.type = "button";
+        b.className = "chip";
+        b.textContent = v;
+        b.setAttribute("aria-pressed", v === selected ? "true" : "false");
+        b.addEventListener("click", () => onPick(v));
+        bar.appendChild(b);
       });
-      if (current.room && !rooms.includes(current.room)) {
-        const o = document.createElement("option");
-        o.value = current.room;
-        o.textContent = current.room;
-        roomSel.appendChild(o);
-      }
-      const add = document.createElement("option");
-      add.value = "__add__";
-      add.textContent = "+ комната";
-      roomSel.appendChild(add);
-      roomSel.value = current.room || "";
-      const kinds = [...types];
-      if (current.type && !kinds.includes(current.type)) kinds.push(current.type);
-      typeSel.replaceChildren();
-      const zt = document.createElement("option");
-      zt.value = "";
-      zt.textContent = typePh || "Тип";
-      typeSel.appendChild(zt);
-      kinds.forEach((t) => {
-        const o = document.createElement("option");
-        o.value = t;
-        o.textContent = t;
-        typeSel.appendChild(o);
-      });
-      typeSel.value = current.type || "";
+      return bar;
     }
-    function makeMarkPair(s, ch, isLoad) {
+    function makeMarkEditor(s, ch, isLoad) {
       const box = document.createElement("div");
-      box.className = "pair";
-      const roomSel = document.createElement("select");
-      roomSel.className = "bind";
-      roomSel.setAttribute("aria-label", "Комната");
-      const typeSel = document.createElement("select");
-      typeSel.className = "bind";
-      typeSel.setAttribute("aria-label", isDeskDrive(ch.controlId) ? "Подпись" : isDeskRelay(ch.controlId) ? "Тип реле" : isLoad ? "Тип линии" : "Тип входа");
-      const current = splitMark(ch.name);
-      const typePh = isDeskDrive(ch.controlId) ? "Подпись" : "Тип";
-      fillRoomTypeSelects(roomSel, typeSel, markTypes(ch, isLoad), current, typePh);
+      box.className = "mark";
+      const saved = splitMark(ch.name);
+      const current = {
+        room: markDraft.room || saved.room,
+        type: markDraft.type || saved.type,
+      };
       const persistName = (next) => {
         const jobs = [saveName(s.deviceTopicKey, ch.controlId, next)];
         const twin = isDeskDrive(ch.controlId) ? driveTwin(ch.controlId) : "";
         if (twin) jobs.push(saveName(s.deviceTopicKey, twin, next));
         return Promise.all(jobs).then(() => loadLast());
       };
-      const persist = () => {
-        if (roomSel.value === "__add__") {
-          const typed = window.prompt("Комната");
-          roomSel.value = current.room || "";
-          if (!typed || !typed.trim()) return;
-          fetch("/runtime/desk-marking", {
-            method: "PUT",
-            headers: { "content-type": "application/json" },
-            body: JSON.stringify({ room: typed.trim() }),
-          }).then((r) => r.json()).then((j) => {
-            if (!j.ok) return;
-            deskRooms = j.rooms || deskRooms;
-            const next = composeMark(prettyRoom(typed), typeSel.value);
-            if (next) persistName(next);
-            else {
-              renderRoomBars();
-              fillRoomTypeSelects(roomSel, typeSel, markTypes(ch, isLoad), {
-                room: prettyRoom(typed),
-                type: typeSel.value,
-              }, typePh);
-            }
-          });
+      const commit = () => {
+        const next = composeMark(markDraft.room || current.room, markDraft.type || current.type);
+        if (!next || next === String(ch.name || "").trim()) {
+          renderShelves(lastShelvesRows);
           return;
         }
-        const next = composeMark(roomSel.value, typeSel.value);
-        if (next === String(ch.name || "").trim()) return;
-        if (!next && !String(ch.name || "").trim()) return;
         persistName(next).catch(() => {});
       };
-      roomSel.addEventListener("change", persist);
-      typeSel.addEventListener("change", persist);
-      box.append(roomSel, typeSel);
+      const roomH = document.createElement("p");
+      roomH.className = "steph";
+      roomH.textContent = "1 · Комната";
+      box.appendChild(roomH);
+      const rooms = roomsFromBus();
+      const roomBar = makeChipBar(rooms, current.room, (v) => {
+        markDraft.room = v;
+        if (markDraft.type || current.type) commit();
+        else renderShelves(lastShelvesRows);
+      });
+      const add = document.createElement("button");
+      add.type = "button";
+      add.className = "chip";
+      add.textContent = "+ комната";
+      add.addEventListener("click", () => {
+        const typed = window.prompt("Комната");
+        if (!typed || !typed.trim()) return;
+        fetch("/runtime/desk-marking", {
+          method: "PUT",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ room: typed.trim() }),
+        }).then((r) => r.json()).then((j) => {
+          if (!j.ok) return;
+          deskRooms = j.rooms || deskRooms;
+          markDraft.room = prettyRoom(typed);
+          if (markDraft.type || current.type) commit();
+          else {
+            renderRoomBars();
+            renderShelves(lastShelvesRows);
+          }
+        });
+      });
+      roomBar.appendChild(add);
+      box.appendChild(roomBar);
+      const typeH = document.createElement("p");
+      typeH.className = "steph";
+      typeH.textContent = isDeskDrive(ch.controlId) ? "2 · Подпись" : isLoad ? "2 · Тип" : "2 · Тип входа";
+      box.appendChild(typeH);
+      const types = [...markTypes(ch, isLoad)];
+      if (current.type && !types.includes(current.type)) types.push(current.type);
+      box.appendChild(makeChipBar(types, current.type, (v) => {
+        markDraft.type = v;
+        commit();
+      }));
+      const done = document.createElement("button");
+      done.type = "button";
+      done.className = "loads";
+      done.textContent = "Готово";
+      done.addEventListener("click", () => {
+        markEdit = "";
+        markDraft = { room: "", type: "" };
+        renderShelves(lastShelvesRows);
+      });
+      box.appendChild(done);
       return box;
     }
     function renderRoomBars() {
@@ -1075,7 +1100,15 @@
       if (d) return Number(d[1]) * 2 - (d[2].toLowerCase() === "open" ? 1.5 : 1.4);
       return Number((/(\d+)\s*$/.exec(c) || [])[1] || 0);
     }
-    function appendNamedChannels(ul, s, channels) {
+    function channelBusy(s, ch) {
+      if (markEdit === contactKey(s.deviceTopicKey, ch.controlId)) return true;
+      if (ch.name) return true;
+      if (Array.isArray(ch.hints) && ch.hints.length) return true;
+      if (Array.isArray(ch.cards) && ch.cards.length) return true;
+      if (Array.isArray(ch.binds) && ch.binds.length) return true;
+      return false;
+    }
+    function appendChannelBlock(ul, s, channels) {
       const minCh = {};
       channels.forEach((ch) => {
         const room = channelRoom(ch);
@@ -1103,6 +1136,25 @@
         }
         ul.appendChild(channelRow(s, ch, room));
       });
+    }
+    function appendNamedChannels(ul, s, channels) {
+      const live = [];
+      const idle = [];
+      channels.forEach((ch) => (channelBusy(s, ch) ? live : idle).push(ch));
+      appendChannelBlock(ul, s, live);
+      if (!idle.length) return;
+      const det = document.createElement("details");
+      det.className = "more";
+      const sum = document.createElement("summary");
+      sum.textContent = idle.length === 1 ? "ещё 1 без имени" : "ещё " + idle.length + " без имени";
+      det.appendChild(sum);
+      const wrap = document.createElement("ul");
+      wrap.className = "channels";
+      appendChannelBlock(wrap, s, idle);
+      det.appendChild(wrap);
+      const hold = document.createElement("li");
+      hold.appendChild(det);
+      ul.appendChild(hold);
     }
     function moduleCard(s) {
       const channels = s.channels || [];
