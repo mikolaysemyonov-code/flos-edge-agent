@@ -1,8 +1,7 @@
 /**
  * WB не удаляет ячейки virtual device при сужении defineVirtualDevice.
- * Прячем MQTT-призраки: meta/error = 1.
- * ever-seen = кольцо пушей ∪ прошлые применения — иначе checkout не видит ячейки
- * от промежуточного пуша, которых уже нет в текущем файле на диске.
+ * Прячем MQTT-призраки: meta/hidden = 1 (не meta/error — error только красит, UI остаётся).
+ * ever-seen = кольцо пушей ∪ прошлые применения.
  */
 import fs from "node:fs";
 import path from "node:path";
@@ -71,15 +70,28 @@ export function stripStaleHideBlock(src) {
     .replace(/\n{3,}/g, "\n\n");
 }
 
-/** @param {string} src @param {string[]} ghostIds */
-export function appendFormLogicOsStaleHide(src, ghostIds) {
+function hidePublishLines(ghostIds, activeIds) {
   const ghosts = [...new Set((ghostIds || []).map((id) => String(id || "").trim()).filter(Boolean))].sort();
+  const active = [...new Set((activeIds || []).map((id) => String(id || "").trim()).filter(Boolean))].sort();
+  const lines = [];
+  for (const id of ghosts) {
+    const base = `/devices/form_logic_os/controls/${id}`;
+    lines.push(`    publish(${JSON.stringify(base + "/meta/hidden")}, "1", 0, true);`);
+    lines.push(`    publish(${JSON.stringify(base + "/meta/error")}, "1", 0, true);`);
+  }
+  for (const id of active) {
+    const base = `/devices/form_logic_os/controls/${id}`;
+    lines.push(`    publish(${JSON.stringify(base + "/meta/hidden")}, "0", 0, true);`);
+    lines.push(`    publish(${JSON.stringify(base + "/meta/error")}, "", 0, true);`);
+  }
+  return { lines, ghostCount: ghosts.length };
+}
+
+/** @param {string} src @param {string[]} ghostIds @param {string[]} [activeIds] */
+export function appendFormLogicOsStaleHide(src, ghostIds, activeIds = []) {
+  const { lines, ghostCount } = hidePublishLines(ghostIds, activeIds);
   let text = stripStaleHideBlock(src);
-  if (!ghosts.length) return { content: text, changed: text !== String(src || ""), ghostCount: 0 };
-  const lines = ghosts.map(
-    (id) =>
-      `    publish(${JSON.stringify(`/devices/form_logic_os/controls/${id}/meta/error`)}, "1", 0, true);`,
-  );
+  if (!lines.length) return { content: text, changed: text !== String(src || ""), ghostCount: 0 };
   const block = [
     "",
     "// FL OS — hide stale virtual cells after remapping (MQTT retained ghosts)",
@@ -93,7 +105,7 @@ export function appendFormLogicOsStaleHide(src, ghostIds) {
     "})();",
     "",
   ].join("\n");
-  return { content: text.trimEnd() + "\n" + block, changed: true, ghostCount: ghosts.length };
+  return { content: text.trimEnd() + "\n" + block, changed: true, ghostCount };
 }
 
 /** previousIds \ nextIds — что исчезло из cells и должно скрыться. */
@@ -118,6 +130,6 @@ export function prepareCoreWithStaleHide(coreSrc, known = {}) {
   ];
   if (known.persist !== false) saveEverFlosIds(ever);
   const ghosts = staleGhostIds(ever, activeIds);
-  const hid = appendFormLogicOsStaleHide(coreSrc, ghosts);
+  const hid = appendFormLogicOsStaleHide(coreSrc, ghosts, activeIds);
   return { content: hid.content, ghostCount: hid.ghostCount, activeIds, changed: hid.changed };
 }

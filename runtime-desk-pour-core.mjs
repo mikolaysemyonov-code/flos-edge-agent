@@ -134,6 +134,35 @@ function pathQuotedIn(src, path) {
   return src.includes(`"${path}"`) || src.includes(`'${path}'`);
 }
 
+function removeCellAndRules(text, id) {
+  const idEsc = id.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const blockRe = new RegExp(
+    `defineRule\\s*\\(\\s*['"]fl_rt_(?:cmd|mir)_${idEsc}['"][\\s\\S]*?(?=defineRule\\s*\\(|$)`,
+    "g",
+  );
+  let next = text.replace(blockRe, "");
+  const cellRe = new RegExp(`\\s*${esc(id).replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\s*:\\s*\\{[^}]*\\},?\\n?`);
+  const briRe = new RegExp(
+    `\\s*${esc(id + "_bri").replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\s*:\\s*\\{[^}]*\\},?\\n?`,
+  );
+  next = next.replace(cellRe, "\n").replace(briRe, "\n");
+  return next;
+}
+
+/** Close-близнец шторы даёт второй title с тем же именем — выкидываем. */
+export function stripDriveCloseBridges(src) {
+  let text = String(src || "");
+  const removedIds = [];
+  for (const m of text.matchAll(/defineRule\s*\(\s*['"]fl_rt_cmd_([^'"]+)['"]([\s\S]*?)(?=defineRule\s*\(|$)/g)) {
+    const id = m[1];
+    const body = m[2] || "";
+    if (!id || !/["']wb-[^"']+\/(?:Curtain|Actuator) \d+ Close["']/.test(body)) continue;
+    text = removeCellAndRules(text, id);
+    removedIds.push(id, id + "_bri");
+  }
+  return { content: text.replace(/\n{3,}/g, "\n\n"), changed: removedIds.length > 0, removedIds };
+}
+
 /**
  * Убрать desk_* мосты, если та же физика уже есть у «облачной» ячейки.
  * Иначе после пуша в FORM LOGIC OS два одинаковых title.
@@ -156,16 +185,41 @@ export function stripDuplicateDeskBridges(src) {
     const withoutDesk = text.replace(blockRe, "");
     const stillHas = bases.some((p) => pathQuotedIn(withoutDesk, p));
     if (!stillHas) continue;
-    text = withoutDesk;
-    const cellRe = new RegExp(`\\s*${esc(id).replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\s*:\\s*\\{[^}]*\\},?\\n?`);
-    const briRe = new RegExp(
-      `\\s*${esc(id + "_bri").replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\s*:\\s*\\{[^}]*\\},?\\n?`,
-    );
-    text = text.replace(cellRe, "\n").replace(briRe, "\n");
+    text = removeCellAndRules(text, id);
     removedIds.push(id, id + "_bri");
     changed = true;
   }
   return { content: text.replace(/\n{3,}/g, "\n\n"), changed, removedIds };
+}
+
+/**
+ * Если на один phys path два fl_rt_cmd — оставить не-desk (или первый), остальное выкинуть.
+ */
+export function stripDuplicatePhysPathBridges(src) {
+  let text = String(src || "");
+  const byPath = new Map();
+  for (const m of text.matchAll(/defineRule\s*\(\s*['"]fl_rt_cmd_([^'"]+)['"]([\s\S]*?)(?=defineRule\s*\(|$)/g)) {
+    const id = m[1];
+    const paths = [...m[2].matchAll(/["'](wb-[^"']+\/[^"']+)["']/g)].map((x) =>
+      x[1].replace(/ Brightness$/i, ""),
+    );
+    for (const p of paths) {
+      if (!byPath.has(p)) byPath.set(p, []);
+      byPath.get(p).push(id);
+    }
+  }
+  const removedIds = [];
+  for (const ids of byPath.values()) {
+    const uniq = [...new Set(ids)];
+    if (uniq.length < 2) continue;
+    const keep = uniq.find((id) => !id.startsWith("d_")) || uniq[0];
+    for (const id of uniq) {
+      if (id === keep) continue;
+      text = removeCellAndRules(text, id);
+      removedIds.push(id, id + "_bri");
+    }
+  }
+  return { content: text.replace(/\n{3,}/g, "\n\n"), changed: removedIds.length > 0, removedIds };
 }
 
 /** @param {string} coreSrc @param {{deviceTopicKey:string,controlId:string,name:string}[]} named */
@@ -208,11 +262,13 @@ export function mergeDeskNamesIntoCore(coreSrc, named) {
     src = withCells !== src ? withCells : src + "\n";
   }
   if (addRules.length) src = src.trimEnd() + "\n\n" + addRules.join("\n") + "\n";
-  const stripped = stripDuplicateDeskBridges(src);
-  if (stripped.changed) {
-    src = stripped.content;
-    removedIds.push(...(stripped.removedIds || []));
-    changed = true;
+  for (const step of [stripDriveCloseBridges, stripDuplicateDeskBridges, stripDuplicatePhysPathBridges]) {
+    const stripped = step(src);
+    if (stripped.changed) {
+      src = stripped.content;
+      removedIds.push(...(stripped.removedIds || []));
+      changed = true;
+    }
   }
   return { ok: true, content: src, changed, removedIds };
 }
