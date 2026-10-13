@@ -11,6 +11,7 @@
     let markEdit = "";
     let markDraft = { room: "", type: "" };
     let roomFilter = "";
+    let openMod = "";
     const LOAD_TYPES = [
       "Световая линия", "Трек", "Точечные", "Люстра", "Подвес", "Потолочный",
       "Бра", "Торшер", "Подсветка", "Подсветка ниши", "Лента",
@@ -827,11 +828,13 @@
       return out;
     }
     function jumpToContact(key, cid) {
+      openMod = key;
       markEdit = contactKey(key, cid);
       const shelf = lastShelvesRows.find((r) => r.deviceTopicKey === key);
       const hit = shelf && (shelf.channels || []).find((x) => x.controlId === cid);
       markDraft = splitMark(hit && hit.name);
       setTab(familyOf({ deviceTopicKey: key }));
+      renderShelves(lastShelvesRows);
       const want = contactKey(key, cid);
       const go = () => {
         const el = [...document.querySelectorAll("[data-contact]")].find((n) => n.dataset.contact === want);
@@ -925,20 +928,6 @@
       }
       row.appendChild(grow);
       return row;
-    }
-    function ruIdleLight(n) {
-      const n10 = n % 10;
-      const n100 = n % 100;
-      if (n10 === 1 && n100 !== 11) return n + " модуль не в заливке";
-      if (n10 >= 2 && n10 <= 4 && (n100 < 12 || n100 > 14)) return n + " модуля не в заливке";
-      return n + " модулей не в заливке";
-    }
-    function ruIdleButtons(n) {
-      const n10 = n % 10;
-      const n100 = n % 100;
-      if (n10 === 1 && n100 !== 11) return n + " модуль без кнопок в заливке";
-      if (n10 >= 2 && n10 <= 4 && (n100 < 12 || n100 > 14)) return n + " модуля без кнопок в заливке";
-      return n + " модулей без кнопок в заливке";
     }
     function prettyRoom(s) {
       const t = String(s || "").trim();
@@ -1107,14 +1096,6 @@
       if (d) return Number(d[1]) * 2 - (d[2].toLowerCase() === "open" ? 1.5 : 1.4);
       return Number((/(\d+)\s*$/.exec(c) || [])[1] || 0);
     }
-    function channelBusy(s, ch) {
-      if (markEdit === contactKey(s.deviceTopicKey, ch.controlId)) return true;
-      if (ch.name) return true;
-      if (Array.isArray(ch.hints) && ch.hints.length) return true;
-      if (Array.isArray(ch.cards) && ch.cards.length) return true;
-      if (Array.isArray(ch.binds) && ch.binds.length) return true;
-      return false;
-    }
     function appendChannelBlock(ul, s, channels) {
       const minCh = {};
       channels.forEach((ch) => {
@@ -1134,7 +1115,7 @@
       let last = "";
       rows.forEach((ch) => {
         const room = channelRoom(ch);
-        if (!roomFilter && room && room !== last) {
+        if (room && room !== last) {
           const h = document.createElement("li");
           h.className = "roomh";
           h.textContent = room;
@@ -1144,102 +1125,109 @@
         ul.appendChild(channelRow(s, ch, room));
       });
     }
-    function channelInFilter(s, ch) {
-      if (!roomFilter) return true;
-      if (markEdit === contactKey(s.deviceTopicKey, ch.controlId)) return true;
-      const room = channelRoom(ch);
-      if (!room) return true;
-      return room === roomFilter;
+    const MOD_ICO = {
+      led: "<svg viewBox='0 0 24 24'><circle cx='12' cy='12' r='4'/><path d='M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41'/></svg>",
+      dali: "<svg viewBox='0 0 24 24'><circle cx='12' cy='12' r='3'/><path d='M5 12h2M17 12h2M8.5 6.5l1.2 1.2M14.3 16.3l1.2 1.2M8.5 17.5l1.2-1.2M14.3 7.7l1.2-1.2'/></svg>",
+      gpio: "<svg viewBox='0 0 24 24'><rect x='2' y='6' width='20' height='12' rx='3'/><circle cx='8' cy='12' r='2'/><path d='M14 10h4M14 14h2'/></svg>",
+      mcm: "<svg viewBox='0 0 24 24'><rect x='2' y='5' width='20' height='14' rx='3'/><circle cx='7' cy='12' r='1.6'/><circle cx='12' cy='12' r='1.6'/><circle cx='17' cy='12' r='1.6'/></svg>",
+      mr: "<svg viewBox='0 0 24 24'><path d='M12 3v3M8 8H5a2 2 0 0 0-2 2v7h18v-7a2 2 0 0 0-2-2h-3'/><rect x='8' y='3' width='8' height='5' rx='1'/><path d='M8 21h8'/></svg>",
+      drive: "<svg viewBox='0 0 24 24'><path d='M4 4h16v16H4z'/><path d='M4 8h16M12 8v12'/></svg>",
+    };
+    function moduleKind(s) {
+      const k = String(s.deviceTopicKey || "");
+      if ((s.channels || []).some((ch) => isDeskDrive(ch.controlId))) return "drive";
+      if (/gpio/i.test(k)) return "gpio";
+      if (/mcm/i.test(k)) return "mcm";
+      if (/dali|mdm/i.test(k)) return "dali";
+      if (/led|ampled/i.test(k)) return "led";
+      if (/mr6|mr12|mrm|mrps/i.test(k)) return "mr";
+      return "led";
     }
-    function appendNamedChannels(ul, s, channels) {
-      const scoped = channels.filter((ch) => channelInFilter(s, ch));
-      const live = [];
-      const idle = [];
-      scoped.forEach((ch) => (channelBusy(s, ch) ? live : idle).push(ch));
-      appendChannelBlock(ul, s, live);
-      if (!idle.length) return;
-      if (roomFilter) {
-        appendChannelBlock(ul, s, idle);
-        return;
-      }
-      const det = document.createElement("details");
-      det.className = "more";
-      const sum = document.createElement("summary");
-      sum.textContent = idle.length === 1 ? "ещё 1 без имени" : "ещё " + idle.length + " без имени";
-      det.appendChild(sum);
-      const wrap = document.createElement("ul");
-      wrap.className = "channels";
-      appendChannelBlock(wrap, s, idle);
-      det.appendChild(wrap);
-      const hold = document.createElement("li");
-      hold.appendChild(det);
-      ul.appendChild(hold);
+    function moduleKindRu(kind) {
+      if (kind === "gpio") return "GPIO";
+      if (kind === "mcm") return "MCM";
+      if (kind === "dali") return "DALI";
+      if (kind === "drive") return "Привод";
+      if (kind === "mr") return "Реле";
+      return "LED";
     }
-    function moduleCard(s) {
-      const channels = s.channels || [];
-      const featured = channels.some((c) => c.name || (c.hints && c.hints.length) || (c.cards && c.cards.length));
-      const li = document.createElement("li");
-      li.className = "mod";
-      const head = document.createElement("div");
-      head.className = "head";
-      const sku = document.createElement("span");
-      sku.className = "sku";
-      sku.textContent = s.label || s.deviceTopicKey;
-      const meta = document.createElement("span");
-      meta.className = "ch";
-      meta.textContent = featured
-        ? (s.hint || (s.channelCount ? s.channelCount + " кан." : ""))
-        : "не в заливке";
-      head.appendChild(sku);
-      head.appendChild(meta);
-      li.appendChild(head);
-      if (!channels.length) return li;
-      const chs = document.createElement("ul");
-      chs.className = "channels";
-      appendNamedChannels(chs, s, channels);
-      li.appendChild(chs);
-      return li;
+    function namedCount(s) {
+      return (s.channels || []).filter((c) => String(c.name || "").trim()).length;
     }
-    function hasFeatured(s) {
-      return (s.channels || []).some((c) => c.name || (c.hints && c.hints.length) || (c.cards && c.cards.length));
+    function moduleRoomsOf(s) {
+      return [...new Set((s.channels || []).map(channelRoom).filter(Boolean))];
     }
-    function fillList(id, rows, emptyText) {
-      const ul = $(id);
-      ul.innerHTML = "";
-      if (!rows.length) {
-        const p = document.createElement("p");
-        p.className = "empty";
-        p.textContent = emptyText;
-        ul.appendChild(p);
-        return;
-      }
-      const visible = roomFilter
-        ? rows.filter((s) => (s.channels || []).some((ch) => channelInFilter(s, ch)))
-        : rows;
-      const live = visible.filter(hasFeatured);
-      const idle = visible.filter((s) => !hasFeatured(s)).slice().sort((a, b) => {
+    function sortModules(rows) {
+      return rows.slice().sort((a, b) => {
         const na = Number((/№(\d+)/.exec(a.label || "") || [])[1] || 0);
         const nb = Number((/№(\d+)/.exec(b.label || "") || [])[1] || 0);
         return na - nb || String(a.label || "").localeCompare(String(b.label || ""), "ru");
       });
-      live.forEach((s) => ul.appendChild(moduleCard(s)));
-      if (!roomFilter && (id === "shelves-relays" || id === "shelves-light" || id === "shelves-buttons") && idle.length) {
-        const det = document.createElement("details");
-        det.className = "more";
-        const sum = document.createElement("summary");
-        sum.textContent = id === "shelves-relays"
-          ? idle.length + " реле без линий в заливке"
-          : id === "shelves-buttons"
-            ? ruIdleButtons(idle.length)
-            : ruIdleLight(idle.length);
-        det.appendChild(sum);
-        const wrap = document.createElement("ul");
-        idle.forEach((s) => wrap.appendChild(moduleCard(s)));
-        det.appendChild(wrap);
-        ul.appendChild(det);
+    }
+    function moduleTile(s) {
+      const n = (s.channels || []).length || s.channelCount || 0;
+      const named = namedCount(s);
+      const rooms = moduleRoomsOf(s);
+      const kind = moduleKind(s);
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "vcard" + (named ? " on" : "");
+      if (roomFilter && rooms.includes(roomFilter)) btn.classList.add("on");
+      btn.innerHTML = "<span class=\"vtop\"><span class=\"ico\"></span><span class=\"cat\"></span></span><span class=\"vt\"></span><span class=\"vs\"></span>";
+      btn.querySelector(".ico").innerHTML = MOD_ICO[kind] || MOD_ICO.led;
+      const cat = btn.querySelector(".cat");
+      cat.textContent = named ? named + " из " + n : (n ? n + " кан." : moduleKindRu(kind));
+      if (named) cat.classList.add("on");
+      btn.querySelector(".vt").textContent = s.label || s.deviceTopicKey;
+      btn.querySelector(".vs").textContent = rooms.length ? rooms.join(" · ") : "без имён";
+      btn.addEventListener("click", () => {
+        openMod = s.deviceTopicKey;
+        markEdit = "";
+        renderShelves(lastShelvesRows);
+      });
+      return btn;
+    }
+    function renderModuleDrill(box, s) {
+      const bar = document.createElement("div");
+      bar.className = "modbar";
+      const back = document.createElement("button");
+      back.type = "button";
+      back.className = "ghost";
+      back.textContent = "Модули";
+      back.addEventListener("click", () => {
+        openMod = "";
+        markEdit = "";
+        markDraft = { room: "", type: "" };
+        renderShelves(lastShelvesRows);
+      });
+      const sku = document.createElement("span");
+      sku.className = "sku";
+      sku.textContent = s.label || s.deviceTopicKey;
+      bar.append(back, sku);
+      const chs = document.createElement("ul");
+      chs.className = "channels";
+      appendChannelBlock(chs, s, s.channels || []);
+      box.append(bar, chs);
+    }
+    function fillList(id, rows, emptyText) {
+      const box = $(id);
+      box.replaceChildren();
+      if (!rows.length) {
+        box.className = "vitrine";
+        const p = document.createElement("p");
+        p.className = "empty";
+        p.textContent = emptyText;
+        box.appendChild(p);
         return;
       }
-      idle.forEach((s) => ul.appendChild(moduleCard(s)));
+      const open = rows.find((s) => s.deviceTopicKey === openMod);
+      if (open) {
+        box.className = "modopen";
+        renderModuleDrill(box, open);
+        return;
+      }
+      box.className = "vitrine";
+      sortModules(rows).forEach((s) => box.appendChild(moduleTile(s)));
     }
     function renderShelves(rows) {
       lastShelvesRows = rows || [];
@@ -1247,13 +1235,13 @@
       fillList("shelves-light", split.light, "Света на шине нет.");
       fillList("shelves-buttons", split.buttons, "Кнопок на шине нет.");
       fillList("shelves-relays", split.relays, "Реле на шине нет.");
-      const liveRelays = split.relays.filter(hasFeatured).length;
-      $("relaysHead").textContent = liveRelays
-        ? "Силовые K в заливке света."
-        : "Нет силовых линий в заливке света.";
-      $("n-light").textContent = split.light.filter(hasFeatured).length || "";
-      $("n-buttons").textContent = split.buttons.filter(hasFeatured).length || "";
-      $("n-relays").textContent = split.relays.filter(hasFeatured).length || "";
+      const openRelay = split.relays.some((s) => s.deviceTopicKey === openMod);
+      $("relaysHead").textContent = openRelay
+        ? "На приводе — подпись, на K — тип."
+        : "Ткни модуль — каналы внутри.";
+      $("n-light").textContent = split.light.length || "";
+      $("n-buttons").textContent = split.buttons.length || "";
+      $("n-relays").textContent = split.relays.length || "";
     }
     async function scanNow() {
       $("scan").disabled = true;

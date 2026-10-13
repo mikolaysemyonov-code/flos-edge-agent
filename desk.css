@@ -196,6 +196,12 @@
     .filters button[aria-pressed="true"] {
       color: rgb(186 230 253); border-color: rgb(var(--sky) / .4); background: rgb(var(--sky) / .12);
     }
+    .modbar {
+      display: flex; align-items: center; justify-content: space-between;
+      gap: 1rem; margin: 0 0 .7rem;
+    }
+    .modbar .sku { font-size: 1.05rem; font-weight: 650; letter-spacing: -.02em; }
+    .modopen { display: block; }
     .vitrine { display: grid; gap: .7rem; }
     @media (min-width: 640px) { .vitrine { grid-template-columns: 1fr 1fr; } }
     @media (min-width: 900px) { .vitrine { grid-template-columns: 1fr 1fr 1fr; } }
