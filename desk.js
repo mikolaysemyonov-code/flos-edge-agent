@@ -20,6 +20,7 @@
     let openMod = "";
     let pouredPane = "mark";
     let openSceneId = "";
+    let openContact = "";
     const LED_TYPES = [
       "Световая линия",
       "Подсветка зеркала", "Подсветка ниши", "Подсветка полки",
@@ -174,9 +175,12 @@
       const was = activeTab;
       activeTab = tab;
       closeCardSheet();
-      if (tab !== "poured") openSceneId = "";
-      else if (was === "poured" && openSceneId) {
+      if (tab !== "poured") {
         openSceneId = "";
+        openContact = "";
+      } else if (was === "poured" && (openSceneId || openContact)) {
+        openSceneId = "";
+        openContact = "";
         renderReady();
       }
       if (!keepMod) closeModule();
@@ -612,10 +616,23 @@
       openSceneId = "";
       renderReady();
     }
+    function closeContact() {
+      if (!openContact) return;
+      openContact = "";
+      renderReady();
+    }
+    function pouredOpen() {
+      return !!(openSceneId || openContact);
+    }
     function readyCard(item, room) {
       const li = document.createElement("li");
       const go = item.scene
-        ? () => { openSceneId = sceneKey(item); pouredPane = "rules"; renderReady(); }
+        ? () => {
+            openContact = "";
+            openSceneId = sceneKey(item);
+            pouredPane = "rules";
+            renderReady();
+          }
         : (item.deviceTopicKey && item.controlId)
           ? () => jumpToContact(item.deviceTopicKey, item.controlId)
           : null;
@@ -680,7 +697,7 @@
         { id: "send", ru: "К заливке" + (sendN ? " · " + sendN : "") },
       ];
       if (!tabs.some((t) => t.id === pouredPane)) pouredPane = "mark";
-      bar.hidden = !!openSceneId;
+      bar.hidden = pouredOpen();
       bar.replaceChildren();
       tabs.forEach((t) => {
         const b = document.createElement("button");
@@ -689,13 +706,14 @@
         b.setAttribute("aria-pressed", pouredPane === t.id ? "true" : "false");
         b.addEventListener("click", () => {
           if (t.id !== "rules") openSceneId = "";
+          openContact = "";
           pouredPane = t.id;
           renderReady();
         });
         bar.appendChild(b);
       });
       const wrap = $("pourWrap");
-      if (wrap) wrap.hidden = pouredPane !== "send" || !!openSceneId;
+      if (wrap) wrap.hidden = pouredPane !== "send" || pouredOpen();
       $("n-poured").textContent = sendN || "";
     }
     function mergeContactRows(base, extra) {
@@ -865,12 +883,47 @@
       actions.append(save);
       box.append(back, head, card, err, actions);
     }
+    function renderContactDrill(box) {
+      const i = String(openContact).indexOf("::");
+      const key = i < 0 ? openContact : openContact.slice(0, i);
+      const cid = pairOpenId(i < 0 ? "" : openContact.slice(i + 2));
+      const back = document.createElement("button");
+      back.type = "button";
+      back.className = "back";
+      const backRu = pouredPane === "send" ? "К заливке" : "К разметке";
+      back.setAttribute("aria-label", backRu);
+      back.innerHTML = "<svg viewBox='0 0 24 24'><path d='M15 18l-6-6 6-6'/></svg><span></span>";
+      back.querySelector("span").textContent = backRu;
+      back.addEventListener("click", closeContact);
+      const s = lastShelvesRows.find((r) => r.deviceTopicKey === key);
+      const ch = s && (s.channels || []).find((c) => c.controlId === cid);
+      if (!s || !ch) {
+        const empty = document.createElement("p");
+        empty.className = "empty";
+        empty.textContent = "Контакт не на шине.";
+        box.append(back, empty);
+        return;
+      }
+      const head = document.createElement("div");
+      head.className = "vcard on";
+      paintModuleFace(head, s);
+      const ul = document.createElement("ul");
+      ul.className = "channels";
+      ul.appendChild(channelRow(s, ch, nameRoom(pairName(s, ch))));
+      box.append(back, head, ul);
+    }
     function renderReady() {
       const box = $("ready");
       if (!box) return;
       renderPouredTabs();
       box.replaceChildren();
       const all = collectReadyItems();
+      if (openContact) {
+        renderPouredTabs();
+        setPouredChrome(true);
+        renderContactDrill(box);
+        return;
+      }
       if (openSceneId) {
         const hit = all.find((i) => i.scene && sceneKey(i) === openSceneId);
         if (hit) {
@@ -1409,6 +1462,12 @@
     }
     function jumpToContact(key, cid) {
       cid = pairOpenId(cid);
+      if (activeTab === "poured") {
+        openSceneId = "";
+        openContact = contactKey(key, cid);
+        renderReady();
+        return;
+      }
       openMod = key;
       setTab(familyOf({ deviceTopicKey: key }), true);
       renderShelves(lastShelvesRows);
@@ -1438,11 +1497,13 @@
       const next = composeMark(d.room, d.type);
       if (!next) {
         renderShelves(lastShelvesRows);
+        if (activeTab === "poured") renderReady();
         return;
       }
       if (next === String(pairName(s, ch) || "").trim()) {
         delete markPending[k];
         renderShelves(lastShelvesRows);
+        if (activeTab === "poured") renderReady();
         return;
       }
       const jobs = [saveName(s.deviceTopicKey, ch.controlId, next)];
@@ -1849,6 +1910,10 @@
       }
       if (openSceneId) {
         closeScene();
+        return;
+      }
+      if (openContact) {
+        closeContact();
         return;
       }
       if (openMod) closeModule();
