@@ -21,6 +21,7 @@
     let pouredPane = "mark";
     let openSceneId = "";
     let openContact = "";
+    let wantButtonFocus = false;
     const LED_TYPES = [
       "Световая линия",
       "Подсветка зеркала", "Подсветка ниши", "Подсветка полки",
@@ -604,9 +605,13 @@
       if (item.scene) return item.deskDirty ? "send" : "disk";
       const s = item.status;
       if (s === "new_name" || s === "name" || s === "card" || s === "no_card" || s === "blocked") return "send";
-      if (item.pouredName || (item.hints && item.hints.length)) return "disk";
-      if (item.title) return "send";
       return "disk";
+    }
+    function loadNeedsButton(item) {
+      if (!item || item.scene || !item.isLoad || item.btnLine) return false;
+      const hints = item.hints || [];
+      const cards = item.cards || [];
+      return hints.includes("Все выкл") || cards.includes("light_all_off");
     }
     function isNewItem(item) {
       return pourLane(item) === "send";
@@ -742,9 +747,7 @@
             e.stopPropagation();
             const load = sceneParts(item.contacts).loads[0];
             if (!load) return;
-            openSceneId = "";
-            pouredPane = "mark";
-            jumpToContact(load.deviceTopicKey, load.controlId);
+            openButtonOnLoad(load.deviceTopicKey, load.controlId);
           });
         }
         left.append(ttl, btn);
@@ -762,6 +765,16 @@
           const b = document.createElement("span");
           b.className = "hint";
           b.textContent = "кнопка · " + item.btnLine;
+          left.appendChild(b);
+        } else if (loadNeedsButton(item)) {
+          const b = document.createElement("button");
+          b.type = "button";
+          b.className = "hint orphan";
+          b.textContent = "кнопка · нет в разметке";
+          b.addEventListener("click", (e) => {
+            e.stopPropagation();
+            openButtonOnLoad(item.deviceTopicKey, item.controlId);
+          });
           left.appendChild(b);
         }
       }
@@ -791,6 +804,7 @@
       if (!bar) return;
       const all = collectReadyItems();
       const sendN = all.filter((i) => pourLane(i) === "send").length;
+      const diskN = all.filter((i) => pourLane(i) === "disk").length;
       const tabs = [
         { id: "mark", ru: "Разметка" },
         { id: "rules", ru: "Сценарии" },
@@ -814,7 +828,7 @@
       });
       const wrap = $("pourWrap");
       if (wrap) wrap.hidden = pouredPane !== "send" || pouredOpen();
-      $("n-poured").textContent = sendN || "";
+      $("n-poured").textContent = diskN || "";
     }
     function mergeContactRows(base, extra) {
       const rows = (base || []).slice();
@@ -1038,6 +1052,13 @@
       ul.className = "channels";
       ul.appendChild(channelRow(s, ch, nameRoom(pairName(s, ch))));
       box.append(back, head, ul);
+      if (wantButtonFocus) {
+        wantButtonFocus = false;
+        requestAnimationFrame(() => {
+          const sel = box.querySelector('select[aria-label="Кнопка"]');
+          if (sel) sel.focus();
+        });
+      }
     }
     function renderReady() {
       const box = $("ready");
@@ -1729,6 +1750,12 @@
       wrap.append(h, picks);
       return wrap;
     }
+    function openButtonOnLoad(key, cid) {
+      openSceneId = "";
+      pouredPane = "mark";
+      wantButtonFocus = true;
+      jumpToContact(key, cid);
+    }
     function jumpToContact(key, cid) {
       cid = pairOpenId(cid);
       if (activeTab === "poured") {
@@ -1802,6 +1829,12 @@
       const loads = Array.isArray(ch.loads) ? ch.loads.filter(Boolean) : [];
       const buttons = Array.isArray(ch.buttons) ? ch.buttons.filter(Boolean) : [];
       const deskTriggers = isLoad ? triggersBoundTo(s.deviceTopicKey, ch.controlId) : [];
+      const pouredBtns = isLoad ? pouredTriggersForLoad(s.deviceTopicKey, ch.controlId) : [];
+      const hasBtn = deskTriggers.length || pouredBtns.length || (buttons.length && isLoad);
+      const allOff = (ch.hints || []).includes("Все выкл") || (ch.cards || []).includes("light_all_off");
+      if (isLoad && original && !hasBtn && (allOff || poured)) {
+        return { text: "кнопка · нет в разметке", bad: true };
+      }
       const selected = new Set(exclusiveCards(Array.isArray(ch.cards) ? ch.cards : []));
       const diskIds = exclusiveCards(CARDS.filter((c) => (ch.hints || []).includes(c.ru)).map((c) => c.id));
       const deskDiverged = poured && [...selected].sort().join(",") !== diskIds.slice().sort().join(",");
