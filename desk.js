@@ -501,10 +501,18 @@
         return g.stem + " " + nums.join(" · ");
       }).join(" · ");
     }
+    function triggerLine(t) {
+      const sku = solContactLabel(t);
+      const cid = prettyControlId(t.controlId);
+      if (!cid) return sku;
+      if (sku.includes(cid)) return sku;
+      if (/^(Input |EXT|[A-D]\d+_IN)/i.test(String(t.controlId || ""))) return sku + " · " + cid;
+      return sku;
+    }
     function sceneLines(contacts, room) {
       const p = sceneParts(contacts);
       const buttons = sceneButtons(contacts);
-      const btn = uniqText(buttons.map(solContactLabel)).join(" · ");
+      const btn = uniqText(buttons.map(triggerLine)).join(" · ");
       const lights = compactPhrase(p.loads.map((c) => {
         const n = loadListLabel(c);
         return room ? (titleUnderRoom(n, room) || n) : n;
@@ -643,7 +651,7 @@
             cards: cards,
             hints: hints,
             isLoad: isLoad,
-            btnLine: uniqText(src.map((t) => t.label || solContactLabel(t))).join(" · "),
+            btnLine: uniqText(src.map(triggerLine)).join(" · "),
             status: prev && prev.status,
             pouredName: prev && prev.pouredName,
           });
@@ -1685,9 +1693,17 @@
       const cur = desk.length ? desk : pouredTriggersForLoad(s.deviceTopicKey, ch.controlId);
       const items = mergeContactRows(namedTriggers(), cur).map((t) => ({
         value: contactKey(t.deviceTopicKey, t.controlId),
-        label: t.label,
+        label: triggerLine(t),
       }));
       const value = cur[0] ? contactKey(cur[0].deviceTopicKey, cur[0].controlId) : "";
+      const allOff = (ch.hints || []).includes("Все выкл") || (ch.cards || []).includes("light_all_off");
+      if (allOff && !value) {
+        items.sort((a, b) => {
+          const ag = /wb-gpio::/i.test(a.value) ? 0 : 1;
+          const bg = /wb-gpio::/i.test(b.value) ? 0 : 1;
+          return ag - bg;
+        });
+      }
       const wrap = document.createElement("div");
       wrap.appendChild(makeField("Кнопка", items, value, "Не привязана", (v) => {
         rebindLoad(s.deviceTopicKey, ch.controlId, v).catch(() => {});

@@ -186,6 +186,11 @@ function sameCards(a, b) {
   return [...(a || [])].sort().join(",") === [...(b || [])].sort().join(",");
 }
 
+function sameMarkName(a, b) {
+  const norm = (s) => String(s || "").trim().replace(/\s+/g, " ").toLowerCase();
+  return Boolean(norm(a)) && norm(a) === norm(b);
+}
+
 function cardRu(ids) {
   return (ids || []).map((id) => DESK_CARD_RU[id] || id);
 }
@@ -237,8 +242,11 @@ export function buildDeskPourPreview(doc = readDeskMarking(), poured = readPoure
       if (!name && !deskCards.length) continue;
       let status = "same";
       if (!name && deskCards.length) status = "blocked";
-      else if (deskName && pouredName && deskName !== pouredName) status = "name";
-      else if (deskName && !pouredName) status = "new_name";
+      else if (deskName && pouredName && !sameMarkName(deskName, pouredName)) status = "name";
+      else if (deskName && !pouredName) {
+        if (!isLoadControl(controlId)) continue;
+        status = "new_name";
+      }
       else if (deskCards.length && !sameCards(deskCards, pouredCards)) status = "card";
       else if (name && !deskCards.length && !pouredCards.length) {
         gaps.push({ deviceTopicKey, controlId, name, status: "no_card" });
