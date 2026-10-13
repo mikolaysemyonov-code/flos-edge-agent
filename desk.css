@@ -134,6 +134,7 @@
     .from-rules, .kind { color: rgb(var(--sky) / .85); font-size: .68rem; }
     .from-rules { display: block; margin-top: .12rem; }
     .chips { display: flex; flex-wrap: wrap; gap: .3rem; margin-top: .35rem; }
+    span.chip { cursor: default; display: inline-flex; align-items: center; }
     .chip {
       appearance: none; cursor: pointer;
       padding: .28rem .7rem; border-radius: 999px;
@@ -199,6 +200,7 @@
       margin: 0 0 .85rem;
     }
     #ready .scene-card .sech { margin: .55rem 1rem .1rem; }
+    #ready .scene-card .chips { margin: 0; padding: .15rem 1rem .75rem; }
     #ready .scene-card .picks { margin: 0; gap: 0; }
     #ready .scene-card .picks .roomh {
       font-size: .68rem; font-weight: 600; letter-spacing: .07em;

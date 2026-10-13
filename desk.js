@@ -525,6 +525,62 @@
         return a && a === b;
       }) || null;
     }
+    function uniqContacts(rows) {
+      const seen = new Set();
+      return (rows || []).filter((c) => {
+        if (!c || !c.controlId) return false;
+        const k = contactKey(c.deviceTopicKey, pairOpenId(c.controlId));
+        if (seen.has(k)) return false;
+        seen.add(k);
+        return true;
+      });
+    }
+    function pairLoadKey(contacts) {
+      const k = [...contactSet(sceneParts(contacts).loads)].join("|");
+      return k || "";
+    }
+    function mergeScenePairs(raw) {
+      const map = new Map();
+      (raw || []).forEach((item) => {
+        const lk = pairLoadKey(item.contacts) || ("id:" + sceneKey(item));
+        let g = map.get(lk);
+        if (!g) {
+          g = {
+            id: "pair:" + lk,
+            scene: true,
+            bucket: "scenes",
+            isLoad: false,
+            contacts: [],
+            cardsOn: [],
+            deskByCard: {},
+            deskDirty: false,
+            room: "",
+          };
+          map.set(lk, g);
+        }
+        g.contacts = g.contacts.concat(item.contacts || []);
+        const cid = item.solutionId || sceneCardId(item.title, item.card);
+        if (cid && !g.cardsOn.includes(cid)) g.cardsOn.push(cid);
+        if (item.deskId && cid) g.deskByCard[cid] = item.deskId;
+        if (item.deskDirty) g.deskDirty = true;
+        if (!g.room) g.room = item.room || "";
+      });
+      return [...map.values()].map((g) => {
+        g.contacts = uniqContacts(g.contacts);
+        const loads = sceneParts(g.contacts).loads;
+        g.room = roomFromContacts(loads) || g.room;
+        const lines = sceneLines(g.contacts, g.room);
+        g.btnLine = lines.btn;
+        g.lightLine = lines.lights;
+        g.title = lines.lights || "Сценарий";
+        g.card = g.cardsOn.map((id) => {
+          const hit = CARDS.find((c) => c.id === id);
+          return hit ? hit.ru : "";
+        }).filter(Boolean).join(" · ");
+        g.deskId = g.deskByCard[g.cardsOn[0]] || "";
+        return g;
+      });
+    }
     function pourLane(item) {
       if (item.scene) return item.deskDirty ? "send" : "disk";
       const s = item.status;
@@ -563,21 +619,16 @@
         });
       });
       const usedSol = new Set();
+      const rawScenes = [];
       pouredRules.filter((r) => r.kind === "user").forEach((r) => {
-        const room = roomFromContacts(r.contacts) || roomFromTitle(r.title) || guessRoom(r.title) || "";
-        const lines = sceneLines(r.contacts, room);
+        const loads = sceneParts(r.contacts).loads;
+        const room = roomFromContacts(loads) || roomFromTitle(r.title) || guessRoom(r.title) || "";
         const item = {
           id: r.id,
           room: room,
-          bucket: "scenes",
-          title: sceneTitleRu({ title: r.title, card: r.card }),
-          sub: lines.btn + " → " + lines.lights,
-          btnLine: lines.btn,
-          lightLine: lines.lights,
-          contacts: r.contacts,
+          title: r.title,
           card: r.card,
-          isLoad: false,
-          scene: true,
+          contacts: r.contacts,
         };
         const sol = matchDeskSol(item, usedSol);
         if (sol) {
@@ -585,29 +636,22 @@
           item.deskId = sol.id;
           item.deskDirty = !sceneEqualsSol(item, sol);
         }
-        items.push(item);
+        rawScenes.push(item);
       });
       deskSolutions.forEach((sol) => {
         if (usedSol.has(sol.id)) return;
         const contacts = [sol.trigger].concat(sol.targets || []).filter(Boolean);
-        const room = roomFromContacts(contacts) || "";
-        const lines = sceneLines(contacts, room);
-        items.push({
+        rawScenes.push({
           id: sol.id,
           deskId: sol.id,
-          room: room,
-          bucket: "scenes",
-          title: sceneTitleRu({ title: sol.title, solutionId: sol.solutionId }),
-          sub: lines.btn + " → " + lines.lights,
-          btnLine: lines.btn,
-          lightLine: lines.lights,
-          contacts: contacts,
+          room: roomFromContacts(sceneParts(contacts).loads) || roomFromContacts(contacts) || "",
+          title: sol.title,
           solutionId: sol.solutionId,
-          isLoad: false,
-          scene: true,
+          contacts: contacts,
           deskDirty: true,
         });
       });
+      mergeScenePairs(rawScenes).forEach((g) => items.push(g));
       return items;
     }
     function paneItems(items) {
@@ -665,10 +709,7 @@
         const btn = document.createElement("span");
         btn.className = "hint" + (item.btnLine === "нет кнопки" ? " orphan" : "");
         btn.textContent = "кнопка · " + (item.btnLine || "нет кнопки");
-        const light = document.createElement("span");
-        light.className = "hint";
-        light.textContent = "свет · " + (item.lightLine || "нет света");
-        left.append(ttl, btn, light);
+        left.append(ttl, btn);
       } else {
         const hint = document.createElement("span");
         hint.className = "hint";
@@ -694,6 +735,18 @@
       top.append(left, st);
       cap.appendChild(top);
       li.appendChild(cap);
+      if (item.scene && item.cardsOn && item.cardsOn.length) {
+        const chips = document.createElement("div");
+        chips.className = "chips";
+        CARDS.forEach((card) => {
+          const span = document.createElement("span");
+          span.className = "chip";
+          span.textContent = card.ru;
+          span.setAttribute("aria-pressed", item.cardsOn.includes(card.id) ? "true" : "false");
+          chips.appendChild(span);
+        });
+        li.appendChild(chips);
+      }
       return li;
     }
     function renderPouredTabs() {
@@ -791,7 +844,7 @@
       cap.className = "vtop";
       const ttl = document.createElement("span");
       ttl.className = "vt";
-      ttl.textContent = sceneTitleRu(item);
+      ttl.textContent = item.lightLine || item.room || "Сценарий";
       const st = document.createElement("span");
       st.className = "cat" + (pourLane(item) === "send" ? "" : " on");
       st.textContent = pourLane(item) === "send" ? "к заливке" : "на диске";
@@ -816,6 +869,29 @@
       trig.addEventListener("change", () => trig.classList.toggle("empty", !trig.value));
       trigLab.append(trigName, trig);
       card.appendChild(trigLab);
+      const selected = new Set(item.cardsOn && item.cardsOn.length
+        ? item.cardsOn
+        : [item.solutionId || sceneCardId(item.title, item.card)].filter(Boolean));
+      const gest = document.createElement("div");
+      gest.className = "chips";
+      CARDS.forEach((c) => {
+        const b = document.createElement("button");
+        b.type = "button";
+        b.className = "chip";
+        b.dataset.card = c.id;
+        b.textContent = c.ru;
+        b.setAttribute("aria-pressed", selected.has(c.id) ? "true" : "false");
+        b.addEventListener("click", (e) => {
+          e.stopPropagation();
+          toggleDeskCard(selected, c.id);
+          paintChips(gest, selected);
+        });
+        gest.appendChild(b);
+      });
+      const gestH = document.createElement("p");
+      gestH.className = "sech";
+      gestH.textContent = "Жест";
+      card.append(gestH, gest);
       if (buttons.length > 1) {
         const extra = document.createElement("p");
         extra.className = "meta scene-extra";
@@ -868,20 +944,24 @@
         err.textContent = "";
         if (!trigger) { err.textContent = "Нужна кнопка"; return; }
         if (!targets.length) { err.textContent = "Нужен свет"; return; }
-        fetch("/runtime/desk-solutions", {
+        const ids = exclusiveCards([...selected]);
+        if (!ids.length) { err.textContent = "Нужен жест"; return; }
+        const put = (solutionId) => fetch("/runtime/desk-solutions", {
           method: "PUT",
           headers: { "content-type": "application/json" },
           body: JSON.stringify({
-            id: item.deskId,
-            solutionId: item.solutionId || sceneCardId(item.title, item.card),
+            id: (item.deskByCard && item.deskByCard[solutionId]) || "",
+            solutionId: solutionId,
             trigger: trigger,
             targets: targets,
           }),
-        }).then((r) => r.json()).then((j) => {
-          if (!j.ok) {
-            err.textContent = j.error === "need_trigger" ? "Нужна кнопка с шины"
-              : j.error === "need_target" || j.error === "need_load" ? "Нужна линия из разметки"
-              : (j.error || "Не сохранил");
+        }).then((r) => r.json());
+        Promise.all(ids.map(put)).then((rows) => {
+          const bad = rows.find((j) => !j.ok);
+          if (bad) {
+            err.textContent = bad.error === "need_trigger" ? "Нужна кнопка с шины"
+              : bad.error === "need_target" || bad.error === "need_load" ? "Нужна линия из разметки"
+              : (bad.error || "Не сохранил");
             return;
           }
           openSceneId = "";
