@@ -19,7 +19,9 @@ import {
   collectFlosIdsFromReleaseRing,
   extractFormLogicOsCellIds,
   prepareCoreWithStaleHide,
+  staleGhostIds,
 } from "./runtime-desk-pour-stale.mjs";
+import { hideFormLogicOsGhostsNow } from "./runtime-desk-pour-mqtt.mjs";
 import {
   buildDeskPourPackage,
   assessDeskCanPour,
@@ -161,7 +163,7 @@ export function backupCurrentStateBeforeApply() {
   recordRelease(manifest);
 }
 
-export function rollbackToPreviousBackup() {
+export async function rollbackToPreviousBackup() {
   const manifest = loadBackupManifest();
   if (!manifest?.files?.length) throw new Error("No backup available for rollback");
   const deployDir = wbRulesDeployDir();
@@ -170,6 +172,7 @@ export function rollbackToPreviousBackup() {
   const ringIds = collectFlosIdsFromReleaseRing(readReleaseRing());
   const keep = [];
   let hiddenGhosts = 0;
+  let extraGhosts = [];
   for (const file of manifest.files) {
     validateShardFilename(file.filename);
     let content = file.content;
@@ -181,6 +184,10 @@ export function rollbackToPreviousBackup() {
       });
       content = prepared.content;
       hiddenGhosts = prepared.ghostCount;
+      extraGhosts = staleGhostIds(
+        [...beforeIds, ...ringIds, ...collectFlosIdsFromReleaseRing(readReleaseRing())],
+        prepared.activeIds || extractFormLogicOsCellIds(content),
+      );
     }
     atomicWriteFile(path.join(deployDir, file.filename), content);
     keep.push(file.filename);
@@ -198,12 +205,26 @@ export function rollbackToPreviousBackup() {
   const revisionId = typeof manifest.revisionId === "string" ? manifest.revisionId : "unknown";
   writeReleaseHash(revisionId);
   const restarted = restartWbRules();
+  const coreAfter =
+    keep.includes("00_core.js")
+      ? listIntegratorRuleFiles().find((f) => f.filename === "00_core.js")?.content || ""
+      : "";
+  const activeIds = extractFormLogicOsCellIds(coreAfter);
+  let mqttHide = { ok: false, published: 0, ghosts: hiddenGhosts, liveCount: 0 };
+  try {
+    mqttHide = await hideFormLogicOsGhostsNow(activeIds, extraGhosts);
+    hiddenGhosts = Math.max(hiddenGhosts, mqttHide.ghosts || 0);
+  } catch (err) {
+    console.warn("[runtime-control-plane] mqtt hide after rollback:", err?.message ?? err);
+  }
   return {
     appliedRevisionId: revisionId,
     ackCount: manifest.files.length,
     deployMode: manifest.deployMode ?? "monolith",
     restarted: restarted != null,
     hiddenGhosts,
+    mqttPublished: mqttHide.published || 0,
+    mqttLive: mqttHide.liveCount || 0,
   };
 }
 
@@ -511,26 +532,62 @@ export function handleRuntimeReleases(_req, res) {
   });
 }
 
-export function handleRuntimeDeskPour(_req, res) {
-  const pkg = buildDeskPourPackage();
+export async function handleRuntimeDeskPour(_req, res) {
+  const { buildDeskMqttRepairPlan } = await import("./runtime-desk-pour.mjs");
+  let pkg = buildDeskPourPackage();
+  let usedMqttOnly = false;
   if (!pkg.ok || !pkg.canPour || !pkg.shards?.length) {
-    jsonWrite(res, 400, { ok: false, canPour: false, error: pkg.reason || "blocked", reason: pkg.reason });
-    return;
+    const plan = buildDeskMqttRepairPlan();
+    if (!plan.ok) {
+      jsonWrite(res, 400, {
+        ok: false,
+        canPour: false,
+        error: pkg.reason || plan.reason || "blocked",
+        reason: pkg.reason || plan.reason,
+      });
+      return;
+    }
+    pkg = {
+      ...pkg,
+      ok: true,
+      canPour: true,
+      shards: plan.shards,
+      loadOrder: plan.shards.map((s) => s.filename),
+      revisionId: plan.revisionId || `mqtt-hide:${Date.now().toString(36)}`,
+      removedIds: plan.removedIds,
+      activeIds: plan.activeIds,
+      hiddenGhosts: plan.hiddenGhosts,
+      namedCount: 0,
+      emittedSolutions: 0,
+    };
+    usedMqttOnly = !plan.shards.length;
   }
   try {
-    backupCurrentStateBeforeApply();
-    const result = applyShardBundle(pkg.shards, pkg.loadOrder, pkg.revisionId, {
-      preserveOtherShards: true,
-    });
-    // HEAD пуша в кольце — иначе checkout уходит в старый снимок без пути назад.
-    recordRelease({
-      revisionId: pkg.revisionId,
-      deployMode: result.deployMode,
-      savedAt: new Date().toISOString(),
-      files: listIntegratorRuleFiles(),
-    });
+    let result = {
+      ackCount: 0,
+      deployMode: "shards",
+      restarted: false,
+    };
+    if (pkg.shards?.length) {
+      backupCurrentStateBeforeApply();
+      result = applyShardBundle(pkg.shards, pkg.loadOrder, pkg.revisionId, {
+        preserveOtherShards: true,
+      });
+      recordRelease({
+        revisionId: pkg.revisionId,
+        deployMode: result.deployMode,
+        savedAt: new Date().toISOString(),
+        files: listIntegratorRuleFiles(),
+      });
+    }
+    const coreNow =
+      pkg.shards?.find((s) => s.filename === "00_core.js")?.content ||
+      listIntegratorRuleFiles().find((f) => f.filename === "00_core.js")?.content ||
+      "";
+    const activeIds = pkg.activeIds?.length ? pkg.activeIds : extractFormLogicOsCellIds(coreNow);
+    const mqttHide = await hideFormLogicOsGhostsNow(activeIds, pkg.removedIds || []);
     console.log(
-      `[runtime-control-plane] desk-pour revision=${pkg.revisionId} acks=${result.ackCount}`,
+      `[runtime-control-plane] desk-pour revision=${pkg.revisionId} acks=${result.ackCount} mqtt=${mqttHide.published} ghosts=${mqttHide.ghosts}`,
     );
     jsonWrite(res, 200, {
       ok: true,
@@ -541,7 +598,10 @@ export function handleRuntimeDeskPour(_req, res) {
       restarted: result.restarted,
       emittedSolutions: pkg.emittedSolutions,
       namedCount: pkg.namedCount,
-      hiddenGhosts: pkg.hiddenGhosts || 0,
+      hiddenGhosts: Math.max(pkg.hiddenGhosts || 0, mqttHide.ghosts || 0),
+      mqttPublished: mqttHide.published || 0,
+      mqttLive: mqttHide.liveCount || 0,
+      mqttOnly: usedMqttOnly,
     });
   } catch (err) {
     const message = err instanceof Error ? err.message : "deploy failed";
@@ -563,9 +623,9 @@ export async function handleRuntimeRollback(req, res) {
       if (!hit?.files?.length) throw new Error("No snapshot for that revision");
       saveBackupManifest(hit);
     }
-    const result = rollbackToPreviousBackup();
+    const result = await rollbackToPreviousBackup();
     console.log(
-      `[runtime-control-plane] rollback revision=${result.appliedRevisionId} mode=${result.deployMode}`,
+      `[runtime-control-plane] rollback revision=${result.appliedRevisionId} mode=${result.deployMode} mqtt=${result.mqttPublished || 0}`,
     );
     jsonWrite(res, 200, {
       status: "applied",
@@ -575,6 +635,7 @@ export async function handleRuntimeRollback(req, res) {
       restarted: result.restarted,
       rolledBack: true,
       hiddenGhosts: result.hiddenGhosts || 0,
+      mqttPublished: result.mqttPublished || 0,
     });
   } catch (err) {
     const message = err instanceof Error ? err.message : "rollback failed";
@@ -605,7 +666,14 @@ export function runtimeHttpPathHandler(req, res) {
     return true;
   }
   if (method === "POST" && urlPath === "/runtime/desk-pour") {
-    handleRuntimeDeskPour(req, res);
+    void handleRuntimeDeskPour(req, res).catch((err) => {
+      console.error("[runtime-control-plane] desk-pour:", err?.message ?? err);
+      if (!res.headersSent) {
+        res.statusCode = 500;
+        res.setHeader("content-type", "application/json; charset=utf-8");
+        res.end(JSON.stringify({ ok: false, error: "INTERNAL" }));
+      }
+    });
     return true;
   }
   if ((method === "GET" || method === "PUT" || method === "POST" || method === "DELETE") && urlPath === "/runtime/desk-solutions") {

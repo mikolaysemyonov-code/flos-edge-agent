@@ -82,6 +82,7 @@ function buildCoreRepair(coreSrc, named, opts = {}) {
     changed: core.changed || prepared.changed || prepared.content !== coreSrc,
     removedIds: core.removedIds || [],
     hiddenGhosts: prepared.ghostCount,
+    activeIds: prepared.activeIds || [],
   };
 }
 
@@ -102,7 +103,8 @@ export function assessDeskCanPour(preview) {
   const repair = /form_logic_os/.test(core)
     ? buildCoreRepair(core, named, { persist: false })
     : { changed: false, hiddenGhosts: 0 };
-  const canRepair = Boolean(repair.changed || repair.hiddenGhosts);
+  // Починить всегда доступен при живом form_logic_os: MQTT-hide даже если диск «совпал».
+  const canRepair = /form_logic_os/.test(core) && blocked === 0;
   const hasWork = diffs.length > 0 || supported.length > 0 || canRepair;
   if (!hasWork) reasons.push("нечего заливать");
   if (unsupported.length && !supported.length && !diffs.length && !canRepair) {
@@ -113,9 +115,11 @@ export function assessDeskCanPour(preview) {
     canPour,
     canRepair,
     reason: canPour
-      ? canRepair && !diffs.length && !supported.length
-        ? "Починить FORM LOGIC OS: убрать дубли и MQTT-призраки."
-        : "Готово к пушу на main."
+      ? !diffs.length && !supported.length
+        ? "Починить FORM LOGIC OS: дубли в файле + meta/hidden в MQTT."
+        : repair.changed || repair.hiddenGhosts
+          ? "Готово к пушу на main (с починкой FORM LOGIC OS)."
+          : "Готово к пушу на main."
       : reasons.join(" · ") || "Превью. Диск не трогаем.",
     ready: p.ready,
     rows: p.rows,
@@ -152,5 +156,32 @@ export function buildDeskPourPackage() {
     emittedSolutions: user.emitted,
     namedCount: named.length,
     hiddenGhosts: core.hiddenGhosts || 0,
+    removedIds: core.removedIds || [],
+    activeIds: core.activeIds || [],
+  };
+}
+
+/** MQTT-only починка, если диск уже «совпал», а в WB UI ещё призраки. */
+export function buildDeskMqttRepairPlan() {
+  const coreSrc = readShard("00_core.js");
+  if (!/defineVirtualDevice\s*\(\s*["']form_logic_os["']/.test(coreSrc)) {
+    return { ok: false, reason: "на диске нет form_logic_os в 00_core" };
+  }
+  const named = namedLoadsFromDesk();
+  const core = buildCoreRepair(coreSrc, named, { persist: true });
+  if (!core.ok) return { ok: false, reason: core.error || "core" };
+  const shards = [];
+  if (core.changed) shards.push({ filename: "00_core.js", content: core.content });
+  const revisionId = shards.length
+    ? fnvRevision(shards.map((s) => s.filename + "\n" + s.content))
+    : "";
+  return {
+    ok: true,
+    shards,
+    revisionId,
+    removedIds: core.removedIds || [],
+    activeIds: core.activeIds || [],
+    hiddenGhosts: core.hiddenGhosts || 0,
+    changed: core.changed,
   };
 }

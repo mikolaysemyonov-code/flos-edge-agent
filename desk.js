@@ -2301,12 +2301,13 @@
     });
     $("pour").addEventListener("click", () => {
       if (!canPourDesk || $("pour").disabled) return;
+      const onHist = pouredPane === "hist";
       $("pour").disabled = true;
-      $("pour").textContent = "Лью…";
+      $("pour").textContent = onHist ? "Чиню…" : "Лью…";
       fetch("/runtime/desk-pour", { method: "POST" })
         .then((r) => r.json())
         .then((j) => {
-          $("pour").textContent = "Залить · пуш";
+          $("pour").textContent = onHist ? "Починить · пуш" : "Залить · пуш";
           if (!j.ok) {
             $("pour").disabled = !canPourDesk;
             $("previewHead").style.color = "rgb(var(--bad))";
@@ -2314,14 +2315,19 @@
             return;
           }
           $("previewHead").style.color = "";
-          $("previewHead").textContent = "Пуш · " + (j.appliedRevisionId || "") +
-            (j.restarted ? " · wb-rules перезапущен" : "");
+          const bits = [
+            j.mqttOnly ? "MQTT-hide" : ("Пуш · " + (j.appliedRevisionId || "")),
+            j.restarted ? "wb-rules" : "",
+            j.hiddenGhosts ? ("скрыто " + j.hiddenGhosts) : "",
+            j.mqttPublished ? ("mqtt " + j.mqttPublished) : "",
+          ].filter(Boolean);
+          $("previewHead").textContent = bits.join(" · ") || "Готово";
           pouredPane = "hist";
           loadPoured();
           loadPreview();
         })
         .catch((e) => {
-          $("pour").textContent = "Залить · пуш";
+          $("pour").textContent = onHist ? "Починить · пуш" : "Залить · пуш";
           $("pour").disabled = !canPourDesk;
           $("previewHead").style.color = "rgb(var(--bad))";
           $("previewHead").textContent = String(e.message || e);

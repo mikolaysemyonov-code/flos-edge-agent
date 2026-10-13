@@ -17,6 +17,7 @@ COPY runtime-desk-pour.mjs /app/runtime-desk-pour.mjs
 COPY runtime-desk-pour-core.mjs /app/runtime-desk-pour-core.mjs
 COPY runtime-desk-pour-user.mjs /app/runtime-desk-pour-user.mjs
 COPY runtime-desk-pour-stale.mjs /app/runtime-desk-pour-stale.mjs
+COPY runtime-desk-pour-mqtt.mjs /app/runtime-desk-pour-mqtt.mjs
 COPY desk.html /app/desk.html
 COPY desk.css /app/desk.css
 COPY desk.js /app/desk.js

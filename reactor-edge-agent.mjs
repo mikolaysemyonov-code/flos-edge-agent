@@ -31,7 +31,7 @@ import {
 } from "./wb-rules-journal-incidents.mjs";
 
 /** Одна строка в heartbeat и snapshot — иначе UI врёт версией. */
-const EDGE_AGENT_VERSION = "edge-pilot-v2.lan-desk-129";
+const EDGE_AGENT_VERSION = "edge-pilot-v2.lan-desk-130";
 
 /** Prefer `FLOS_*` (FL OS); fall back to legacy `REACTOR_*` for existing deployments. */
 function env(primary, legacy) {
@@ -1762,7 +1762,7 @@ source_ok=0
 if [[ -n "$CLOUD" ]]; then
   echo "[flos-edge-agent] pulling agent files from cloud tip…"
   set +e
-  for f in Dockerfile entrypoint.sh package.json reactor-edge-agent.mjs runtime-control-plane-http.mjs runtime-desk-http.mjs runtime-desk-shelves.mjs runtime-desk-marking.mjs runtime-desk-solutions.mjs runtime-desk-rules-marks.mjs runtime-desk-releases.mjs runtime-desk-pour.mjs runtime-desk-pour-core.mjs runtime-desk-pour-user.mjs runtime-desk-pour-stale.mjs desk.html desk.css desk.js runtime-rules-inventory.mjs docker-compose.yml wb-rules-journal-incidents.mjs; do
+  for f in Dockerfile entrypoint.sh package.json reactor-edge-agent.mjs runtime-control-plane-http.mjs runtime-desk-http.mjs runtime-desk-shelves.mjs runtime-desk-marking.mjs runtime-desk-solutions.mjs runtime-desk-rules-marks.mjs runtime-desk-releases.mjs runtime-desk-pour.mjs runtime-desk-pour-core.mjs runtime-desk-pour-user.mjs runtime-desk-pour-stale.mjs runtime-desk-pour-mqtt.mjs desk.html desk.css desk.js runtime-rules-inventory.mjs docker-compose.yml wb-rules-journal-incidents.mjs; do
     curl -fsSL "$CLOUD/api/edge-agent/files/$f" -o "$AGENT_DIR/$f" || { echo "fail $f"; source_ok=1; break; }
   done
   if [[ $source_ok -eq 0 ]]; then
@@ -1949,9 +1949,9 @@ function fallbackVerifyFromExport(expected) {
  * Field rules rollback via command queue (SaaS cannot TCP to LAN/Tailscale :18081).
  * Payload: { action: "wb_rules_rollback" }
  */
-function runWbRulesRollbackCommand(_payload) {
+async function runWbRulesRollbackCommand(_payload) {
   try {
-    const rolled = rollbackToPreviousBackup();
+    const rolled = await rollbackToPreviousBackup();
     console.log(
       `[flos-edge-agent] wb_rules_rollback revision=${rolled.appliedRevisionId} mode=${rolled.deployMode}`,
     );
@@ -1963,6 +1963,7 @@ function runWbRulesRollbackCommand(_payload) {
           ackCount: rolled.ackCount,
           deployMode: rolled.deployMode,
           restarted: rolled.restarted,
+          mqttPublished: rolled.mqttPublished || 0,
         },
       },
       ...(rolled.restarted ? {} : { error: "wb_rules_rollback_restart_failed" }),

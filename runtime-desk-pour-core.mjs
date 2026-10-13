@@ -222,6 +222,35 @@ export function stripDuplicatePhysPathBridges(src) {
   return { content: text.replace(/\n{3,}/g, "\n\n"), changed: removedIds.length > 0, removedIds };
 }
 
+/**
+ * Два одинаковых title в FORM LOGIC OS (как «Кухня · Штора» ×2) — оставить не-desk.
+ */
+export function stripDuplicateTitles(src) {
+  let text = String(src || "");
+  const cells = /defineVirtualDevice\s*\(\s*["']form_logic_os["'][\s\S]*?cells:\s*\{([\s\S]*?)\n\s*\}/.exec(text);
+  if (!cells) return { content: text, changed: false, removedIds: [] };
+  const byTitle = new Map();
+  for (const m of cells[1].matchAll(/^\s*["']([^"']+)["']\s*:\s*\{[^}]*?\btitle:\s*"((?:\\.|[^"\\])*)"/gm)) {
+    const id = m[1];
+    const title = m[2];
+    if (!id || !title || / · яркость$/.test(title)) continue;
+    if (!byTitle.has(title)) byTitle.set(title, []);
+    byTitle.get(title).push(id);
+  }
+  const removedIds = [];
+  for (const ids of byTitle.values()) {
+    const uniq = [...new Set(ids)];
+    if (uniq.length < 2) continue;
+    const keep = uniq.find((id) => !String(id).startsWith("d_")) || uniq[0];
+    for (const id of uniq) {
+      if (id === keep) continue;
+      text = removeCellAndRules(text, id);
+      removedIds.push(id, id + "_bri");
+    }
+  }
+  return { content: text.replace(/\n{3,}/g, "\n\n"), changed: removedIds.length > 0, removedIds };
+}
+
 /** @param {string} coreSrc @param {{deviceTopicKey:string,controlId:string,name:string}[]} named */
 export function mergeDeskNamesIntoCore(coreSrc, named) {
   let src = String(coreSrc || "");
@@ -262,7 +291,12 @@ export function mergeDeskNamesIntoCore(coreSrc, named) {
     src = withCells !== src ? withCells : src + "\n";
   }
   if (addRules.length) src = src.trimEnd() + "\n\n" + addRules.join("\n") + "\n";
-  for (const step of [stripDriveCloseBridges, stripDuplicateDeskBridges, stripDuplicatePhysPathBridges]) {
+  for (const step of [
+    stripDriveCloseBridges,
+    stripDuplicateDeskBridges,
+    stripDuplicatePhysPathBridges,
+    stripDuplicateTitles,
+  ]) {
     const stripped = step(src);
     if (stripped.changed) {
       src = stripped.content;
