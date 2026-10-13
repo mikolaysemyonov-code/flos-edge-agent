@@ -1278,8 +1278,10 @@
         if (head) {
           head.style.color = "";
           head.textContent = canPourDesk
-            ? "main · HEAD сверху. checkout или «Починить · пуш». Стрелка — к разметке."
-            : "main · HEAD сверху. checkout всегда. Стрелка — к разметке.";
+            ? "main · HEAD сверху. «Залить» = пуш, checkout = откат. Стрелка — к разметке."
+            : canRepairDesk
+              ? "main · HEAD сверху. checkout = откат · «Починить» спрячет дубли. Стрелка — к разметке."
+              : "main · HEAD сверху. checkout = откат на пуш. Стрелка — к разметке.";
         }
         return;
       }

@@ -4,7 +4,8 @@
 import fs from "node:fs";
 import path from "node:path";
 
-const MAX = 8;
+/** Журнал main: пуш/checkout. Больше слотов — сентябрьский эталон не выпадает при пробах. */
+const MAX = 16;
 
 function deployDir() {
   return (

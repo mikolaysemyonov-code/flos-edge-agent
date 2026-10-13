@@ -90,36 +90,39 @@ export function assessDeskCanPour(preview) {
   const p = preview || buildDeskPourPreview(readDeskMarking(), readPouredChannelMarks(), readPouredDeskSnapshot().rules || []);
   const blocked = p.ready?.blocked || 0;
   const core = readShard("00_core.js");
-  const reasons = [];
-  if (blocked > 0) reasons.push("есть блоки без имени");
+  const hard = [];
   if (!/defineVirtualDevice\s*\(\s*["']form_logic_os["']/.test(core)) {
-    reasons.push("на диске нет form_logic_os в 00_core");
+    hard.push("на диске нет form_logic_os в 00_core");
   }
   const sols = listDeskSolutions();
   const unsupported = sols.filter((s) => !supportedDeskSolution(s));
   const supported = sols.filter(supportedDeskSolution);
+  // blocked (карточка без имени) не стопорит весь пуш — льём именованные, их пропускаем.
   const diffs = (p.rows || []).filter((r) => r.status === "new_name" || r.status === "name" || r.status === "card");
   const named = namedLoadsFromDesk();
   const repair = /form_logic_os/.test(core)
     ? buildCoreRepair(core, named, { persist: false })
     : { changed: false, hiddenGhosts: 0 };
-  // Починить не зависит от «блоков без имени» — иначе кнопка серая при живых дублях в WB.
   const canRepair = /form_logic_os/.test(core);
   const hasPourWork = diffs.length > 0 || supported.length > 0 || Boolean(repair.changed || repair.hiddenGhosts);
-  if (!hasPourWork && !canRepair) reasons.push("нечего заливать");
-  if (unsupported.length && !supported.length && !diffs.length && !canRepair) {
-    reasons.push("дим и прочие карточки — пока из облака");
+  if (!hasPourWork && !canRepair) hard.push("нечего заливать");
+  if (unsupported.length && !supported.length && !diffs.length && !repair.changed && !canRepair) {
+    hard.push("дим и прочие карточки — пока из облака");
   }
-  const canPour = reasons.length === 0 && blocked === 0 && /form_logic_os/.test(core) && hasPourWork;
+  const canPour = hard.length === 0 && /form_logic_os/.test(core) && hasPourWork;
+  const hints = [];
+  if (blocked > 0) hints.push(blocked + " без имени — пропустим");
+  if (canPour) {
+    hints.unshift(
+      blocked > 0 ? "Пуш на main (частичный: только с именами)." : "Готово к пушу на main.",
+    );
+  } else if (canRepair) {
+    hints.unshift("Починить FORM LOGIC OS (JSON meta.hidden в MQTT)");
+  }
   return {
     canPour,
     canRepair,
-    reason: canRepair && (!canPour || blocked > 0)
-      ? "Починить FORM LOGIC OS (JSON meta.hidden в MQTT)" +
-        (blocked > 0 ? " · заливка имён ждёт имена на блоках" : "")
-      : canPour
-        ? "Готово к пушу на main."
-        : reasons.join(" · ") || "Превью. Диск не трогаем.",
+    reason: (canPour || canRepair ? hints : hard).filter(Boolean).join(" · ") || "Превью. Диск не трогаем.",
     ready: p.ready,
     rows: p.rows,
     gaps: p.gaps,
