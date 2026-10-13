@@ -502,12 +502,27 @@
       }).join(" · ");
     }
     function triggerLine(t) {
+      if (t && /^wb-gpio$/i.test(t.deviceTopicKey)) {
+        return "GPIO · " + prettyControlId(t.controlId);
+      }
       const sku = solContactLabel(t);
       const cid = prettyControlId(t.controlId);
       if (!cid) return sku;
       if (sku.includes(cid)) return sku;
       if (/^(Input |EXT|[A-D]\d+_IN)/i.test(String(t.controlId || ""))) return sku + " · " + cid;
       return sku;
+    }
+    function btnPrefixLine(line, room) {
+      let s = String(line || "").trim();
+      if (room) s = titleUnderRoom(s, room) || s;
+      return s.replace(/^(кнопка|клавиша)\s*·\s*/i, "").trim() || s;
+    }
+    function markTitle(item, room) {
+      let t = room ? titleUnderRoom(item.title, room) : item.title;
+      if (item.scene || item.isLoad || !item.controlId) return t;
+      const cid = prettyControlId(item.controlId);
+      if (cid && t && !t.includes(cid)) return t + " · " + cid;
+      return t;
     }
     function otherBindLine(exceptLoads) {
       const skip = contactSet(exceptLoads);
@@ -689,7 +704,7 @@
             cards: cards,
             hints: hints,
             isLoad: isLoad,
-            btnLine: uniqText(src.map(triggerLine)).join(" · "),
+            btnLine: uniqText(src.map((t) => btnPrefixLine(triggerLine(t), guessRoom(name)))).join(" · "),
             status: prev && prev.status,
             pouredName: prev && prev.pouredName,
           });
@@ -781,12 +796,12 @@
       const left = document.createElement("div");
       const ttl = document.createElement("div");
       ttl.className = "ttl";
-      ttl.textContent = room ? titleUnderRoom(item.title, room) : item.title;
+      ttl.textContent = markTitle(item, room);
       if (item.scene) {
         const missing = !item.btnLine;
         const btn = missing ? document.createElement("button") : document.createElement("span");
         btn.className = "hint" + (missing ? " orphan" : "");
-        btn.textContent = missing ? missingButtonText(item) : "кнопка · " + item.btnLine;
+        btn.textContent = missing ? missingButtonText(item) : "кнопка · " + btnPrefixLine(item.btnLine, room);
         if (missing) {
           btn.type = "button";
           btn.addEventListener("click", (e) => {
@@ -810,7 +825,7 @@
         if (item.btnLine) {
           const b = document.createElement("span");
           b.className = "hint";
-          b.textContent = "кнопка · " + item.btnLine;
+          b.textContent = "кнопка · " + btnPrefixLine(item.btnLine, room);
           left.appendChild(b);
         } else if (loadNeedsButton(item)) {
           const b = document.createElement("button");
