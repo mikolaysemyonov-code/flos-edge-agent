@@ -708,12 +708,15 @@
     }
     function shortLoadName(name, controlId) {
       const pretty = prettyContactName(name);
-      const ch = String(controlId || "").replace(/^Channel\s+/i, "Ch");
       const parts = pretty.split(/\s*·\s*/).filter(Boolean);
-      if (parts.length < 2) return pretty || ch;
-      const rest = parts.slice(1).join(" · ").replace(/светов(ая|ой)?\s*лини[яи](\s*\d+)?/gi, "").replace(/\s+/g, " ").trim();
-      if (!rest) return parts[0] + " · " + ch;
-      return parts[0] + " · " + rest;
+      if (!parts.length) return String(controlId || "").replace(/^Channel\s+/i, "Ch");
+      const room = parts[0];
+      const esc = room.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      const type = parts.slice(1)
+        .map((p) => p.replace(new RegExp("\\s*" + esc + "\\s*$", "i"), "").trim())
+        .filter(Boolean)
+        .join(" · ");
+      return type ? room + " · " + type : room;
     }
     function namedLoads() {
       const raw = [];
@@ -744,8 +747,8 @@
       return raw.map((r) => ({
         deviceTopicKey: r.deviceTopicKey,
         controlId: r.controlId,
-        label: counts[r.name] > 1
-          ? r.name + " · " + prettyControlId(r.controlId).replace(/^Channel\s+/i, "Ch")
+        label: counts[r.name] > 1 && r.ch
+          ? r.name + " · " + r.ch
           : r.name,
       }));
     }
@@ -842,7 +845,7 @@
         if (!original && (Array.isArray(ch.binds) && ch.binds.length)) {
           const sub = document.createElement("span");
           sub.className = "loads orphan";
-          sub.textContent = "нужно имя";
+          sub.textContent = "комната и тип";
           grow.appendChild(sub);
         }
       } else if (deskTriggers.length) {
@@ -1053,9 +1056,15 @@
     function prettyContactName(name) {
       const t = String(name || "").trim();
       if (!t) return "";
-      const parts = t.split(/\s*·\s*/);
+      const parts = t.split(/\s*·\s*/).filter(Boolean);
+      if (!parts.length) return "";
       parts[0] = prettyRoom(parts[0]);
-      return parts.join(" · ");
+      const room = parts[0];
+      const esc = room.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      for (let i = 1; i < parts.length; i += 1) {
+        parts[i] = parts[i].replace(new RegExp("\\s*" + esc + "\\s*$", "i"), "").trim();
+      }
+      return parts.filter(Boolean).join(" · ");
     }
     function channelRoom(ch) {
       return nameRoom(ch.name);
