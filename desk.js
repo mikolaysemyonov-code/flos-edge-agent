@@ -130,10 +130,19 @@
       });
       return out;
     }
-    function setTab(tab) {
+    function closeModule() {
+      if (!openMod && !markEdit) return;
+      openMod = "";
+      markEdit = "";
+      markDraft = { room: "", type: "" };
+      renderShelves(lastShelvesRows);
+      renderRoomBars();
+    }
+    function setTab(tab, keepMod) {
       if (!/^(light|buttons|relays|cards|poured)$/.test(tab)) return;
       activeTab = tab;
       closeCardSheet();
+      if (!keepMod) closeModule();
       document.querySelectorAll(".tab").forEach((btn) => {
         btn.setAttribute("aria-selected", btn.dataset.tab === tab ? "true" : "false");
       });
@@ -833,7 +842,7 @@
       const shelf = lastShelvesRows.find((r) => r.deviceTopicKey === key);
       const hit = shelf && (shelf.channels || []).find((x) => x.controlId === cid);
       markDraft = splitMark(hit && hit.name);
-      setTab(familyOf({ deviceTopicKey: key }));
+      setTab(familyOf({ deviceTopicKey: key }), true);
       renderShelves(lastShelvesRows);
       const want = contactKey(key, cid);
       const go = () => {
@@ -1024,46 +1033,51 @@
       box.appendChild(done);
       return box;
     }
-    function renderRoomBars() {
+    function fillRooms(bar) {
       const rooms = roomsFromBus();
+      bar.replaceChildren();
+      rooms.forEach((r) => {
+        const b = document.createElement("button");
+        b.type = "button";
+        b.className = "chip";
+        b.textContent = r;
+        b.setAttribute("aria-pressed", r === roomFilter ? "true" : "false");
+        b.addEventListener("click", () => {
+          roomFilter = roomFilter === r ? "" : r;
+          if (markEdit && roomFilter) markDraft.room = roomFilter;
+          renderRoomBars();
+          renderShelves(lastShelvesRows);
+        });
+        bar.appendChild(b);
+      });
+      const add = document.createElement("button");
+      add.type = "button";
+      add.className = "chip add";
+      add.textContent = "+ комната";
+      add.addEventListener("click", () => {
+        const typed = window.prompt("Комната");
+        if (!typed || !typed.trim()) return;
+        fetch("/runtime/desk-marking", {
+          method: "PUT",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ room: typed.trim() }),
+        }).then((r) => r.json()).then((j) => {
+          if (!j.ok) return;
+          deskRooms = j.rooms || deskRooms;
+          roomFilter = prettyRoom(typed);
+          renderRoomBars();
+          renderShelves(lastShelvesRows);
+        });
+      });
+      bar.appendChild(add);
+    }
+    function renderRoomBars() {
+      const fam = openMod ? familyOf({ deviceTopicKey: openMod }) : "";
       ["rooms-light", "rooms-buttons", "rooms-relays"].forEach((id) => {
         const bar = $(id);
         if (!bar) return;
-        bar.replaceChildren();
-        rooms.forEach((r) => {
-          const b = document.createElement("button");
-          b.type = "button";
-          b.className = "chip";
-          b.textContent = r;
-          b.setAttribute("aria-pressed", r === roomFilter ? "true" : "false");
-          b.addEventListener("click", () => {
-            roomFilter = roomFilter === r ? "" : r;
-            if (markEdit && roomFilter) markDraft.room = roomFilter;
-            renderRoomBars();
-            renderShelves(lastShelvesRows);
-          });
-          bar.appendChild(b);
-        });
-        const add = document.createElement("button");
-        add.type = "button";
-        add.className = "chip add";
-        add.textContent = "+ комната";
-        add.addEventListener("click", () => {
-          const typed = window.prompt("Комната");
-          if (!typed || !typed.trim()) return;
-          fetch("/runtime/desk-marking", {
-            method: "PUT",
-            headers: { "content-type": "application/json" },
-            body: JSON.stringify({ room: typed.trim() }),
-          }).then((r) => r.json()).then((j) => {
-            if (!j.ok) return;
-            deskRooms = j.rooms || deskRooms;
-            roomFilter = prettyRoom(typed);
-            renderRoomBars();
-            renderShelves(lastShelvesRows);
-          });
-        });
-        bar.appendChild(add);
+        bar.hidden = !!fam && id === "rooms-" + fam;
+        if (!bar.hidden) fillRooms(bar);
       });
     }
     async function loadRooms() {
@@ -1164,50 +1178,52 @@
         return na - nb || String(a.label || "").localeCompare(String(b.label || ""), "ru");
       });
     }
-    function moduleTile(s) {
+    function paintModuleFace(el, s) {
       const n = (s.channels || []).length || s.channelCount || 0;
       const named = namedCount(s);
       const rooms = moduleRoomsOf(s);
       const kind = moduleKind(s);
+      el.innerHTML = "<span class=\"vtop\"><span class=\"ico\"></span><span class=\"cat\"></span></span><span class=\"vt\"></span><span class=\"vs\"></span>";
+      el.querySelector(".ico").innerHTML = MOD_ICO[kind] || MOD_ICO.led;
+      const cat = el.querySelector(".cat");
+      cat.textContent = named ? named + " из " + n : (n ? n + " кан." : moduleKindRu(kind));
+      if (named) cat.classList.add("on");
+      el.querySelector(".vt").textContent = s.label || s.deviceTopicKey;
+      el.querySelector(".vs").textContent = rooms.length ? rooms.join(" · ") : "без имён";
+    }
+    function moduleTile(s) {
+      const named = namedCount(s);
       const btn = document.createElement("button");
       btn.type = "button";
       btn.className = "vcard" + (named ? " on" : "");
-      if (roomFilter && rooms.includes(roomFilter)) btn.classList.add("on");
-      btn.innerHTML = "<span class=\"vtop\"><span class=\"ico\"></span><span class=\"cat\"></span></span><span class=\"vt\"></span><span class=\"vs\"></span>";
-      btn.querySelector(".ico").innerHTML = MOD_ICO[kind] || MOD_ICO.led;
-      const cat = btn.querySelector(".cat");
-      cat.textContent = named ? named + " из " + n : (n ? n + " кан." : moduleKindRu(kind));
-      if (named) cat.classList.add("on");
-      btn.querySelector(".vt").textContent = s.label || s.deviceTopicKey;
-      btn.querySelector(".vs").textContent = rooms.length ? rooms.join(" · ") : "без имён";
+      if (roomFilter && moduleRoomsOf(s).includes(roomFilter)) btn.classList.add("on");
+      paintModuleFace(btn, s);
       btn.addEventListener("click", () => {
         openMod = s.deviceTopicKey;
         markEdit = "";
         renderShelves(lastShelvesRows);
+        renderRoomBars();
       });
       return btn;
     }
     function renderModuleDrill(box, s) {
-      const bar = document.createElement("div");
-      bar.className = "modbar";
       const back = document.createElement("button");
       back.type = "button";
-      back.className = "ghost";
-      back.textContent = "Модули";
-      back.addEventListener("click", () => {
-        openMod = "";
-        markEdit = "";
-        markDraft = { room: "", type: "" };
-        renderShelves(lastShelvesRows);
-      });
-      const sku = document.createElement("span");
-      sku.className = "sku";
-      sku.textContent = s.label || s.deviceTopicKey;
-      bar.append(back, sku);
+      back.className = "back";
+      back.setAttribute("aria-label", "К модулям");
+      back.innerHTML = "<svg viewBox='0 0 24 24'><path d='M15 18l-6-6 6-6'/></svg><span>К модулям</span>";
+      back.addEventListener("click", closeModule);
+      const head = document.createElement("div");
+      head.className = "vcard" + (namedCount(s) ? " on" : "");
+      paintModuleFace(head, s);
+      const rooms = document.createElement("div");
+      rooms.className = "rooms";
+      rooms.setAttribute("aria-label", "Комнаты");
+      fillRooms(rooms);
       const chs = document.createElement("ul");
       chs.className = "channels";
       appendChannelBlock(chs, s, s.channels || []);
-      box.append(bar, chs);
+      box.append(back, head, rooms, chs);
     }
     function fillList(id, rows, emptyText) {
       const box = $(id);
@@ -1276,7 +1292,12 @@
     $("scan").onclick = () => { void scanNow(); };
     $("cardMask").addEventListener("click", closeCardSheet);
     document.addEventListener("keydown", (e) => {
-      if (e.key === "Escape" && !$("cardSheet").hidden) closeCardSheet();
+      if (e.key !== "Escape") return;
+      if (!$("cardSheet").hidden) {
+        closeCardSheet();
+        return;
+      }
+      if (openMod) closeModule();
     });
     function showShelves(j) {
       const shelves = j.shelves || [];

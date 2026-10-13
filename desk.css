@@ -52,15 +52,24 @@
     .head { display: flex; justify-content: space-between; gap: 1rem; margin-bottom: .4rem; }
     .sku { font-weight: 600; letter-spacing: -.01em; }
     .ch { color: var(--mute); font-size: .78rem; white-space: nowrap; }
-    .channels li { display: grid; grid-template-columns: 4.6rem minmax(0, 1fr); gap: .15rem .7rem; padding: .42rem 0; align-items: start; }
+    .channels { display: flex; flex-direction: column; gap: .55rem; }
+    .channels li {
+      display: grid; grid-template-columns: 4.4rem minmax(0, 1fr); gap: .2rem .75rem;
+      padding: .75rem .85rem; align-items: start;
+      border-radius: 1.15rem;
+      border: 1px solid rgb(255 255 255 / .12);
+      background: linear-gradient(180deg, rgb(255 255 255 / .07), rgb(255 255 255 / .025));
+    }
     .channels li.roomh {
       display: block;
-      padding: .7rem 0 .05rem;
+      padding: .45rem .2rem 0;
+      border: 0; background: none;
       color: var(--mute);
-      font-size: .72rem;
+      font-size: .62rem; font-weight: 700;
+      letter-spacing: .08em; text-transform: uppercase;
     }
     .channels li.roomh:first-child { padding-top: .1rem; }
-    .knob { color: var(--mute); font-size: .78rem; min-width: 0; padding-top: .28rem; }
+    .knob { color: var(--mute); font-size: .78rem; min-width: 0; padding-top: .12rem; }
     input[type="text"] {
       width: 100%; border: 0; border-bottom: 1px solid rgb(255 255 255 / .12);
       background: transparent; color: var(--ink); font: inherit; font-weight: 600;
@@ -116,8 +125,8 @@
     #gaps li:focus, #preview li:focus { outline: 1px solid rgb(var(--sky) / .45); border-radius: .4rem; }
     #gaps .chips, #preview .chips { margin-top: .35rem; }
     .channels li.jump {
-      outline: 1px solid rgb(var(--sky) / .5);
-      border-radius: .45rem;
+      border-color: rgb(var(--sky) / .5);
+      box-shadow: inset 0 0 0 1px rgb(var(--sky) / .18);
     }
     #poured li.roomh, #gaps li.roomh, #preview li.roomh {
       display: block; border-top: 0; padding: .85rem 0 .15rem;
@@ -196,30 +205,43 @@
     .filters button[aria-pressed="true"] {
       color: rgb(186 230 253); border-color: rgb(var(--sky) / .4); background: rgb(var(--sky) / .12);
     }
-    .modbar {
-      display: flex; align-items: center; justify-content: space-between;
-      gap: 1rem; margin: 0 0 .7rem;
-    }
-    .modbar .sku { font-size: 1.05rem; font-weight: 650; letter-spacing: -.02em; }
     .modopen { display: block; }
+    .back {
+      appearance: none; border: 0; cursor: pointer;
+      display: inline-flex; align-items: center; gap: .4rem;
+      min-height: 2.5rem;
+      padding: .4rem .95rem .4rem .7rem;
+      margin: 0 0 .75rem;
+      border-radius: 999px;
+      font: inherit; font-size: .85rem; font-weight: 650;
+      color: #041018;
+      background: rgb(var(--sky));
+      box-shadow: 0 0 18px rgb(var(--sky) / .35);
+    }
+    .back svg {
+      width: 16px; height: 16px; stroke: currentColor; fill: none;
+      stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round;
+    }
     .vitrine { display: grid; gap: .7rem; }
     @media (min-width: 640px) { .vitrine { grid-template-columns: 1fr 1fr; } }
     @media (min-width: 900px) { .vitrine { grid-template-columns: 1fr 1fr 1fr; } }
-    button.vcard {
+    button.vcard, div.vcard {
       appearance: none; border: 1px solid rgb(255 255 255 / .12);
       background: linear-gradient(180deg, rgb(255 255 255 / .07), rgb(255 255 255 / .025));
-      color: inherit; font: inherit; text-align: left; cursor: pointer;
+      color: inherit; font: inherit; text-align: left;
       min-height: 7.2rem; border-radius: 1.15rem; padding: .75rem .85rem .85rem;
       display: flex; flex-direction: column; gap: .55rem;
     }
+    button.vcard { cursor: pointer; }
     button.vcard:hover {
       border-color: rgb(var(--sky) / .38);
       background: linear-gradient(180deg, rgb(var(--sky) / .09), rgb(255 255 255 / .03));
     }
-    button.vcard.on {
+    button.vcard.on, div.vcard.on {
       border-color: rgb(var(--sky) / .5);
       box-shadow: inset 0 0 0 1px rgb(var(--sky) / .18);
     }
+    div.vcard { min-height: 0; margin: 0 0 .85rem; cursor: default; }
     .vcard .cat.on { color: rgb(186 230 253); }
     .vcard .vtop { display: flex; align-items: center; justify-content: space-between; gap: .5rem; }
     .vcard .ico {
