@@ -19,6 +19,7 @@
     let roomFilter = "";
     let openMod = "";
     let pouredPane = "mark";
+    let openSceneId = "";
     const LED_TYPES = [
       "Световая линия",
       "Подсветка зеркала", "Подсветка ниши", "Подсветка полки",
@@ -170,8 +171,14 @@
     }
     function setTab(tab, keepMod) {
       if (!/^(light|buttons|relays|cards|poured)$/.test(tab)) return;
+      const was = activeTab;
       activeTab = tab;
       closeCardSheet();
+      if (tab !== "poured") openSceneId = "";
+      else if (was === "poured" && openSceneId) {
+        openSceneId = "";
+        renderReady();
+      }
       if (!keepMod) closeModule();
       document.querySelectorAll(".tab").forEach((btn) => {
         btn.setAttribute("aria-selected", btn.dataset.tab === tab ? "true" : "false");
@@ -411,8 +418,66 @@
       const low = String(text || "").toLowerCase();
       return known.find((r) => low.includes(r.toLowerCase())) || "";
     }
+    function sceneCardId(title, card) {
+      const t = String(card || title || "");
+      if (/дим/i.test(t)) return "light_dim_hold_mcm";
+      if (/все выкл/i.test(t)) return "light_all_off";
+      if (/розетк/i.test(t)) return "socket_button_toggle";
+      return "light_button_toggle";
+    }
+    function sceneParts(contacts) {
+      const loads = [];
+      const buttons = [];
+      (contacts || []).forEach((c) => {
+        if (!c || !c.controlId) return;
+        if (isDeskLoad(c.controlId)) {
+          if (!isDriveClose(c.controlId)) loads.push({ ...c, controlId: pairOpenId(c.controlId) });
+        } else buttons.push(c);
+      });
+      return { loads, buttons };
+    }
+    function sceneSub(contacts) {
+      const p = sceneParts(contacts);
+      const btn = p.buttons.map(solContactLabel).join(" · ") || "нет кнопки";
+      const lights = p.loads.map(solContactLabel).join(" · ") || "нет света";
+      return btn + " → " + lights;
+    }
+    function sceneKey(item) {
+      return String((item && (item.id || item.deskId)) || "");
+    }
+    function sameContact(a, b) {
+      if (!a || !b) return false;
+      return contactKey(a.deviceTopicKey, pairOpenId(a.controlId)) ===
+        contactKey(b.deviceTopicKey, pairOpenId(b.controlId));
+    }
+    function contactSet(rows) {
+      return new Set((rows || []).map((c) => contactKey(c.deviceTopicKey, pairOpenId(c.controlId))).sort());
+    }
+    function sceneEqualsSol(item, sol) {
+      if (!sol) return false;
+      const p = sceneParts(item.contacts);
+      if (sceneCardId(item.title, item.card) !== sol.solutionId) return false;
+      const trigOk = !p.buttons.length ? !sol.trigger
+        : p.buttons.some((b) => sameContact(b, sol.trigger));
+      if (!trigOk) return false;
+      const a = [...contactSet(p.loads)].join("|");
+      const b = [...contactSet(sol.targets)].join("|");
+      return a === b;
+    }
+    function matchDeskSol(item, used) {
+      const card = sceneCardId(item.title, item.card);
+      const p = sceneParts(item.contacts);
+      return deskSolutions.find((sol) => {
+        if (used.has(sol.id)) return false;
+        if (sol.solutionId !== card) return false;
+        if (p.buttons.some((b) => sameContact(b, sol.trigger))) return true;
+        const a = [...contactSet(p.loads)].join("|");
+        const b = [...contactSet(sol.targets)].join("|");
+        return a && a === b;
+      }) || null;
+    }
     function pourLane(item) {
-      if (item.scene) return "disk";
+      if (item.scene) return item.deskDirty ? "send" : "disk";
       const s = item.status;
       if (s === "new_name" || s === "name" || s === "card" || s === "no_card" || s === "blocked") return "send";
       if (item.pouredName || (item.hints && item.hints.length)) return "disk";
@@ -444,40 +509,68 @@
           });
         });
       });
+      const usedSol = new Set();
       pouredRules.filter((r) => r.kind === "user").forEach((r) => {
-        const c0 = (r.contacts || [])[0] || {};
-        items.push({
+        const item = {
+          id: r.id,
           room: roomFromContacts(r.contacts) || roomFromTitle(r.title) || guessRoom(r.title) || "",
           bucket: "scenes",
-          title: r.title || r.id,
-          sub: (r.contacts || []).map(solContactLabel).join(" · ") || "нет контакта на шине",
-          deviceTopicKey: c0.deviceTopicKey,
-          controlId: c0.controlId,
+          title: r.title || r.card || r.id,
+          sub: sceneSub(r.contacts),
           contacts: r.contacts,
+          card: r.card,
           isLoad: false,
           scene: true,
+        };
+        const sol = matchDeskSol(item, usedSol);
+        if (sol) {
+          usedSol.add(sol.id);
+          item.deskId = sol.id;
+          item.deskDirty = !sceneEqualsSol(item, sol);
+        }
+        items.push(item);
+      });
+      deskSolutions.forEach((sol) => {
+        if (usedSol.has(sol.id)) return;
+        const contacts = [sol.trigger].concat(sol.targets || []).filter(Boolean);
+        items.push({
+          id: sol.id,
+          deskId: sol.id,
+          room: roomFromContacts(contacts) || "",
+          bucket: "scenes",
+          title: sol.title || sol.solutionId,
+          sub: sceneSub(contacts),
+          contacts: contacts,
+          solutionId: sol.solutionId,
+          isLoad: false,
+          scene: true,
+          deskDirty: true,
         });
       });
       return items;
     }
     function paneItems(items) {
-      if (pouredPane === "rules") {
-        return items.filter((i) => i.scene || (i.isLoad && (
-          (i.cards && i.cards.length) || (i.hints && i.hints.length) ||
-          i.status === "no_card" || i.status === "card"
-        )));
-      }
-      if (pouredPane === "send") {
-        return items.filter((i) => !i.scene && pourLane(i) === "send");
-      }
+      if (pouredPane === "rules") return items.filter((i) => i.scene);
+      if (pouredPane === "send") return items.filter((i) => pourLane(i) === "send");
       return items.filter((i) => !i.scene);
+    }
+    function closeScene() {
+      if (!openSceneId) return;
+      openSceneId = "";
+      renderReady();
     }
     function readyCard(item, room) {
       const li = document.createElement("li");
-      if (item.deviceTopicKey && item.controlId) {
-        li.dataset.contact = contactKey(item.deviceTopicKey, item.controlId);
+      const go = item.scene
+        ? () => { openSceneId = sceneKey(item); pouredPane = "rules"; renderReady(); }
+        : (item.deviceTopicKey && item.controlId)
+          ? () => jumpToContact(item.deviceTopicKey, item.controlId)
+          : null;
+      if (go) {
+        if (!item.scene && item.deviceTopicKey) {
+          li.dataset.contact = contactKey(item.deviceTopicKey, item.controlId);
+        }
         li.tabIndex = 0;
-        const go = () => jumpToContact(item.deviceTopicKey, item.controlId);
         li.addEventListener("click", go);
         li.addEventListener("keydown", (e) => {
           if (e.key === "Enter" || e.key === " ") {
@@ -506,51 +599,25 @@
       const st = document.createElement("span");
       const lane = pourLane(item);
       st.className = "st" + (item.status === "blocked" ? "" : lane === "send" ? " send" : " ok");
-      st.textContent = item.scene ? "на диске" : item.status === "blocked" ? "блок"
+      st.textContent = item.status === "blocked" ? "блок"
         : lane === "send" ? "к заливке" : "на диске";
       top.append(left, st);
       cap.appendChild(top);
       li.appendChild(cap);
-      const showCards = pouredPane === "rules" && item.isLoad && !item.scene;
-      if (showCards) {
-        const selected = new Set(exclusiveCards(Array.isArray(item.cards) ? item.cards : []));
-        const chips = document.createElement("div");
-        chips.className = "chips" + (selected.size === 0 ? " need" : "");
-        CARDS.forEach((card) => {
-          const btn = document.createElement("button");
-          btn.type = "button";
-          btn.className = "chip";
-          btn.dataset.card = card.id;
-          btn.textContent = card.ru;
-          btn.setAttribute("aria-pressed", selected.has(card.id) ? "true" : "false");
-          btn.addEventListener("click", (e) => {
-            e.stopPropagation();
-            toggleDeskCard(selected, card.id);
-            paintChips(chips, selected);
-            chips.classList.toggle("need", selected.size === 0);
-            saveCards(item.deviceTopicKey, item.controlId, [...selected]).then(() => {
-              fetch("/runtime/mqtt-scan").then((res) => res.json()).then((j) => {
-                if (j.ok && j.shelves) showShelves(j);
-              }).catch(() => {});
-            });
-          });
-          chips.appendChild(btn);
-        });
-        li.appendChild(chips);
-      }
       return li;
     }
     function renderPouredTabs() {
       const bar = $("pouredTabs");
       if (!bar) return;
       const all = collectReadyItems();
-      const sendN = all.filter((i) => !i.scene && pourLane(i) === "send").length;
+      const sendN = all.filter((i) => pourLane(i) === "send").length;
       const tabs = [
         { id: "mark", ru: "Разметка" },
         { id: "rules", ru: "Правила" },
         { id: "send", ru: "К заливке" + (sendN ? " · " + sendN : "") },
       ];
       if (!tabs.some((t) => t.id === pouredPane)) pouredPane = "mark";
+      bar.hidden = !!openSceneId;
       bar.replaceChildren();
       tabs.forEach((t) => {
         const b = document.createElement("button");
@@ -558,21 +625,160 @@
         b.textContent = t.ru;
         b.setAttribute("aria-pressed", pouredPane === t.id ? "true" : "false");
         b.addEventListener("click", () => {
+          if (t.id !== "rules") openSceneId = "";
           pouredPane = t.id;
           renderReady();
         });
         bar.appendChild(b);
       });
       const wrap = $("pourWrap");
-      if (wrap) wrap.hidden = pouredPane !== "send";
+      if (wrap) wrap.hidden = pouredPane !== "send" || !!openSceneId;
       $("n-poured").textContent = sendN || "";
+    }
+    function mergeContactRows(base, extra) {
+      const rows = (base || []).slice();
+      const seen = new Set(rows.map((r) => contactKey(r.deviceTopicKey, r.controlId)));
+      (extra || []).forEach((c) => {
+        const cid = isDeskLoad(c.controlId) ? pairOpenId(c.controlId) : c.controlId;
+        const k = contactKey(c.deviceTopicKey, cid);
+        if (seen.has(k)) return;
+        rows.unshift({
+          deviceTopicKey: c.deviceTopicKey,
+          controlId: cid,
+          label: solContactLabel({ deviceTopicKey: c.deviceTopicKey, controlId: cid }),
+        });
+        seen.add(k);
+      });
+      return rows;
+    }
+    function renderSceneDrill(box, item) {
+      const p = sceneParts(item.contacts);
+      const back = document.createElement("button");
+      back.type = "button";
+      back.className = "back";
+      back.setAttribute("aria-label", "К правилам");
+      back.innerHTML = "<svg viewBox='0 0 24 24'><path d='M15 18l-6-6 6-6'/></svg><span>К правилам</span>";
+      back.addEventListener("click", closeScene);
+      const head = document.createElement("div");
+      head.className = "vcard on";
+      const cap = document.createElement("div");
+      cap.className = "vtop";
+      const ttl = document.createElement("span");
+      ttl.className = "vt";
+      ttl.textContent = item.card || String(item.title || "").split(/\s*·\s*/)[0] || "Сценарий";
+      const st = document.createElement("span");
+      st.className = "cat" + (pourLane(item) === "send" ? "" : " on");
+      st.textContent = pourLane(item) === "send" ? "к заливке" : "на диске";
+      cap.append(ttl, st);
+      const vs = document.createElement("span");
+      vs.className = "vs";
+      vs.textContent = item.room ? item.room : "Свет и кнопка с этой шины. Диск не пишем.";
+      head.append(cap, vs);
+      const card = document.createElement("div");
+      card.className = "scene-card";
+      const trigLab = document.createElement("div");
+      trigLab.className = "fldrow";
+      const trigName = document.createElement("span");
+      trigName.className = "fldlab";
+      trigName.textContent = "Кнопка";
+      const trig = document.createElement("select");
+      trig.className = "fldsel";
+      trig.setAttribute("aria-label", "Кнопка");
+      fillSelect(trig, mergeContactRows(namedTriggers(), p.buttons), "Выбрать");
+      if (p.buttons[0]) trig.value = contactKey(p.buttons[0].deviceTopicKey, p.buttons[0].controlId);
+      if (!trig.value) trig.classList.add("empty");
+      trig.addEventListener("change", () => trig.classList.toggle("empty", !trig.value));
+      trigLab.append(trigName, trig);
+      card.appendChild(trigLab);
+      if (p.buttons.length > 1) {
+        const extra = document.createElement("p");
+        extra.className = "meta scene-extra";
+        extra.textContent = "на диске ещё · " + p.buttons.slice(1).map(solContactLabel).join(" · ");
+        card.appendChild(extra);
+      }
+      const lightH = document.createElement("p");
+      lightH.className = "sech";
+      lightH.textContent = "Свет";
+      const picks = document.createElement("div");
+      picks.className = "picks";
+      const want = contactSet(p.loads);
+      const loads = mergeContactRows(namedLoads(), p.loads);
+      if (!loads.length) {
+        const empty = document.createElement("p");
+        empty.className = "meta";
+        empty.textContent = "Сначала имя линии на вкладке Свет.";
+        picks.appendChild(empty);
+      }
+      loads.forEach((load) => {
+        const lab = document.createElement("label");
+        const cb = document.createElement("input");
+        cb.type = "checkbox";
+        cb.value = contactKey(load.deviceTopicKey, load.controlId);
+        cb.checked = want.has(cb.value);
+        lab.append(cb, document.createTextNode(load.label));
+        picks.appendChild(lab);
+      });
+      card.append(lightH, picks);
+      const err = document.createElement("p");
+      err.className = "meta orphan scene-err";
+      const save = document.createElement("button");
+      save.type = "button";
+      save.className = "ghost";
+      save.textContent = "На стол";
+      save.addEventListener("click", () => {
+        const targets = [...picks.querySelectorAll("input:checked")].map((o) => parseBindValue(o.value)).filter(Boolean);
+        const trigger = parseBindValue(trig.value);
+        err.textContent = "";
+        if (!trigger) { err.textContent = "Нужна кнопка"; return; }
+        if (!targets.length) { err.textContent = "Нужен свет"; return; }
+        fetch("/runtime/desk-solutions", {
+          method: "PUT",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            id: item.deskId,
+            solutionId: item.solutionId || sceneCardId(item.title, item.card),
+            trigger: trigger,
+            targets: targets,
+          }),
+        }).then((r) => r.json()).then((j) => {
+          if (!j.ok) {
+            err.textContent = j.error === "need_trigger" ? "Нужна кнопка с шины"
+              : j.error === "need_target" || j.error === "need_load" ? "Нужна линия из разметки"
+              : (j.error || "Не сохранил");
+            return;
+          }
+          openSceneId = "";
+          loadSolutions().then(() => { loadPreview(); renderReady(); });
+        }).catch(() => { err.textContent = "Нет связи с агентом"; });
+      });
+      const actions = document.createElement("div");
+      actions.className = "actions";
+      actions.append(save);
+      box.append(back, head, card, err, actions);
     }
     function renderReady() {
       const box = $("ready");
       if (!box) return;
       renderPouredTabs();
       box.replaceChildren();
-      const items = paneItems(collectReadyItems());
+      const all = collectReadyItems();
+      if (openSceneId) {
+        const hit = all.find((i) => i.scene && sceneKey(i) === openSceneId);
+        if (hit) {
+          pouredPane = "rules";
+          renderPouredTabs();
+          renderSceneDrill(box, hit);
+          const head = $("previewHead");
+          if (head) {
+            head.style.color = "";
+            head.textContent = "Правило. Кнопка и свет — можно поправить. Диск не пишем.";
+          }
+          return;
+        }
+        openSceneId = "";
+        renderPouredTabs();
+      }
+      const items = paneItems(all);
       const rooms = roomsFromBus().slice();
       if (items.some((i) => !i.room)) rooms.push("");
       rooms.forEach((room) => {
@@ -582,6 +788,13 @@
         h.className = "roomh";
         h.textContent = room || "Без комнаты";
         box.appendChild(h);
+        if (pouredPane === "rules") {
+          const ul = document.createElement("ul");
+          ul.className = "channels";
+          mine.forEach((i) => ul.appendChild(readyCard(i, room)));
+          box.appendChild(ul);
+          return;
+        }
         READY_BUCKETS.forEach((b) => {
           const chunk = mine.filter((i) => i.bucket === b.id);
           if (!chunk.length) return;
@@ -599,7 +812,7 @@
         const empty = document.createElement("p");
         empty.className = "empty";
         empty.textContent = pouredPane === "send" ? "К заливке ничего нет — стол совпадает с диском."
-          : pouredPane === "rules" ? "Правил на диске и карточек на столе пока нет."
+          : pouredPane === "rules" ? "Правил на диске пока нет."
           : "Разметки пока нет.";
         box.appendChild(empty);
       }
@@ -614,7 +827,7 @@
         head.textContent = (pouredPane === "send"
           ? "К заливке. Диск не пишем."
           : pouredPane === "rules"
-            ? "Правила. Ткни строку — править."
+            ? "Правила. Ткни сценарий — кнопка и свет."
             : "Разметка. Ткни строку — править в модуле.") + " · " + bits;
       }
     }
@@ -901,6 +1114,7 @@
         renderVitrine();
         renderDeskSolutions();
         stampDiskScenes();
+        if (activeTab === "poured") renderReady();
       } catch (_) { /* агент ниже */ }
     }
     async function loadHealth() {
@@ -1525,6 +1739,10 @@
       if (e.key !== "Escape") return;
       if (!$("cardSheet").hidden) {
         closeCardSheet();
+        return;
+      }
+      if (openSceneId) {
+        closeScene();
         return;
       }
       if (openMod) closeModule();

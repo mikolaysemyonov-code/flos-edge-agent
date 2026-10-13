@@ -191,6 +191,23 @@
     }
     #ready .channels { margin: 0 0 .2rem; }
     #ready .chips { margin: 0; padding: 0 1rem .8rem; }
+    #ready .scene-card {
+      border-radius: 14px;
+      border: 1px solid rgb(255 255 255 / .08);
+      background: rgb(44 44 46 / .88);
+      overflow: hidden;
+      margin: 0 0 .85rem;
+    }
+    #ready .scene-card .sech { margin: .55rem 1rem .1rem; }
+    #ready .scene-card .picks { margin: 0; gap: 0; }
+    #ready .scene-card .picks label {
+      min-height: 2.7rem;
+      padding: 0 1rem;
+      border-top: .5px solid rgb(84 84 88 / .55);
+      font-size: .86rem;
+    }
+    #ready .scene-extra, #ready .scene-err { margin: 0; padding: .35rem 1rem .7rem; }
+    #ready .actions { display: flex; gap: .5rem; margin: .15rem 0 .5rem; }
     .ch-cap .vtop { display: flex; align-items: flex-start; justify-content: space-between; gap: .6rem; }
     .st {
       flex: none; margin-top: .15rem;
