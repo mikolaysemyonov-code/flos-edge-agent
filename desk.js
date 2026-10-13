@@ -824,14 +824,25 @@
         const left = document.createElement("div");
         const ttl = document.createElement("div");
         ttl.className = "ttl";
-        ttl.textContent = String(rel.revisionId || "");
+        // f36878e3 · 13.10 — коротко; полный fnv1a32:… в title для отладки
+        const short =
+          rel.label ||
+          [rel.shortId || String(rel.revisionId || "").replace(/^fnv1a32:/i, "").slice(0, 8), rel.dayLabel]
+            .filter(Boolean)
+            .join(" · ") ||
+          String(rel.revisionId || "");
+        ttl.textContent = short;
+        ttl.title = String(rel.revisionId || "");
         const hint = document.createElement("span");
         hint.className = "hint";
         const n = rel.fileCount || (rel.files || []).length;
         const parent = lastReleases.find((p) => p.revisionId === rel.parentId);
-        const caret = rel.current && rel.parentId ? "^ " + rel.parentId : "";
+        const parentShort = rel.parentShortId || (parent && (parent.shortId || parent.label)) || "";
+        const caret = rel.current && (parentShort || rel.parentId) ? "^ " + (parentShort || rel.parentId) : "";
+        const when = relWhen(rel.savedAt);
+        const timeOnly = when.includes(" ") ? when.split(" ").slice(1).join(" ") : when;
         const sameWhen = rel.current && parent && relWhen(rel.savedAt) === relWhen(parent.savedAt);
-        hint.textContent = [sameWhen ? "" : relWhen(rel.savedAt), caret, n ? fileRu(n) : ""].filter(Boolean).join(" · ");
+        hint.textContent = [sameWhen ? "" : timeOnly, caret, n ? fileRu(n) : ""].filter(Boolean).join(" · ");
         left.append(ttl, hint);
         const st = document.createElement("span");
         st.className = "st" + (rel.current ? " ok" : "");
@@ -2287,9 +2298,13 @@
         pouredRules = j.rules || [];
         const files = (j.files || []).map((f) => f.filename).join(", ");
         $("pouredHead").style.color = "";
+        const headShort = j.revisionId
+          ? String(j.revisionId).replace(/^fnv1a32:/i, "").slice(0, 8)
+          : "";
         $("pouredHead").textContent = (j.ruleCount || pouredRules.length) + " правил" +
-          (j.revisionId ? " · " + j.revisionId : "") +
+          (headShort ? " · " + headShort : "") +
           (files ? " · " + files : "");
+        if (j.revisionId) $("pouredHead").title = String(j.revisionId);
         await loadReleases();
         renderPoured();
         loadPreview();

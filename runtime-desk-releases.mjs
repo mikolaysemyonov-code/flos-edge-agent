@@ -63,6 +63,31 @@ export function filesSavedAt(files) {
   return t ? new Date(t).toISOString() : "";
 }
 
+/** fnv1a32:f36878e3 → f36878e3 */
+export function shortRevisionId(revisionId) {
+  const s = String(revisionId || "").trim();
+  if (!s) return "";
+  const m = /^(?:fnv1a32:)?([a-f0-9]{6,})$/i.exec(s);
+  if (m) return m[1].slice(0, 8).toLowerCase();
+  return s.length > 14 ? s.slice(-8) : s;
+}
+
+/** 2026-10-13T14:41:00Z → 13.10 */
+export function releaseDayLabel(iso) {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "";
+  const p = (n) => (n < 10 ? "0" : "") + n;
+  return p(d.getDate()) + "." + p(d.getMonth() + 1);
+}
+
+/** f36878e3 · 13.10 — то, что видит монтажник в main. */
+export function releaseLabel(revisionId, savedAt) {
+  const short = shortRevisionId(revisionId);
+  const day = releaseDayLabel(savedAt);
+  if (short && day) return short + " · " + day;
+  return short || day || String(revisionId || "");
+}
+
 export function recordRelease(manifest, opts = {}) {
   const replace = opts.replace !== false;
   const id = String(manifest?.revisionId || "").trim();
@@ -113,12 +138,19 @@ export function listReleaseSummaries(currentId) {
     const tb = Date.parse(b.savedAt || "") || 0;
     return tb - ta;
   });
-  return ring.map((r, i) => ({
-    revisionId: r.revisionId,
-    savedAt: r.savedAt || "",
-    fileCount: Array.isArray(r.files) ? r.files.length : 0,
-    files: (r.files || []).map((f) => f.filename).filter(Boolean),
-    current: Boolean(cur) && r.revisionId === cur,
-    parentId: ring[i + 1]?.revisionId || "",
-  }));
+  return ring.map((r, i) => {
+    const parentId = ring[i + 1]?.revisionId || "";
+    return {
+      revisionId: r.revisionId,
+      shortId: shortRevisionId(r.revisionId),
+      dayLabel: releaseDayLabel(r.savedAt),
+      label: releaseLabel(r.revisionId, r.savedAt),
+      savedAt: r.savedAt || "",
+      fileCount: Array.isArray(r.files) ? r.files.length : 0,
+      files: (r.files || []).map((f) => f.filename).filter(Boolean),
+      current: Boolean(cur) && r.revisionId === cur,
+      parentId,
+      parentShortId: shortRevisionId(parentId),
+    };
+  });
 }
