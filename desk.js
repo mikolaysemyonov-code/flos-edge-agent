@@ -213,8 +213,8 @@
       const sub = document.createElement("div");
       sub.className = "meta";
       sub.textContent = shelfLabel(r.deviceTopicKey) + " · " + prettyControlId(r.controlId) +
-        (r.pouredName && r.pouredName !== r.name ? " · на диске " + r.pouredName : "") +
-        (r.pouredCards && r.pouredCards.length ? " · на диске " + r.pouredCards.join(" · ") : "");
+        (r.pouredName && r.pouredName !== r.name ? " · на контроллере " + r.pouredName : "") +
+        (r.pouredCards && r.pouredCards.length ? " · на контроллере " + r.pouredCards.join(" · ") : "");
       if (r.status === "blocked") sub.className = "meta orphan";
       left.appendChild(title);
       left.appendChild(sub);
@@ -608,6 +608,13 @@
       if (item.title) return "send";
       return "disk";
     }
+    function isNewItem(item) {
+      return pourLane(item) === "send";
+    }
+    function laneRu(item) {
+      if (item && item.status === "blocked") return "блок";
+      return isNewItem(item) ? "новое" : "на контроллере";
+    }
     function collectReadyItems() {
       const items = [];
       (lastShelvesRows || []).forEach((s) => {
@@ -734,7 +741,7 @@
         hint.className = "hint";
         const bits = [item.sub];
         if (item.pouredName && item.title && prettyContactName(item.pouredName) !== prettyContactName(item.title)) {
-          bits.push("на диске " + prettyContactName(item.pouredName));
+          bits.push("на контроллере " + prettyContactName(item.pouredName));
         }
         if (item.status === "blocked") hint.classList.add("orphan");
         hint.textContent = bits.filter(Boolean).join(" · ");
@@ -749,8 +756,7 @@
       const st = document.createElement("span");
       const lane = pourLane(item);
       st.className = "st" + (item.status === "blocked" ? "" : lane === "send" ? " send" : " ok");
-      st.textContent = item.status === "blocked" ? "блок"
-        : lane === "send" ? "к заливке" : "на диске";
+      st.textContent = laneRu(item);
       top.append(left, st);
       cap.appendChild(top);
       li.appendChild(cap);
@@ -776,7 +782,7 @@
       const tabs = [
         { id: "mark", ru: "Разметка" },
         { id: "rules", ru: "Сценарии" },
-        { id: "send", ru: "К заливке" + (sendN ? " · " + sendN : "") },
+        { id: "send", ru: "Новое" + (sendN ? " · " + sendN : "") },
       ];
       if (!tabs.some((t) => t.id === pouredPane)) pouredPane = "mark";
       bar.hidden = pouredOpen();
@@ -866,7 +872,7 @@
       ttl.textContent = item.lightLine || item.room || "Сценарий";
       const st = document.createElement("span");
       st.className = "cat" + (pourLane(item) === "send" ? "" : " on");
-      st.textContent = pourLane(item) === "send" ? "к заливке" : "на диске";
+      st.textContent = laneRu(item);
       cap.append(ttl, st);
       const vs = document.createElement("span");
       vs.className = "vs";
@@ -999,7 +1005,7 @@
       const back = document.createElement("button");
       back.type = "button";
       back.className = "back";
-      const backRu = pouredPane === "send" ? "К заливке" : "К разметке";
+      const backRu = pouredPane === "send" ? "К новому" : "К разметке";
       back.setAttribute("aria-label", backRu);
       back.innerHTML = "<svg viewBox='0 0 24 24'><path d='M15 18l-6-6 6-6'/></svg><span></span>";
       back.querySelector("span").textContent = backRu;
@@ -1047,40 +1053,55 @@
       }
       setPouredChrome(false);
       const items = paneItems(all);
-      const rooms = roomsFromBus().slice();
-      if (items.some((i) => !i.room)) rooms.push("");
-      rooms.forEach((room) => {
-        const mine = items.filter((i) => (i.room || "") === room);
-        if (!mine.length) return;
-        const h = document.createElement("p");
-        h.className = "roomh";
-        h.textContent = room || "Без комнаты";
-        box.appendChild(h);
-        if (pouredPane === "rules") {
-          const ul = document.createElement("ul");
-          ul.className = "channels";
-          mine.forEach((i) => ul.appendChild(readyCard(i, room)));
-          box.appendChild(ul);
-          return;
-        }
-        READY_BUCKETS.forEach((b) => {
-          const chunk = mine.filter((i) => i.bucket === b.id);
-          if (!chunk.length) return;
-          const sech = document.createElement("p");
-          sech.className = "sech";
-          sech.textContent = b.ru;
-          box.appendChild(sech);
-          const ul = document.createElement("ul");
-          ul.className = "channels";
-          chunk.forEach((i) => ul.appendChild(readyCard(i, room)));
-          box.appendChild(ul);
+      function paintItems(list) {
+        const rooms = roomsFromBus().slice();
+        if (list.some((i) => !i.room)) rooms.push("");
+        rooms.forEach((room) => {
+          const mine = list.filter((i) => (i.room || "") === room);
+          if (!mine.length) return;
+          const h = document.createElement("p");
+          h.className = "roomh";
+          h.textContent = room || "Без комнаты";
+          box.appendChild(h);
+          if (pouredPane === "rules") {
+            const ul = document.createElement("ul");
+            ul.className = "channels";
+            mine.forEach((i) => ul.appendChild(readyCard(i, room)));
+            box.appendChild(ul);
+            return;
+          }
+          READY_BUCKETS.forEach((b) => {
+            const chunk = mine.filter((i) => i.bucket === b.id);
+            if (!chunk.length) return;
+            const sech = document.createElement("p");
+            sech.className = "sech";
+            sech.textContent = b.ru;
+            box.appendChild(sech);
+            const ul = document.createElement("ul");
+            ul.className = "channels";
+            chunk.forEach((i) => ul.appendChild(readyCard(i, room)));
+            box.appendChild(ul);
+          });
         });
-      });
+      }
+      if (pouredPane === "send") paintItems(items);
+      else {
+        const onCtl = items.filter((i) => !isNewItem(i));
+        const neu = items.filter(isNewItem);
+        paintItems(onCtl);
+        if (neu.length && onCtl.length) {
+          const h = document.createElement("p");
+          h.className = "roomh";
+          h.textContent = "Новое";
+          box.appendChild(h);
+        }
+        paintItems(neu);
+      }
       if (!items.length) {
         const empty = document.createElement("p");
         empty.className = "empty";
-        empty.textContent = pouredPane === "send" ? "К заливке ничего нет — стол совпадает с диском."
-          : pouredPane === "rules" ? "Сценариев на диске пока нет."
+        empty.textContent = pouredPane === "send" ? "Нового нет — стол совпадает с контроллером."
+          : pouredPane === "rules" ? "Сценариев на контроллере пока нет."
           : "Разметки пока нет.";
         box.appendChild(empty);
       }
@@ -1093,9 +1114,9 @@
         ].join(" · ");
         head.style.color = "";
         head.textContent = (pouredPane === "send"
-          ? "К заливке. Диск не пишем."
+          ? "Новое. На контроллер не пишем."
           : pouredPane === "rules"
-            ? "Сценарии. Жест, кнопка и свет этого правила."
+            ? "Сценарии. Сначала на контроллере, затем новое."
             : "Разметка. Комната, тип и кнопка на линии.") + " · " + bits;
       }
     }
@@ -1195,7 +1216,7 @@
     function stampDiskScenes() {
       const n = (pouredRules || []).filter((r) => r.kind === "user").length;
       $("diskScenes").textContent = n
-        ? n + " сценариев уже на диске — вкладка Залито. Новые карточки пока только на столе."
+        ? n + " сценариев уже на контроллере — вкладка Залито. Новые карточки пока только на столе."
         : "На диске пользовательских сценариев нет.";
     }
     function closeCardSheet() {
@@ -1774,7 +1795,7 @@
       const deskDiverged = poured && [...selected].sort().join(",") !== diskIds.slice().sort().join(",");
       if (deskTriggers.length || (isLoad && original)) return null;
       if (buttons.length && isLoad) return null;
-      if (deskDiverged) return { text: "на диске · " + (ch.hints || []).join(" · ") };
+      if (deskDiverged) return { text: "на контроллере · " + (ch.hints || []).join(" · ") };
       if (original && isLoad && !poured) return { text: "нет кнопки" };
       if (!isLoad && !original && Array.isArray(ch.binds) && ch.binds.length) {
         return { text: "сначала комната и тип", bad: true };
