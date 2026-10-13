@@ -612,14 +612,13 @@
     function pourLane(item) {
       if (item.scene) return item.deskDirty ? "send" : "disk";
       const s = item.status;
-      if (s === "new_name" || s === "name" || s === "card" || s === "no_card" || s === "blocked") return "send";
+      if (s === "new_name" || s === "name" || s === "blocked") return "send";
       return "disk";
     }
     function loadNeedsButton(item) {
       if (!item || item.scene || !item.isLoad || item.btnLine) return false;
-      const hints = item.hints || [];
-      const cards = item.cards || [];
-      return hints.includes("Все выкл") || cards.includes("light_all_off");
+      if (pourLane(item) === "send") return false;
+      return (item.hints || []).includes("Все выкл");
     }
     function isNewItem(item) {
       return pourLane(item) === "send";
@@ -1847,8 +1846,8 @@
       const deskTriggers = isLoad ? triggersBoundTo(s.deviceTopicKey, ch.controlId) : [];
       const pouredBtns = isLoad ? pouredTriggersForLoad(s.deviceTopicKey, ch.controlId) : [];
       const hasBtn = deskTriggers.length || pouredBtns.length || (buttons.length && isLoad);
-      const allOff = (ch.hints || []).includes("Все выкл") || (ch.cards || []).includes("light_all_off");
-      if (isLoad && original && !hasBtn && (allOff || poured)) {
+      const allOff = (ch.hints || []).includes("Все выкл");
+      if (isLoad && original && !hasBtn && allOff) {
         return { text: "кнопка · нет в разметке", bad: true };
       }
       const selected = new Set(exclusiveCards(Array.isArray(ch.cards) ? ch.cards : []));
