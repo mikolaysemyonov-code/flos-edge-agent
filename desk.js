@@ -436,11 +436,56 @@
       });
       return { loads, buttons };
     }
-    function sceneSub(contacts) {
+    function sceneTitleRu(item) {
+      const id = (item && item.solutionId) || sceneCardId(item && item.title, item && item.card);
+      const hit = CARDS.find((c) => c.id === id);
+      if (hit) return hit.ru;
+      const first = String((item && (item.card || item.title)) || "").split(/\s*·\s*/)[0];
+      return first || "Сценарий";
+    }
+    function uniqText(rows) {
+      const seen = new Set();
+      const out = [];
+      (rows || []).forEach((n) => {
+        const s = String(n || "").trim();
+        if (!s || seen.has(s)) return;
+        seen.add(s);
+        out.push(s);
+      });
+      return out;
+    }
+    function loadListLabel(c) {
+      const cid = pairOpenId(c.controlId);
+      const want = contactKey(c.deviceTopicKey, cid);
+      const hit = namedLoads().find((r) => contactKey(r.deviceTopicKey, r.controlId) === want);
+      return hit ? hit.label : solContactLabel({ deviceTopicKey: c.deviceTopicKey, controlId: cid });
+    }
+    function buttonsFromBinds(loads) {
+      const seen = new Set();
+      const out = [];
+      (loads || []).forEach((load) => {
+        triggersBoundTo(load.deviceTopicKey, load.controlId).forEach((t) => {
+          const k = contactKey(t.deviceTopicKey, t.controlId);
+          if (seen.has(k)) return;
+          seen.add(k);
+          out.push(t);
+        });
+      });
+      return out;
+    }
+    function sceneButtons(contacts) {
       const p = sceneParts(contacts);
-      const btn = p.buttons.map(solContactLabel).join(" · ") || "нет кнопки";
-      const lights = p.loads.map(solContactLabel).join(" · ") || "нет света";
-      return btn + " → " + lights;
+      return p.buttons.length ? p.buttons : buttonsFromBinds(p.loads);
+    }
+    function sceneLines(contacts, room) {
+      const p = sceneParts(contacts);
+      const buttons = sceneButtons(contacts);
+      const btn = uniqText(buttons.map(solContactLabel)).join(" · ") || "нет кнопки";
+      const lights = uniqText(p.loads.map((c) => {
+        const n = loadListLabel(c);
+        return room ? (titleUnderRoom(n, room) || n) : n;
+      })).join(" · ") || "нет света";
+      return { btn: btn, lights: lights };
     }
     function sceneKey(item) {
       return String((item && (item.id || item.deskId)) || "");
@@ -511,12 +556,16 @@
       });
       const usedSol = new Set();
       pouredRules.filter((r) => r.kind === "user").forEach((r) => {
+        const room = roomFromContacts(r.contacts) || roomFromTitle(r.title) || guessRoom(r.title) || "";
+        const lines = sceneLines(r.contacts, room);
         const item = {
           id: r.id,
-          room: roomFromContacts(r.contacts) || roomFromTitle(r.title) || guessRoom(r.title) || "",
+          room: room,
           bucket: "scenes",
-          title: r.title || r.card || r.id,
-          sub: sceneSub(r.contacts),
+          title: sceneTitleRu({ title: r.title, card: r.card }),
+          sub: lines.btn + " → " + lines.lights,
+          btnLine: lines.btn,
+          lightLine: lines.lights,
           contacts: r.contacts,
           card: r.card,
           isLoad: false,
@@ -533,13 +582,17 @@
       deskSolutions.forEach((sol) => {
         if (usedSol.has(sol.id)) return;
         const contacts = [sol.trigger].concat(sol.targets || []).filter(Boolean);
+        const room = roomFromContacts(contacts) || "";
+        const lines = sceneLines(contacts, room);
         items.push({
           id: sol.id,
           deskId: sol.id,
-          room: roomFromContacts(contacts) || "",
+          room: room,
           bucket: "scenes",
-          title: sol.title || sol.solutionId,
-          sub: sceneSub(contacts),
+          title: sceneTitleRu({ title: sol.title, solutionId: sol.solutionId }),
+          sub: lines.btn + " → " + lines.lights,
+          btnLine: lines.btn,
+          lightLine: lines.lights,
           contacts: contacts,
           solutionId: sol.solutionId,
           isLoad: false,
@@ -587,15 +640,25 @@
       const ttl = document.createElement("div");
       ttl.className = "ttl";
       ttl.textContent = room ? titleUnderRoom(item.title, room) : item.title;
-      const hint = document.createElement("span");
-      hint.className = "hint";
-      const bits = [item.sub];
-      if (item.pouredName && item.title && prettyContactName(item.pouredName) !== prettyContactName(item.title)) {
-        bits.push("на диске " + prettyContactName(item.pouredName));
+      if (item.scene) {
+        const btn = document.createElement("span");
+        btn.className = "hint" + (item.btnLine === "нет кнопки" ? " orphan" : "");
+        btn.textContent = "кнопка · " + (item.btnLine || "нет кнопки");
+        const light = document.createElement("span");
+        light.className = "hint";
+        light.textContent = "свет · " + (item.lightLine || "нет света");
+        left.append(ttl, btn, light);
+      } else {
+        const hint = document.createElement("span");
+        hint.className = "hint";
+        const bits = [item.sub];
+        if (item.pouredName && item.title && prettyContactName(item.pouredName) !== prettyContactName(item.title)) {
+          bits.push("на диске " + prettyContactName(item.pouredName));
+        }
+        if (item.status === "blocked") hint.classList.add("orphan");
+        hint.textContent = bits.filter(Boolean).join(" · ");
+        left.append(ttl, hint);
       }
-      if (item.status === "blocked") hint.classList.add("orphan");
-      hint.textContent = bits.filter(Boolean).join(" · ");
-      left.append(ttl, hint);
       const st = document.createElement("span");
       const lane = pourLane(item);
       st.className = "st" + (item.status === "blocked" ? "" : lane === "send" ? " send" : " ok");
@@ -642,17 +705,52 @@
         const cid = isDeskLoad(c.controlId) ? pairOpenId(c.controlId) : c.controlId;
         const k = contactKey(c.deviceTopicKey, cid);
         if (seen.has(k)) return;
-        rows.unshift({
+        const row = {
           deviceTopicKey: c.deviceTopicKey,
           controlId: cid,
           label: solContactLabel({ deviceTopicKey: c.deviceTopicKey, controlId: cid }),
-        });
+          room: roomFromContacts([{ deviceTopicKey: c.deviceTopicKey, controlId: cid }]),
+        };
+        rows.unshift(row);
         seen.add(k);
       });
       return rows;
     }
+    function sceneLoadRows(item) {
+      const p = sceneParts(item.contacts);
+      const want = contactSet(p.loads);
+      const skipDrive = !/curtain/.test(item.solutionId || sceneCardId(item.title, item.card));
+      const home = item.room || "";
+      const rows = mergeContactRows(namedLoads(), p.loads).filter((r) => {
+        if (skipDrive && isDeskDrive(r.controlId)) return false;
+        return true;
+      });
+      rows.sort((a, b) => {
+        const ar = a.room || "";
+        const br = b.room || "";
+        const aHome = home && ar === home ? 0 : 1;
+        const bHome = home && br === home ? 0 : 1;
+        if (aHome !== bHome) return aHome - bHome;
+        const rr = ar.localeCompare(br, "ru");
+        if (rr) return rr;
+        const ak = contactKey(a.deviceTopicKey, a.controlId);
+        const bk = contactKey(b.deviceTopicKey, b.controlId);
+        const ac = want.has(ak) ? 0 : 1;
+        const bc = want.has(bk) ? 0 : 1;
+        if (ac !== bc) return ac - bc;
+        return (a.label || "").localeCompare(b.label || "", "ru");
+      });
+      return { rows: rows, want: want };
+    }
+    function setPouredChrome(drill) {
+      ["pouredTabs", "previewHead", "pouredHead"].forEach((id) => {
+        const el = $(id);
+        if (el) el.hidden = !!drill;
+      });
+    }
     function renderSceneDrill(box, item) {
       const p = sceneParts(item.contacts);
+      const buttons = sceneButtons(item.contacts);
       const back = document.createElement("button");
       back.type = "button";
       back.className = "back";
@@ -665,14 +763,14 @@
       cap.className = "vtop";
       const ttl = document.createElement("span");
       ttl.className = "vt";
-      ttl.textContent = item.card || String(item.title || "").split(/\s*·\s*/)[0] || "Сценарий";
+      ttl.textContent = sceneTitleRu(item);
       const st = document.createElement("span");
       st.className = "cat" + (pourLane(item) === "send" ? "" : " on");
       st.textContent = pourLane(item) === "send" ? "к заливке" : "на диске";
       cap.append(ttl, st);
       const vs = document.createElement("span");
       vs.className = "vs";
-      vs.textContent = item.room ? item.room : "Свет и кнопка с этой шины. Диск не пишем.";
+      vs.textContent = item.room || "Кнопка и свет с этой шины";
       head.append(cap, vs);
       const card = document.createElement("div");
       card.className = "scene-card";
@@ -684,38 +782,49 @@
       const trig = document.createElement("select");
       trig.className = "fldsel";
       trig.setAttribute("aria-label", "Кнопка");
-      fillSelect(trig, mergeContactRows(namedTriggers(), p.buttons), "Выбрать");
-      if (p.buttons[0]) trig.value = contactKey(p.buttons[0].deviceTopicKey, p.buttons[0].controlId);
+      fillSelect(trig, mergeContactRows(namedTriggers(), buttons), "Выбрать");
+      if (buttons[0]) trig.value = contactKey(buttons[0].deviceTopicKey, buttons[0].controlId);
       if (!trig.value) trig.classList.add("empty");
       trig.addEventListener("change", () => trig.classList.toggle("empty", !trig.value));
       trigLab.append(trigName, trig);
       card.appendChild(trigLab);
-      if (p.buttons.length > 1) {
+      if (buttons.length > 1) {
         const extra = document.createElement("p");
         extra.className = "meta scene-extra";
-        extra.textContent = "на диске ещё · " + p.buttons.slice(1).map(solContactLabel).join(" · ");
+        extra.textContent = "ещё · " + buttons.slice(1).map(solContactLabel).join(" · ");
         card.appendChild(extra);
       }
+      const { rows: loads, want } = sceneLoadRows(item);
+      const nOn = loads.filter((r) => want.has(contactKey(r.deviceTopicKey, r.controlId))).length;
       const lightH = document.createElement("p");
       lightH.className = "sech";
-      lightH.textContent = "Свет";
+      lightH.textContent = nOn ? "Свет · " + nOn : "Свет";
       const picks = document.createElement("div");
       picks.className = "picks";
-      const want = contactSet(p.loads);
-      const loads = mergeContactRows(namedLoads(), p.loads);
       if (!loads.length) {
         const empty = document.createElement("p");
         empty.className = "meta";
         empty.textContent = "Сначала имя линии на вкладке Свет.";
         picks.appendChild(empty);
       }
+      let lastRoom = "\0";
       loads.forEach((load) => {
+        const room = load.room || "Без комнаты";
+        if (room !== lastRoom) {
+          lastRoom = room;
+          const rh = document.createElement("p");
+          rh.className = "roomh";
+          rh.textContent = room;
+          picks.appendChild(rh);
+        }
         const lab = document.createElement("label");
         const cb = document.createElement("input");
         cb.type = "checkbox";
         cb.value = contactKey(load.deviceTopicKey, load.controlId);
         cb.checked = want.has(cb.value);
-        lab.append(cb, document.createTextNode(load.label));
+        if (cb.checked) lab.classList.add("on");
+        cb.addEventListener("change", () => lab.classList.toggle("on", cb.checked));
+        lab.append(cb, document.createTextNode(titleUnderRoom(load.label, room) || load.label));
         picks.appendChild(lab);
       });
       card.append(lightH, picks);
@@ -752,7 +861,7 @@
         }).catch(() => { err.textContent = "Нет связи с агентом"; });
       });
       const actions = document.createElement("div");
-      actions.className = "actions";
+      actions.className = "scene-foot";
       actions.append(save);
       box.append(back, head, card, err, actions);
     }
@@ -767,17 +876,14 @@
         if (hit) {
           pouredPane = "rules";
           renderPouredTabs();
+          setPouredChrome(true);
           renderSceneDrill(box, hit);
-          const head = $("previewHead");
-          if (head) {
-            head.style.color = "";
-            head.textContent = "Правило. Кнопка и свет — можно поправить. Диск не пишем.";
-          }
           return;
         }
         openSceneId = "";
         renderPouredTabs();
       }
+      setPouredChrome(false);
       const items = paneItems(all);
       const rooms = roomsFromBus().slice();
       if (items.some((i) => !i.room)) rooms.push("");

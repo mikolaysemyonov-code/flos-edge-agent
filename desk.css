@@ -200,14 +200,35 @@
     }
     #ready .scene-card .sech { margin: .55rem 1rem .1rem; }
     #ready .scene-card .picks { margin: 0; gap: 0; }
+    #ready .scene-card .picks .roomh {
+      font-size: .68rem; font-weight: 600; letter-spacing: .07em;
+      text-transform: uppercase; color: var(--mute);
+      padding: .7rem 1rem .15rem; margin: 0;
+      border-top: .5px solid rgb(84 84 88 / .55);
+    }
+    #ready .scene-card .picks .roomh:first-child { border-top: 0; padding-top: .45rem; }
     #ready .scene-card .picks label {
       min-height: 2.7rem;
       padding: 0 1rem;
-      border-top: .5px solid rgb(84 84 88 / .55);
+      border-top: .5px solid rgb(84 84 88 / .35);
       font-size: .86rem;
     }
+    #ready .scene-card .picks label.on { background: rgb(var(--sky) / .1); }
     #ready .scene-extra, #ready .scene-err { margin: 0; padding: .35rem 1rem .7rem; }
-    #ready .actions { display: flex; gap: .5rem; margin: .15rem 0 .5rem; }
+    #ready .scene-foot {
+      position: sticky;
+      bottom: calc(4.55rem + env(safe-area-inset-bottom));
+      z-index: 4;
+      display: flex; gap: .5rem;
+      padding: .7rem 0 .35rem;
+      margin: 0;
+      background: linear-gradient(180deg, rgb(0 0 0 / 0), rgb(10 10 12) 42%);
+    }
+    #ready .scene-foot .ghost {
+      color: #041018;
+      background: rgb(var(--sky));
+      box-shadow: 0 0 18px rgb(var(--sky) / .35);
+    }
     .ch-cap .vtop { display: flex; align-items: flex-start; justify-content: space-between; gap: .6rem; }
     .st {
       flex: none; margin-top: .15rem;
@@ -285,6 +306,7 @@
       padding: .15rem 0 .35rem; cursor: pointer;
     }
     .filters { display: flex; flex-wrap: wrap; gap: .35rem; margin: .15rem 0 .85rem; }
+    .filters[hidden], .meta[hidden] { display: none; }
     .filters button {
       appearance: none; border: 1px solid rgb(255 255 255 / .1); background: rgb(255 255 255 / .04);
       color: var(--mute); font: inherit; font-size: .72rem; font-weight: 600;
