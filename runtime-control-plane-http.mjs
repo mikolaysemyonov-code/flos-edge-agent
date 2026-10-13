@@ -10,6 +10,8 @@ import path from "node:path";
 import { buildRulesInventory } from "./runtime-rules-inventory.mjs";
 import { filesSavedAt, listReleaseSummaries, readRelease, recordRelease } from "./runtime-desk-releases.mjs";
 import {
+  buildDeskPourPackage,
+  assessDeskCanPour,
   handleRuntimeDeskMarking,
   handleRuntimeDeskPourPreview,
   handleRuntimeDeskPoured,
@@ -469,15 +471,47 @@ export function handleRuntimeReleases(_req, res) {
     );
   }
   const pushes = listReleaseSummaries(revisionId);
+  const gate = assessDeskCanPour();
   jsonWrite(res, 200, {
     ok: true,
-    canPour: false,
+    canPour: gate.canPour === true,
     branch: "main",
     head: revisionId || "",
     currentId: revisionId || "",
     pushes: pushes,
     releases: pushes,
   });
+}
+
+export function handleRuntimeDeskPour(_req, res) {
+  const pkg = buildDeskPourPackage();
+  if (!pkg.ok || !pkg.canPour || !pkg.shards?.length) {
+    jsonWrite(res, 400, { ok: false, canPour: false, error: pkg.reason || "blocked", reason: pkg.reason });
+    return;
+  }
+  try {
+    backupCurrentStateBeforeApply();
+    const result = applyShardBundle(pkg.shards, pkg.loadOrder, pkg.revisionId, {
+      preserveOtherShards: true,
+    });
+    console.log(
+      `[runtime-control-plane] desk-pour revision=${pkg.revisionId} acks=${result.ackCount}`,
+    );
+    jsonWrite(res, 200, {
+      ok: true,
+      status: "applied",
+      appliedRevisionId: pkg.revisionId,
+      ackCount: result.ackCount,
+      deployMode: result.deployMode,
+      restarted: result.restarted,
+      emittedSolutions: pkg.emittedSolutions,
+      namedCount: pkg.namedCount,
+    });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "deploy failed";
+    console.error("[runtime-control-plane] desk-pour failed:", message);
+    jsonWrite(res, 500, { ok: false, error: message });
+  }
 }
 
 export async function handleRuntimeRollback(req, res) {
@@ -531,6 +565,10 @@ export function runtimeHttpPathHandler(req, res) {
   }
   if (method === "GET" && urlPath === "/runtime/desk-pour-preview") {
     handleRuntimeDeskPourPreview(req, res);
+    return true;
+  }
+  if (method === "POST" && urlPath === "/runtime/desk-pour") {
+    handleRuntimeDeskPour(req, res);
     return true;
   }
   if ((method === "GET" || method === "PUT" || method === "POST" || method === "DELETE") && urlPath === "/runtime/desk-solutions") {

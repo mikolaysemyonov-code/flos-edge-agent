@@ -13,6 +13,9 @@ COPY runtime-desk-marking.mjs /app/runtime-desk-marking.mjs
 COPY runtime-desk-solutions.mjs /app/runtime-desk-solutions.mjs
 COPY runtime-desk-rules-marks.mjs /app/runtime-desk-rules-marks.mjs
 COPY runtime-desk-releases.mjs /app/runtime-desk-releases.mjs
+COPY runtime-desk-pour.mjs /app/runtime-desk-pour.mjs
+COPY runtime-desk-pour-core.mjs /app/runtime-desk-pour-core.mjs
+COPY runtime-desk-pour-user.mjs /app/runtime-desk-pour-user.mjs
 COPY desk.html /app/desk.html
 COPY desk.css /app/desk.css
 COPY desk.js /app/desk.js

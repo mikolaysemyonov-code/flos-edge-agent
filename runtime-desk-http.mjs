@@ -28,6 +28,7 @@ import {
   readPouredDeskSnapshot,
 } from "./runtime-desk-rules-marks.mjs";
 import { formatDeskShelfLabel, groupDeskShelves, rememberDeskShelves } from "./runtime-desk-shelves.mjs";
+import { assessDeskCanPour, buildDeskPourPackage } from "./runtime-desk-pour.mjs";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 
@@ -238,8 +239,21 @@ export async function handleRuntimeDeskMarking(req, res) {
 export function handleRuntimeDeskPourPreview(_req, res) {
   const snap = readPouredDeskSnapshot();
   const out = buildDeskPourPreview(readDeskMarking(), readPouredChannelMarks(), snap.rules || []);
-  jsonEnd(res, 200, { ok: true, ...out });
+  const gate = assessDeskCanPour(out);
+  jsonEnd(res, 200, {
+    ok: true,
+    ...out,
+    canPour: gate.canPour,
+    reason: gate.reason,
+  });
 }
+
+export function handleRuntimeDeskPourBuild(_req, res) {
+  const pkg = buildDeskPourPackage();
+  jsonEnd(res, pkg.ok ? 200 : 400, { ok: Boolean(pkg.ok), ...pkg });
+}
+
+export { buildDeskPourPackage, assessDeskCanPour };
 
 export async function handleRuntimeDeskSolutions(req, res) {
   const method = (req.method ?? "GET").toUpperCase();

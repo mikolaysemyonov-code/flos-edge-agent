@@ -276,7 +276,9 @@
       gapsUl.innerHTML = "";
       const rows = j.rows || [];
       const gaps = j.gaps || [];
-      $("pour").disabled = true;
+      canPourDesk = j.canPour === true;
+      $("pour").disabled = !canPourDesk;
+      $("pour").title = canPourDesk ? "Пуш на main: имена и типовые (переключение / все выкл)" : (j.reason || "");
       $("previewHead").style.color = "";
       const ready = j.ready || {};
       const readyBits = [
@@ -835,9 +837,23 @@
           const go = document.createElement("button");
           go.type = "button";
           go.className = "ghost";
-          go.disabled = true;
           go.textContent = "checkout";
-          go.title = "На этот пуш. Откроем вместе с заливкой.";
+          go.title = "Откатить диск на этот пуш";
+          go.addEventListener("click", () => {
+            go.disabled = true;
+            fetch("/runtime/rollback?revisionId=" + encodeURIComponent(rel.revisionId), { method: "POST" })
+              .then((r) => r.json())
+              .then((j) => {
+                if (!j || (j.status !== "applied" && !j.ok)) {
+                  go.disabled = false;
+                  go.title = (j && (j.error || (j.reasons || []).join(" · "))) || "Не откатил";
+                  return;
+                }
+                loadPoured();
+                loadReleases().then(() => renderReady());
+              })
+              .catch(() => { go.disabled = false; });
+          });
           li.appendChild(go);
         }
         ul.appendChild(li);
@@ -1248,7 +1264,9 @@
         const head = $("previewHead");
         if (head) {
           head.style.color = "";
-          head.textContent = "main · HEAD сверху. Стрелка — к разметке. checkout — с заливкой.";
+          head.textContent = canPourDesk
+            ? "main · HEAD сверху. checkout — откат на пуш."
+            : "main · HEAD сверху. Стрелка — к разметке.";
         }
         return;
       }
@@ -1315,12 +1333,12 @@
         head.style.color = "";
         if (pouredPane === "send") {
           const noCard = items.filter((i) => !i.scene && !(i.cards || []).length && !(i.hints || []).length).length;
-          head.textContent = "Новое. На контроллер не пишем."
+          head.textContent = (canPourDesk ? "Новое. Залить = пуш на main." : "Новое. " + (lastPreview.reason || "Пока не льём."))
             + (noCard ? " · " + noCard + " без карточки" : "");
         } else {
           head.textContent = (pouredPane === "rules"
-            ? "Сценарии. Сначала на контроллере, затем новое."
-            : "Разметка. Комната, тип и кнопка на линии.") + " · " + bits;
+            ? "Сценарии. Логика — типовые и сценарии."
+            : "Разметка. Комната и тип.") + " · " + bits;
         }
       }
     }
@@ -2273,6 +2291,34 @@
     }
     document.querySelectorAll(".tab").forEach((btn) => {
       btn.addEventListener("click", () => setTab(btn.dataset.tab));
+    });
+    $("pour").addEventListener("click", () => {
+      if (!canPourDesk || $("pour").disabled) return;
+      $("pour").disabled = true;
+      $("pour").textContent = "Лью…";
+      fetch("/runtime/desk-pour", { method: "POST" })
+        .then((r) => r.json())
+        .then((j) => {
+          $("pour").textContent = "Залить · пуш";
+          if (!j.ok) {
+            $("pour").disabled = !canPourDesk;
+            $("previewHead").style.color = "rgb(var(--bad))";
+            $("previewHead").textContent = j.error || j.reason || "Не залил";
+            return;
+          }
+          $("previewHead").style.color = "";
+          $("previewHead").textContent = "Пуш · " + (j.appliedRevisionId || "") +
+            (j.restarted ? " · wb-rules перезапущен" : "");
+          pouredPane = "hist";
+          loadPoured();
+          loadPreview();
+        })
+        .catch((e) => {
+          $("pour").textContent = "Залить · пуш";
+          $("pour").disabled = !canPourDesk;
+          $("previewHead").style.color = "rgb(var(--bad))";
+          $("previewHead").textContent = String(e.message || e);
+        });
     });
     const fromHash = location.hash.replace("#", "");
     if (/^(light|buttons|relays|cards|poured)$/.test(fromHash)) setTab(fromHash);
