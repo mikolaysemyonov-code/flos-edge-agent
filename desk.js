@@ -12,13 +12,17 @@
     let markDraft = { room: "", type: "" };
     let roomFilter = "";
     let openMod = "";
-    const LOAD_TYPES = [
-      "Световая линия", "Трек", "Точечные", "Люстра", "Подвес", "Потолочный",
-      "Бра", "Торшер", "Подсветка", "Подсветка ниши", "Лента",
-      "DALI", "Ночной свет", "Гирлянда", "Ёлка",
+    const LED_TYPES = [
+      "Световая линия",
+      "Подсветка зеркала", "Подсветка ниши", "Подсветка полки",
+      "Подсветка шкафа", "Подсветка плинтуса",
+    ];
+    const DALI_TYPES = [
+      "DALI линия", "Точечные", "Люстра", "Подвес", "Потолочный", "Бра",
     ];
     const RELAY_TYPES = [
-      "Свет 220 В", "Трек", "Люстра", "Бра", "Торшер", "Гирлянда", "Ёлка",
+      "Свет 220 В", "Люстра", "Подвес", "Потолочный", "Точечные", "Трек",
+      "Бра", "Торшер", "Гирлянда", "Ёлка",
       "Управляемая розетка",
       "Сервопривод 24 В", "Сервопривод 220 В",
       "Тёплый пол", "Насос", "Вытяжка", "Вентиляция", "Полотенцесушитель",
@@ -45,10 +49,13 @@
       if (!m) return "";
       return m[1] + (/open/i.test(m[2]) ? "Close" : "Open");
     }
-    function markTypes(ch, isLoad) {
+    function markTypes(s, ch, isLoad) {
       if (isDeskDrive(ch.controlId)) return DRIVE_LABELS;
       if (/^K\d+$/i.test(ch.controlId)) return RELAY_TYPES;
-      return isLoad ? LOAD_TYPES : BUTTON_TYPES;
+      if (!isLoad) return BUTTON_TYPES;
+      const k = String(s && s.deviceTopicKey || "");
+      if (/dali/i.test(k)) return DALI_TYPES;
+      return LED_TYPES;
     }
     const CARDS = [
       { id: "light_button_toggle", ru: "Переключение" },
@@ -1012,9 +1019,14 @@
       };
       const typeH = document.createElement("p");
       typeH.className = "steph";
-      typeH.textContent = isDeskDrive(ch.controlId) ? "Подпись" : "Тип";
+      const key = String(s.deviceTopicKey || "");
+      typeH.textContent = isDeskDrive(ch.controlId) ? "Подпись"
+        : /^K\d+$/i.test(ch.controlId) ? "Тип 220 В"
+        : /dali/i.test(key) ? "Тип DALI"
+        : isLoad ? "Подсветка"
+        : "Тип";
       box.appendChild(typeH);
-      const types = [...markTypes(ch, isLoad)];
+      const types = [...markTypes(s, ch, isLoad)];
       if (current.type && !types.includes(current.type)) types.push(current.type);
       box.appendChild(makeChipBar(types, current.type, (v) => {
         markDraft.type = v;
@@ -1253,8 +1265,8 @@
       fillList("shelves-relays", split.relays, "Реле на шине нет.");
       const openRelay = split.relays.some((s) => s.deviceTopicKey === openMod);
       $("relaysHead").textContent = openRelay
-        ? "На приводе — подпись, на K — тип."
-        : "Ткни модуль — каналы внутри.";
+        ? "На K — свет 220 В или силовая. На приводе — подпись."
+        : "Реле — свет 220 В и силовые. Ткни модуль."
       $("n-light").textContent = split.light.length || "";
       $("n-buttons").textContent = split.buttons.length || "";
       $("n-relays").textContent = split.relays.length || "";
