@@ -122,10 +122,10 @@ export function assessDeskCanPour(preview) {
   const canPour = hard.length === 0 && /form_logic_os/.test(core) && (canPourNames || canPourRules || Boolean(repair.changed || repair.hiddenGhosts));
   const hints = [];
   if (blocked > 0) hints.push(blocked + " без имени — пропустим");
-  if (canPourNames && canPourRules) hints.unshift("Можно залить имена и сценарии отдельно.");
+  if (canPourNames && canPourRules) hints.unshift("Сначала имена, потом сценарии.");
   else if (canPourNames) hints.unshift("Можно залить имена на щит.");
   else if (canPourRules) hints.unshift("Можно залить сценарии на щит.");
-  else if (canRepair) hints.unshift("Убрать дубли FORM LOGIC OS");
+  else if (canRepair) hints.unshift("Убрать дубли в дашборде");
   return {
     canPour,
     canPourNames,

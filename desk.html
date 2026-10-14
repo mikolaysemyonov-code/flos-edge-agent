@@ -19,12 +19,12 @@
     </div>
     <section id="panel-light" class="panel glass" data-tab="light">
       <p id="bus" class="meta">Шина ещё не снимали.</p>
-      <p class="meta">Комната и тип на канале → потом «На щит».</p>
+      <p class="meta">Сначала комната сверху, потом тип на канале → «На щит» → «Залить имена».</p>
       <div id="rooms-light" class="rooms" aria-label="Комнаты"></div>
       <div id="shelves-light" class="vitrine"></div>
     </section>
     <section id="panel-buttons" class="panel glass" hidden data-tab="buttons">
-      <p class="meta">Комната и тип на входе. Сценарий — во вкладке Типовые.</p>
+      <p class="meta">Комната сверху → тип на входе. Логика — только во вкладке Типовые.</p>
       <div id="rooms-buttons" class="rooms" aria-label="Комнаты"></div>
       <div id="shelves-buttons" class="vitrine"></div>
     </section>
@@ -34,7 +34,7 @@
       <div id="shelves-relays" class="vitrine"></div>
     </section>
     <section id="panel-cards" class="panel glass" hidden data-tab="cards">
-      <p class="meta">Карточка → кнопка и линия. На щит — отдельно имена и сценарии.</p>
+      <p class="meta">Единственный путь логики: карточка → кнопка и линия → «На стол» → «На щит» → «Залить сценарии».</p>
       <p id="diskScenes" class="meta"></p>
       <ul id="deskSols"></ul>
       <div class="filters" id="cardFilters" role="tablist" aria-label="Фильтр карточек"></div>
@@ -46,6 +46,7 @@
       <p id="previewHead" class="meta">Сравниваю стол с диском…</p>
       <p id="pouredHead" class="meta">Спрашиваю залитое…</p>
       <div class="filters" id="pouredTabs" role="tablist" aria-label="Полки заливки"></div>
+      <p id="pourHint" class="meta" hidden></p>
       <p id="pourWrap" class="pour-row" hidden>
         <button id="pourNames" class="ghost" type="button" disabled>Залить имена</button>
         <button id="pourRules" class="ghost" type="button" disabled>Залить сценарии</button>

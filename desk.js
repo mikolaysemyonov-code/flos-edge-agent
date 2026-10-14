@@ -878,7 +878,7 @@
           go.type = "button";
           go.className = "ghost";
           go.textContent = "Вернуть";
-          go.title = "Вернуть эту заливку на щит и спрятать лишнее в FORM LOGIC OS";
+          go.title = "Вернуть эту заливку на щит и убрать лишние строки в дашборде";
           go.addEventListener("click", () => {
             go.disabled = true;
             fetch("/runtime/rollback?revisionId=" + encodeURIComponent(rel.revisionId), { method: "POST" })
@@ -1060,9 +1060,23 @@
     }
     function paintPourButtons() {
       const wrap = $("pourWrap");
+      const hint = $("pourHint");
       if (!wrap) return;
       const show = (pouredPane === "send" || pouredPane === "hist") && !pouredOpen();
       wrap.hidden = !show;
+      if (hint) {
+        hint.hidden = !show || pouredPane === "hist";
+        if (canPourNamesDesk && canPourRulesDesk) {
+          hint.textContent = "Сначала имена, потом сценарии.";
+        } else if (canPourNamesDesk) {
+          hint.textContent = "Есть новые имена каналов.";
+        } else if (canPourRulesDesk) {
+          hint.textContent = "Есть сценарии на столе — залейте отдельно от имён.";
+        } else {
+          hint.textContent = "";
+          hint.hidden = true;
+        }
+      }
       const namesBtn = $("pourNames");
       const rulesBtn = $("pourRules");
       const repairBtn = $("pour");
@@ -1071,7 +1085,7 @@
         namesBtn.disabled = !canPourNamesDesk;
         namesBtn.textContent = "Залить имена";
         namesBtn.title = canPourNamesDesk
-          ? "Только разметка → 00_core (FORM LOGIC OS)"
+          ? "Имена каналов на щит (дашборд WB / HA)"
           : "Нет новых имён";
       }
       if (rulesBtn) {
@@ -1079,7 +1093,7 @@
         rulesBtn.disabled = !canPourRulesDesk;
         rulesBtn.textContent = "Залить сценарии";
         rulesBtn.title = canPourRulesDesk
-          ? "Типовые со стола → 40_rules_user"
+          ? "Типовые со стола на щит"
           : "Нет сценариев на столе";
       }
       if (repairBtn) {
@@ -1087,7 +1101,7 @@
         repairBtn.hidden = !showRepair;
         repairBtn.disabled = !showRepair;
         repairBtn.textContent = "Убрать дубли";
-        repairBtn.title = showRepair ? "Спрятать лишнее в FORM LOGIC OS" : "";
+        repairBtn.title = showRepair ? "Спрятать лишние строки в дашборде" : "";
       }
     }
     function mergeContactRows(base, extra) {
@@ -1276,7 +1290,18 @@
             return;
           }
           openSceneId = "";
-          loadSolutions().then(() => { loadPreview(); renderReady(); });
+          loadSolutions().then(() => {
+            pouredPane = "send";
+            setTab("poured");
+            const headEl = $("previewHead");
+            if (headEl) {
+              headEl.style.color = "";
+              headEl.textContent = "На столе. Дальше: «Залить сценарии».";
+            }
+            loadPreview();
+            paintPourButtons();
+            renderReady();
+          });
         }).catch(() => { err.textContent = "Нет связи с агентом"; });
       });
       const actions = document.createElement("div");
@@ -1350,7 +1375,7 @@
         const head = $("previewHead");
         if (head) {
           head.style.color = "";
-          head.textContent = "Сверху — что на щите. «Вернуть» — откат. Имена и сценарии заливайте отдельно.";
+          head.textContent = "Сверху — что на щите. «Вернуть» — откат. Заливка — «Имена» и «Сценарии» по отдельности.";
         }
         return;
       }
@@ -1418,11 +1443,11 @@
         if (pouredPane === "send") {
           const noCard = items.filter((i) => !i.scene && !(i.cards || []).length && !(i.hints || []).length).length;
           head.textContent = (canPourNamesDesk || canPourRulesDesk
-            ? "Новое. «Залить имена» и «Залить сценарии» — как на Vercel, по отдельности."
+            ? "Новое. Сначала «Залить имена», потом «Залить сценарии»."
             : "Новое. " + (lastPreview.reason || "Пока нечего лить."))
             + (noCard ? " · " + noCard + " без карточки" : "");
         } else {
-          head.textContent = "Сценарии на щите и на столе. Типовые — отдельная вкладка. · " + bits;
+          head.textContent = "Сценарии на щите. Новые — только из вкладки Типовые. · " + bits;
         }
       }
     }
@@ -1522,8 +1547,8 @@
     function stampDiskScenes() {
       const n = (pouredRules || []).filter((r) => r.kind === "user").length;
       $("diskScenes").textContent = n
-        ? n + " сценариев уже на контроллере — вкладка Залито. Новые карточки пока только на столе."
-        : "На диске пользовательских сценариев нет.";
+        ? n + " сценариев уже на щите — правьте в Типовых или смотрите «На щит · Сценарии»."
+        : "На щите пользовательских сценариев пока нет — соберите карточку ниже.";
     }
     function closeCardSheet() {
       $("cardSheet").hidden = true;
@@ -1621,10 +1646,16 @@
             return;
           }
           closeCardSheet();
-          loadSolutions();
-          const hit = (j.solution && j.solution.targets && j.solution.targets[0]) || collectTargets()[0];
-          loadLast().then(() => {
-            if (hit) jumpToContact(hit.deviceTopicKey, hit.controlId);
+          loadSolutions().then(() => {
+            pouredPane = "send";
+            setTab("poured");
+            const head = $("previewHead");
+            if (head) {
+              head.style.color = "";
+              head.textContent = "На столе. Дальше: «На щит» → «Залить сценарии».";
+            }
+            paintPourButtons();
+            renderReady();
           });
         }).catch(() => { err.textContent = "Нет связи с агентом"; });
       });
@@ -1900,7 +1931,7 @@
       const saved = splitMark(pairName(s, ch));
       const prev = markPending[k] || {};
       const d = {
-        room: patch.room != null ? patch.room : (prev.room || saved.room),
+        room: patch.room != null ? patch.room : (prev.room || saved.room || roomFilter || ""),
         type: patch.type != null ? patch.type : (prev.type || saved.type),
       };
       markPending[k] = d;
@@ -1970,7 +2001,7 @@
       const saved = splitMark(original);
       const pending = markPending[contactKey(s.deviceTopicKey, ch.controlId)] || {};
       const current = {
-        room: pending.room || saved.room,
+        room: pending.room || saved.room || roomFilter || "",
         type: pending.type || saved.type,
       };
       const poured = Array.isArray(ch.hints) && ch.hints.length > 0;
@@ -2026,10 +2057,7 @@
         !!(current.room && !current.type),
         true,
       ));
-      if (isLoad) {
-        const selected = new Set(exclusiveCards(Array.isArray(ch.cards) ? ch.cards : []));
-        fields.appendChild(makeLoadChips(s.deviceTopicKey, ch.controlId, selected));
-      }
+      // Жесты / типовые — только во вкладке Типовые (канон D1).
       if (original) {
         const drop = document.createElement("button");
         drop.type = "button";
@@ -2094,6 +2122,19 @@
     function fillRooms(bar) {
       const rooms = roomsFromBus();
       bar.replaceChildren();
+      const all = document.createElement("button");
+      all.type = "button";
+      all.className = "chip";
+      all.textContent = "Все";
+      all.setAttribute("aria-pressed", roomFilter ? "false" : "true");
+      all.addEventListener("click", () => {
+        roomFilter = "";
+        openMod = "";
+        markPending = {};
+        renderRoomBars();
+        renderShelves(lastShelvesRows);
+      });
+      bar.appendChild(all);
       rooms.forEach((r) => {
         const b = document.createElement("button");
         b.type = "button";
@@ -2101,7 +2142,9 @@
         b.textContent = r;
         b.setAttribute("aria-pressed", r === roomFilter ? "true" : "false");
         b.addEventListener("click", () => {
-          roomFilter = roomFilter === r ? "" : r;
+          roomFilter = r;
+          openMod = "";
+          markPending = {};
           renderRoomBars();
           renderShelves(lastShelvesRows);
         });
@@ -2115,6 +2158,8 @@
         promptRoom().then((roomName) => {
           if (!roomName) return;
           roomFilter = roomName;
+          openMod = "";
+          markPending = {};
           renderRoomBars();
           renderShelves(lastShelvesRows);
         });
@@ -2122,11 +2167,11 @@
       bar.appendChild(add);
     }
     function renderRoomBars() {
-      const fam = openMod ? familyOf({ deviceTopicKey: openMod }) : "";
       ["rooms-light", "rooms-buttons", "rooms-relays"].forEach((id) => {
         const bar = $(id);
         if (!bar) return;
-        bar.hidden = !!fam && id === "rooms-" + fam;
+        const tab = id.replace("rooms-", "");
+        bar.hidden = activeTab !== tab;
         if (!bar.hidden) fillRooms(bar);
       });
     }
@@ -2270,6 +2315,37 @@
       appendChannelBlock(chs, s, visibleChannels(s));
       box.append(back, head, chs);
     }
+    function fillRoomChannelList(box, rows, emptyText) {
+      box.className = "modopen";
+      const head = document.createElement("p");
+      head.className = "meta";
+      head.textContent = roomFilter + " — каналы комнаты и ещё без имени. Тип ниже.";
+      const ul = document.createElement("ul");
+      ul.className = "channels";
+      let any = false;
+      sortModules(rows).forEach((s) => {
+        const chs = visibleChannels(s).filter((ch) => {
+          const r = nameRoom(pairName(s, ch));
+          return !r || r === roomFilter;
+        });
+        if (!chs.length) return;
+        any = true;
+        const mod = document.createElement("li");
+        mod.className = "roomh";
+        mod.textContent = s.label || s.deviceTopicKey;
+        ul.appendChild(mod);
+        chs.forEach((ch) => ul.appendChild(channelRow(s, ch, nameRoom(pairName(s, ch)) || roomFilter)));
+      });
+      if (!any) {
+        box.className = "vitrine";
+        const p = document.createElement("p");
+        p.className = "empty";
+        p.textContent = "В «" + roomFilter + "» пока пусто — или выберите другую комнату.";
+        box.appendChild(p);
+        return;
+      }
+      box.append(head, ul);
+    }
     function fillList(id, rows, emptyText) {
       const box = $(id);
       box.replaceChildren();
@@ -2279,6 +2355,10 @@
         p.className = "empty";
         p.textContent = emptyText;
         box.appendChild(p);
+        return;
+      }
+      if (roomFilter) {
+        fillRoomChannelList(box, rows, emptyText);
         return;
       }
       const open = rows.find((s) => s.deviceTopicKey === openMod);
@@ -2297,9 +2377,11 @@
       fillList("shelves-buttons", split.buttons, "Кнопок на шине нет.");
       fillList("shelves-relays", split.relays, "Реле на шине нет.");
       const openRelay = split.relays.some((s) => s.deviceTopicKey === openMod);
-      $("relaysHead").textContent = openRelay
-        ? "На канале — комната, тип и кнопка. Сценарии — на Залито."
-        : "Реле — свет 220 В и силовые. Ткни модуль.";
+      $("relaysHead").textContent = roomFilter
+        ? "Комната «" + roomFilter + "» — дайте тип каналам. Логика — в Типовых."
+        : openRelay
+          ? "На канале — только комната и тип. Логика — вкладка Типовые."
+          : "Реле — свет 220 В и силовые. Выберите комнату сверху или модуль.";
       $("n-light").textContent = split.light.length || "";
       $("n-buttons").textContent = split.buttons.length || "";
       $("n-relays").textContent = split.relays.length || "";
