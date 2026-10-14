@@ -462,6 +462,15 @@
     /* Длинные подписи (вкл/выкл при…) — на всю ширину пары. */
     .sheet-params .fld.wide { grid-column: 1 / -1; }
     .sheet-params input.bind.wide { grid-column: 1 / -1; }
+    .mark-actions { display: flex; flex-wrap: wrap; gap: .35rem; margin: 0 0 .55rem; }
+    .mark-clear {
+      font-size: .78rem !important;
+      padding: .28rem .7rem !important;
+      border-radius: 999px !important;
+      color: rgb(253 186 116 / .95) !important;
+      border-color: rgb(251 146 60 / .35) !important;
+      background: rgb(251 146 60 / .08) !important;
+    }
     .rooms { display: flex; flex-wrap: wrap; gap: .35rem; margin: 0 0 .85rem; }
     .rooms.need {
       outline: 1px solid rgb(var(--sky) / .55);

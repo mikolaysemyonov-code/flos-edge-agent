@@ -76,6 +76,18 @@ export function readDeskMarking() {
   return { version: 2, shelves: doc.shelves };
 }
 
+/** Стереть имена/карточки со стола. Комнаты и типовые не трогаем. Щит не пишем. */
+export function clearDeskShelvesMarking() {
+  const doc = readDeskDocument();
+  let cleared = 0;
+  for (const shelf of Object.values(doc.shelves || {})) {
+    const ch = shelf?.channels && typeof shelf.channels === "object" ? shelf.channels : {};
+    cleared += Object.keys(ch).length;
+  }
+  writeDoc({ ...doc, shelves: {} });
+  return { ok: true, cleared, rooms: doc.rooms, solutions: doc.solutions };
+}
+
 function cleanName(value) {
   const s = String(value ?? "").trim().replace(/\s+/g, " ");
   if (!s || s.length > MAX_NAME) return "";

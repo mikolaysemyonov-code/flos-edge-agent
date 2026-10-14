@@ -7,6 +7,7 @@ import { fileURLToPath } from "node:url";
 import {
   applyMarksToShelves,
   buildDeskPourPreview,
+  clearDeskShelvesMarking,
   deskMarkingPath,
   listDeskRooms,
   readDeskMarking,
@@ -226,6 +227,10 @@ export async function handleRuntimeDeskMarking(req, res) {
     if (raw.trim()) body = JSON.parse(raw);
   } catch {
     jsonEnd(res, 400, { ok: false, error: "invalid_json" });
+    return;
+  }
+  if (body.clear === true || body.clear === "shelves") {
+    jsonEnd(res, 200, clearDeskShelvesMarking());
     return;
   }
   if (body.room && !body.deviceTopicKey) {

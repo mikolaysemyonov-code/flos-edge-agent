@@ -35,6 +35,7 @@
     let openMod = "";
     let pouredPane = "send";
     let lastReleases = [];
+    let rollingBack = false;
     let canPourDesk = false;
     let canPourNamesDesk = false;
     let canPourRulesDesk = false;
@@ -639,6 +640,18 @@
       const w = m > 10 && m < 20 ? "файлов" : d === 1 ? "файл" : d > 1 && d < 5 ? "файла" : "файлов";
       return x + " " + w;
     }
+    /** Имена шардов → коротко для монтажника, без 00_core.js. */
+    function releaseWhatRu(rel) {
+      const files = (rel && rel.files) || [];
+      const names = files.map((f) => String(f || "").toLowerCase());
+      const hasCore = names.some((f) => /00_core\.js$/.test(f));
+      const hasUser = names.some((f) => /40_rules_user\.js$/.test(f));
+      if (hasCore && hasUser) return "имена и сценарии";
+      if (hasUser) return "сценарии";
+      if (hasCore) return "имена";
+      const n = rel && (rel.fileCount || names.length);
+      return n ? fileRu(n) : "";
+    }
     function markTitle(item, room) {
       let t = room ? titleUnderRoom(item.title, room) : item.title;
       if (item.scene || item.isLoad || !item.controlId) return t;
@@ -935,14 +948,13 @@
         ttl.title = String(rel.revisionId || "");
         const hint = document.createElement("span");
         hint.className = "hint";
-        const n = rel.fileCount || (rel.files || []).length;
         const parent = lastReleases.find((p) => p.revisionId === rel.parentId);
         const parentShort = rel.parentShortId || (parent && (parent.shortId || parent.label)) || "";
         const caret = rel.current && (parentShort || rel.parentId) ? "^ " + (parentShort || rel.parentId) : "";
         const when = relWhen(rel.savedAt);
         const timeOnly = when.includes(" ") ? when.split(" ").slice(1).join(" ") : when;
         const sameWhen = rel.current && parent && relWhen(rel.savedAt) === relWhen(parent.savedAt);
-        hint.textContent = [sameWhen ? "" : timeOnly, caret, n ? fileRu(n) : ""].filter(Boolean).join(" · ");
+        hint.textContent = [sameWhen ? "" : timeOnly, caret, releaseWhatRu(rel)].filter(Boolean).join(" · ");
         left.append(ttl, hint);
         const st = document.createElement("span");
         st.className = "st" + (rel.current ? " ok" : "");
@@ -953,29 +965,36 @@
         if (!rel.current) {
           const go = document.createElement("button");
           go.type = "button";
-          go.className = "ghost";
-          go.textContent = "Вернуть";
-          go.title = "Вернуть эту заливку на щит и убрать лишние строки в дашборде";
+          go.className = "ghost roll-back";
+          go.textContent = rollingBack ? "Ждите…" : "Вернуть";
+          go.disabled = rollingBack;
+          go.title = rollingBack
+            ? "Идёт откат — подождите"
+            : "Вернуть правила на щит к этому состоянию. История журнала не стирается.";
           go.addEventListener("click", () => {
+            if (rollingBack) return;
             const label = short || rel.revisionId || "эту заливку";
-            if (!window.confirm("Вернуть на щит состояние «" + label + "»?\nТекущие правила с диска будут заменены.")) {
+            if (!window.confirm("Вернуть на щит состояние «" + label + "»?\nТекущие правила с диска будут заменены. Журнал останется.")) {
               return;
             }
-            go.disabled = true;
+            rollingBack = true;
+            document.querySelectorAll("button.roll-back").forEach((b) => {
+              b.disabled = true;
+              b.textContent = "Ждите…";
+            });
             go.textContent = "Возвращаю…";
             fetch("/runtime/rollback?revisionId=" + encodeURIComponent(rel.revisionId), { method: "POST" })
               .then((r) => r.json())
               .then((j) => {
+                rollingBack = false;
                 if (!j || (j.status !== "applied" && !j.ok)) {
-                  go.disabled = false;
-                  go.textContent = "Вернуть";
                   const err = humanPourError((j && (j.error || (j.reasons || []).join(" · "))) || "Не вернул");
-                  go.title = err;
                   const head = $("previewHead");
                   if (head) {
                     head.style.color = "rgb(var(--bad))";
                     head.textContent = err;
                   }
+                  renderReady();
                   return;
                 }
                 const head = $("previewHead");
@@ -987,15 +1006,14 @@
                 loadReleases().then(() => renderReady());
               })
               .catch((e) => {
-                go.disabled = false;
-                go.textContent = "Вернуть";
+                rollingBack = false;
                 const err = humanPourError(e && e.message);
-                go.title = err;
                 const head = $("previewHead");
                 if (head) {
                   head.style.color = "rgb(var(--bad))";
                   head.textContent = err;
                 }
+                renderReady();
               });
           });
           li.appendChild(go);
@@ -1189,9 +1207,9 @@
       if (hint) {
         hint.hidden = !show || pouredPane === "hist";
         if (canPourNamesDesk && canPourRulesDesk) {
-          hint.textContent = "Сначала «1 · Имена», потом «2 · Сценарии».";
+          hint.textContent = "Лучше сначала «1 · Имена». Или «Снять разметку» → сценарии.";
         } else if (canPourNamesDesk) {
-          hint.textContent = "Есть новые имена — залейте шаг 1.";
+          hint.textContent = "Есть новые имена — залейте шаг 1. Лишние — «Снять разметку».";
         } else if (canPourRulesDesk) {
           hint.textContent = "Имена на месте — залейте сценарии (шаг 2).";
         } else {
@@ -1212,13 +1230,14 @@
       }
       if (rulesBtn) {
         rulesBtn.hidden = pouredPane === "hist" && !canPourRulesDesk;
-        rulesBtn.disabled = !canPourRulesDesk || canPourNamesDesk;
+        // Имена — совет, не жёсткий замок: иначе тестовая разметка блокирует сценарии.
+        rulesBtn.disabled = !canPourRulesDesk;
         rulesBtn.textContent = "2 · Залить сценарии";
-        rulesBtn.title = canPourNamesDesk
-          ? "Сначала залейте имена"
-          : canPourRulesDesk
-            ? "Типовые со стола на щит"
-            : "Нет сценариев на столе";
+        rulesBtn.title = !canPourRulesDesk
+          ? "Нет сценариев на столе"
+          : canPourNamesDesk
+            ? "Можно сейчас. Лучше сначала имена или «Снять разметку»."
+            : "Типовые со стола на щит";
       }
       if (repairBtn) {
         const showRepair = pouredPane === "hist" && canRepairDesk && !canPourNamesDesk;
@@ -3132,6 +3151,40 @@
         renderMark();
       });
     });
+    if ($("clearMarks")) {
+      $("clearMarks").addEventListener("click", () => {
+        if (
+          !window.confirm(
+            "Снять всю разметку со стола?\nИмена и карточки исчезнут. Типовые и журнал останутся. Щит не трогаем.",
+          )
+        ) {
+          return;
+        }
+        const btn = $("clearMarks");
+        btn.disabled = true;
+        fetch("/runtime/desk-marking", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ clear: true }),
+        })
+          .then((r) => r.json())
+          .then((j) => {
+            btn.disabled = false;
+            markPending = {};
+            const head = $("previewHead");
+            if (head) {
+              head.style.color = "";
+              head.textContent = j && j.ok
+                ? "Разметка снята" + (j.cleared ? " · " + j.cleared : "") + ". Можно размечать заново."
+                : "Не снял разметку";
+            }
+            return loadLast().then(() => loadPreview());
+          })
+          .catch(() => {
+            btn.disabled = false;
+          });
+      });
+    }
     if ($("pourNames")) {
       $("pourNames").addEventListener("click", () => {
         if (!canPourNamesDesk) return;
