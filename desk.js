@@ -1715,6 +1715,58 @@
       $("cardSheet").hidden = true;
       $("cardMask").hidden = true;
     }
+    function sheetNeedSensor(card) {
+      return /humidity|co2|temp|thermostat|warm_floor|weather|vent_|ac_|humidifier|motion|reed|leak|двер|движен|протеч|окн/i
+        .test(card.id + " " + card.title);
+    }
+    function sheetTrigLab(card) {
+      return sheetNeedSensor(card) ? "Датчик" : "Кнопка";
+    }
+    function sheetTgtLab(card) {
+      if (card.cat === "Шторы") return card.multi ? "Шторы / приводы" : "Штора";
+      if (card.cat === "Климат") return card.multi ? "Нагрузки" : "Нагрузка";
+      if (card.cat === "Охрана") {
+        if (/leak/.test(card.id)) return card.multi ? "Краны" : "Кран";
+        if (/lock/.test(card.id)) return "Замок";
+        if (/siren/.test(card.id)) return "Сирена";
+        return "Нагрузка";
+      }
+      if (card.cat === "Розетки") return "Розетка";
+      if (card.cat === "Сцены") return "Линии";
+      if (card.cat === "Общее") return card.multi ? "Нагрузки" : "Нагрузка";
+      return card.multi ? "Свет / линии" : "Свет";
+    }
+    function preferRows(rows, hitFn) {
+      const hit = rows.filter(hitFn);
+      return hit.length ? hit.concat(rows.filter((r) => !hitFn(r))) : rows;
+    }
+    function triggersForCard(card) {
+      const all = namedTriggers().filter((r) => String(r.label || "").trim());
+      if (!sheetNeedSensor(card)) return all;
+      return preferRows(all, (r) => /датчик|темпер|влажн|co[₂2]|геркон|движен|протеч|двер|окн/i.test(r.label || ""));
+    }
+    function loadsForCard(card, room) {
+      const all = loadsForRoom(room);
+      if (card.cat === "Шторы") {
+        return preferRows(all, (r) => isDeskDrive(r.controlId) || /штор|роллет|жалюз|тюль|экран|привод/i.test(r.label || ""));
+      }
+      if (card.cat === "Климат") {
+        return preferRows(all, (r) => /кондей|кондиц|тепл|пол|вытяж|вентил|насос|увлажн|калорифер|серво/i.test(r.label || ""));
+      }
+      if (card.cat === "Розетки") {
+        return preferRows(all, (r) => /розетк/i.test(r.label || ""));
+      }
+      if (/leak/.test(card.id)) {
+        return preferRows(all, (r) => /кран|клапан|перекрыт/i.test(r.label || ""));
+      }
+      if (/siren/.test(card.id)) {
+        return preferRows(all, (r) => /сирен|тревог/i.test(r.label || ""));
+      }
+      if (/lock/.test(card.id)) {
+        return preferRows(all, (r) => /замок/i.test(r.label || ""));
+      }
+      return all;
+    }
     function openCardSheet(card, draft) {
       const box = $("cardSheet");
       const mask = $("cardMask");
@@ -1731,13 +1783,11 @@
       const trigLab = document.createElement("span");
       trigLab.className = "fld";
       if (needTrig) {
-        trigLab.textContent = /motion|reed|геркон|движен/i.test(card.id + card.title)
-          ? "Датчик"
-          : "Кнопка";
+        trigLab.textContent = sheetTrigLab(card);
         trig = document.createElement("select");
         trig.className = "bind";
         trig.setAttribute("aria-label", trigLab.textContent);
-        const trigs = namedTriggers().filter((r) => String(r.label || "").trim());
+        const trigs = triggersForCard(card);
         fillSelect(trig, trigs, roomFilter ? ("Из «" + roomFilter + "» или шины") : "С этой шины");
         if (draft && draft.trigger) {
           trig.value = contactKey(draft.trigger.deviceTopicKey, draft.trigger.controlId);
@@ -1748,13 +1798,13 @@
         trigLab.textContent = "Расписание";
         const note = document.createElement("p");
         note.className = "meta";
-        note.textContent = "По времени на контроллере. Сейчас выберите линии.";
+        note.textContent = "По времени на контроллере. Сейчас выберите " + sheetTgtLab(card).toLowerCase() + ".";
         trig = note;
       }
       const tgtLab = document.createElement("span");
       tgtLab.className = "fld";
-      tgtLab.textContent = card.multi ? "Свет / линии" : "Свет";
-      const loads = loadsForRoom(roomFilter);
+      tgtLab.textContent = sheetTgtLab(card);
+      const loads = loadsForCard(card, roomFilter);
       const err = document.createElement("p");
       err.className = "meta orphan";
       let collectTargets;
@@ -1765,7 +1815,7 @@
         if (!loads.length) {
           const empty = document.createElement("p");
           empty.className = "meta";
-          empty.textContent = "Сначала имя линии в «Разметить».";
+          empty.textContent = "Сначала имя в «Разметить».";
           picks.appendChild(empty);
         }
         loads.forEach((load) => {
@@ -1782,7 +1832,7 @@
       } else {
         const tgt = document.createElement("select");
         tgt.className = "bind";
-        tgt.setAttribute("aria-label", "Линия");
+        tgt.setAttribute("aria-label", tgtLab.textContent);
         fillSelect(tgt, loads, "Из этой разметки");
         if (draft && draft.targets && draft.targets[0]) {
           tgt.value = contactKey(draft.targets[0].deviceTopicKey, draft.targets[0].controlId);
@@ -1810,8 +1860,10 @@
           }),
         }).then((r) => r.json()).then((j) => {
           if (!j.ok) {
-            err.textContent = j.error === "need_trigger" ? "Нужна кнопка с шины"
-              : j.error === "need_target" || j.error === "need_load" ? "Нужна линия из разметки"
+            err.textContent = j.error === "need_trigger"
+              ? ("Нужен " + sheetTrigLab(card).toLowerCase() + " с шины")
+              : j.error === "need_target" || j.error === "need_load"
+                ? ("Нужна " + sheetTgtLab(card).toLowerCase() + " из разметки")
               : (j.error || "Не сохранил");
             return;
           }
