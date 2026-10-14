@@ -1859,8 +1859,11 @@
         inp.type = "number";
         inp.className = "bind";
         inp.step = "any";
-        const draftVal = draft && draft.params && draft.params[f.key];
-        inp.value = Number.isFinite(Number(draftVal)) ? Number(draftVal) : Number(f.def);
+        // null/undefined → дефолт (Number(null) === 0 — ловушка).
+        const draftVal = draft && draft.params ? draft.params[f.key] : undefined;
+        inp.value = draftVal != null && Number.isFinite(Number(draftVal))
+          ? Number(draftVal)
+          : Number(f.def);
         inp.setAttribute("aria-label", lab.textContent);
         paramInputs[f.key] = inp;
         paramBox.append(lab, inp);
