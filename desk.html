@@ -39,7 +39,7 @@
     </section>
 
     <section id="panel-cards" class="panel glass" hidden data-tab="cards">
-      <p class="meta">2 · Типовые. Карточка → кнопка и линия → на стол → шаг 3 «Залить».</p>
+      <p class="meta">2 · Типовые как на Vercel. Сначала свет: кнопка + линия → «На стол» → шаг 3.</p>
       <p id="diskScenes" class="meta"></p>
       <ul id="deskSols"></ul>
       <div class="filters" id="cardFilters" role="tablist" aria-label="Фильтр карточек"></div>
@@ -49,15 +49,16 @@
     <div id="cardSheet" class="sheet" hidden></div>
 
     <section id="panel-poured" class="panel glass" hidden data-tab="poured">
+      <p class="meta">3 · Стол → щит. Как на Vercel: имена отдельно, сценарии отдельно.</p>
       <p id="previewHead" class="meta">Сравниваю стол с диском…</p>
       <p id="pouredHead" class="meta">Спрашиваю залитое…</p>
       <div class="filters" id="pouredTabs" role="tablist" aria-label="Полки заливки"></div>
       <p id="pourHint" class="meta" hidden></p>
-      <p id="pourWrap" class="pour-row" hidden>
-        <button id="pourNames" class="ghost" type="button" disabled>Залить имена</button>
-        <button id="pourRules" class="ghost" type="button" disabled>Залить сценарии</button>
+      <div id="pourWrap" class="pour-strip" hidden>
+        <button id="pourNames" class="ghost pour-primary" type="button" disabled>Залить имена</button>
+        <button id="pourRules" class="ghost pour-primary" type="button" disabled>Залить сценарии</button>
         <button id="pour" class="ghost" type="button" disabled hidden>Убрать дубли</button>
-      </p>
+      </div>
       <div id="ready"></div>
       <ul id="preview" hidden></ul>
       <p id="gapsHead" class="meta" hidden></p>

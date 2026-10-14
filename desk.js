@@ -16,6 +16,18 @@
     let deskCatalog = [];
     let deskSolutions = [];
     let cardFilter = "Свет";
+    let showMoreLight = false;
+    const L1_LIGHT = [
+      "light_button_toggle",
+      "light_dim_hold_mcm",
+      "light_all_off",
+      "light_motion",
+      "light_night_path",
+      "stair_light_motion",
+      "light_reed_on",
+      "master_power_off_restore",
+      "cron_presence_on",
+    ];
     let deskRooms = [];
     let markPending = {};
     let roomFilter = "";
@@ -1252,7 +1264,7 @@
       if (!loads.length) {
         const empty = document.createElement("p");
         empty.className = "meta";
-        empty.textContent = "Сначала имя линии на вкладке Свет.";
+        empty.textContent = "Сначала имя линии в «Разметить».";
         picks.appendChild(empty);
       }
       let lastRoom = "\0";
@@ -1566,7 +1578,7 @@
     function stampDiskScenes() {
       const n = (pouredRules || []).filter((r) => r.kind === "user").length;
       $("diskScenes").textContent = n
-        ? n + " сценариев уже на щите — правьте в Типовых или смотрите «На щит · Сценарии»."
+        ? n + " сценариев уже на щите — правьте здесь или смотрите «Залить · Сценарии»."
         : "На щите пользовательских сценариев пока нет — соберите карточку ниже.";
     }
     function closeCardSheet() {
@@ -1616,7 +1628,7 @@
         if (!loads.length) {
           const empty = document.createElement("p");
           empty.className = "meta";
-          empty.textContent = "Сначала имя линии на вкладке Свет.";
+          empty.textContent = "Сначала имя линии в «Разметить».";
           picks.appendChild(empty);
         }
         loads.forEach((load) => {
@@ -1671,7 +1683,7 @@
             const head = $("previewHead");
             if (head) {
               head.style.color = "";
-              head.textContent = "На столе. Дальше: «На щит» → «Залить сценарии».";
+              head.textContent = "На столе. Шаг 3: «Залить имена», потом «Залить сценарии».";
             }
             paintPourButtons();
             renderReady();
@@ -1715,6 +1727,36 @@
       "Сцены": "<svg viewBox='0 0 24 24'><path d='M3 11l9-8 9 8'/><path d='M5 10v10h14V10'/></svg>",
     };
     const CAT_ORDER = ["Свет", "Шторы", "Климат", "Охрана", "Розетки", "Общее", "Сцены"];
+    function paintCardTile(grid, card) {
+      const onDesk = deskSolutions.filter((s) => s.solutionId === card.id);
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "vcard" + (onDesk.length ? " on" : "");
+      btn.innerHTML = "<span class=\"vtop\"><span class=\"ico\"></span><span class=\"cat\"></span></span><span class=\"vt\"></span><span class=\"vs\"></span>";
+      btn.querySelector(".ico").innerHTML = CARD_ICO[card.id] || CARD_ICO[card.cat] || CARD_ICO["Свет"];
+      const catEl = btn.querySelector(".cat");
+      catEl.textContent = onDesk.length ? "на столе" + (onDesk.length > 1 ? " · " + onDesk.length : "") : card.cat;
+      if (onDesk.length) catEl.classList.add("on");
+      btn.querySelector(".vt").textContent = card.title;
+      btn.querySelector(".vs").textContent = onDesk[0]
+        ? (onDesk.length > 1
+            ? onDesk.length + " на столе · нажмите — ещё одно"
+            : solContactLabel(onDesk[0].trigger) + " → " + onDesk[0].targets.map(solContactLabel).join(" · "))
+        : card.summary;
+      btn.addEventListener("click", () => openCardSheet(card, null));
+      grid.appendChild(btn);
+    }
+    function cardsForFilter() {
+      const rows = deskCatalog.filter((c) => c.cat === cardFilter);
+      if (cardFilter !== "Свет") return rows;
+      const rank = (id) => {
+        const i = L1_LIGHT.indexOf(id);
+        return i < 0 ? 1000 : i;
+      };
+      const primary = rows.filter((c) => L1_LIGHT.includes(c.id)).sort((a, b) => rank(a.id) - rank(b.id));
+      const rest = rows.filter((c) => !L1_LIGHT.includes(c.id));
+      return { primary: primary, rest: rest };
+    }
     function renderVitrine() {
       const filters = $("cardFilters");
       const have = new Set(deskCatalog.map((c) => c.cat));
@@ -1726,31 +1768,40 @@
         b.type = "button";
         b.textContent = cat;
         b.setAttribute("aria-pressed", cardFilter === cat ? "true" : "false");
-        b.addEventListener("click", () => { cardFilter = cat; renderVitrine(); renderDeskSolutions(); });
+        b.addEventListener("click", () => {
+          cardFilter = cat;
+          if (cat !== "Свет") showMoreLight = false;
+          renderVitrine();
+          renderDeskSolutions();
+        });
         filters.appendChild(b);
       });
       const grid = $("vitrine");
       grid.replaceChildren();
-      deskCatalog.filter((c) => c.cat === cardFilter).forEach((card) => {
-        const onDesk = deskSolutions.filter((s) => s.solutionId === card.id);
-        const btn = document.createElement("button");
-        btn.type = "button";
-        btn.className = "vcard" + (onDesk.length ? " on" : "");
-        btn.innerHTML = "<span class=\"vtop\"><span class=\"ico\"></span><span class=\"cat\"></span></span><span class=\"vt\"></span><span class=\"vs\"></span>";
-        btn.querySelector(".ico").innerHTML = CARD_ICO[card.id] || CARD_ICO[card.cat] || CARD_ICO["Свет"];
-        const catEl = btn.querySelector(".cat");
-        catEl.textContent = onDesk.length ? "на столе" + (onDesk.length > 1 ? " · " + onDesk.length : "") : card.cat;
-        if (onDesk.length) catEl.classList.add("on");
-        btn.querySelector(".vt").textContent = card.title;
-        btn.querySelector(".vs").textContent = onDesk[0]
-          ? (onDesk.length > 1
-              ? onDesk.length + " на столе · нажмите — ещё одно"
-              : solContactLabel(onDesk[0].trigger) + " → " + onDesk[0].targets.map(solContactLabel).join(" · "))
-          : card.summary;
-        // Всегда новое: иначе клик правит onDesk[0] и нельзя добавить второй вкл/дим.
-        btn.addEventListener("click", () => openCardSheet(card, null));
-        grid.appendChild(btn);
-      });
+      if (cardFilter === "Свет") {
+        const pack = cardsForFilter();
+        pack.primary.forEach((card) => paintCardTile(grid, card));
+        if (pack.rest.length) {
+          if (showMoreLight) {
+            pack.rest.forEach((card) => paintCardTile(grid, card));
+            const less = document.createElement("button");
+            less.type = "button";
+            less.className = "ghost more-cards";
+            less.textContent = "Свернуть";
+            less.addEventListener("click", () => { showMoreLight = false; renderVitrine(); });
+            grid.appendChild(less);
+          } else {
+            const more = document.createElement("button");
+            more.type = "button";
+            more.className = "ghost more-cards";
+            more.textContent = "Ещё " + pack.rest.length;
+            more.addEventListener("click", () => { showMoreLight = true; renderVitrine(); });
+            grid.appendChild(more);
+          }
+        }
+        return;
+      }
+      cardsForFilter().forEach((card) => paintCardTile(grid, card));
     }
     async function loadSolutions() {
       try {
@@ -2422,6 +2473,18 @@
       }
       box.appendChild(wrap);
     }
+    function countRoomMark(room) {
+      let named = 0;
+      let free = 0;
+      (lastShelvesRows || []).forEach((s) => {
+        visibleChannels(s).forEach((ch) => {
+          const r = nameRoom(pairName(s, ch));
+          if (r === room) named += 1;
+          else if (!r) free += 1;
+        });
+      });
+      return { named: named, free: free };
+    }
     function renderRoomsPath(box) {
       box.replaceChildren();
       if (!roomFilter) {
@@ -2439,8 +2502,24 @@
       h.textContent = roomFilter;
       const sub = document.createElement("p");
       sub.className = "meta";
-      sub.textContent = "Свет · кнопки · реле этой комнаты. Без имени — тоже здесь.";
+      const prog = countRoomMark(roomFilter);
+      const solN = deskSolutions.filter((sol) => {
+        const room = roomFromContacts([sol.trigger].concat(sol.targets || []).filter(Boolean));
+        return room === roomFilter;
+      }).length;
+      sub.textContent = "Имён " + prog.named +
+        (prog.free ? " · без имени на шине " + prog.free : "") +
+        (solN ? " · типовых " + solN : "") +
+        " · дальше шаг 2 «Типовые»";
       head.append(h, sub);
+      if (prog.named || solN) {
+        const bar = document.createElement("div");
+        bar.className = "pnr";
+        const fill = document.createElement("div");
+        fill.style.width = Math.min(100, Math.round((prog.named / Math.max(prog.named + prog.free, 1)) * 100)) + "%";
+        bar.appendChild(fill);
+        head.appendChild(bar);
+      }
       box.appendChild(head);
       const split = splitShelves(lastShelvesRows);
       appendRoomSection(box, "Свет", split.light);

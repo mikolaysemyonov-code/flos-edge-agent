@@ -328,12 +328,30 @@
       margin: 0; font-size: 1.05rem; font-weight: 700; letter-spacing: -.01em;
     }
     .mark-room-head .meta { margin: .25rem 0 0; }
+    .pnr {
+      margin-top: .55rem; height: .35rem; max-width: 14rem;
+      border-radius: 999px; background: rgb(255 255 255 / .1); overflow: hidden;
+    }
+    .pnr > div {
+      height: 100%; border-radius: inherit;
+      background: rgb(var(--sky) / .75);
+    }
     .mark-sec h3 {
       margin: 0 0 .45rem;
       font-size: .68rem; font-weight: 700; letter-spacing: .08em;
       text-transform: uppercase; color: var(--mute);
     }
     .mark-sec .channels { margin: 0; }
+    .pour-strip, .pour-row {
+      display: flex; flex-wrap: wrap; gap: .55rem; margin: .35rem 0 .85rem;
+    }
+    .pour-strip .pour-primary {
+      min-height: 2.55rem; padding: .55rem 1rem; font-weight: 700;
+    }
+    .more-cards {
+      grid-column: 1 / -1; justify-self: start;
+      min-height: 2.4rem; padding: .4rem .9rem;
+    }
     .rooms { display: flex; flex-wrap: wrap; gap: .35rem; margin: 0 0 .85rem; }
     .rooms.need {
       outline: 1px solid rgb(var(--sky) / .55);
