@@ -1853,11 +1853,12 @@
       const paramInputs = {};
       fields.forEach((f) => {
         const lab = document.createElement("span");
-        lab.className = "fld";
+        const long = String(f.label || "").length > 22;
+        lab.className = "fld" + (long ? " wide" : "");
         lab.textContent = f.label + (f.unit ? " · " + f.unit : "");
         const inp = document.createElement("input");
         inp.type = "number";
-        inp.className = "bind";
+        inp.className = "bind" + (long ? " wide" : "");
         inp.step = "any";
         // null/undefined → дефолт (Number(null) === 0 — ловушка).
         const draftVal = draft && draft.params ? draft.params[f.key] : undefined;

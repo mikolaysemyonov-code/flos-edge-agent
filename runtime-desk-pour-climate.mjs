@@ -1,17 +1,21 @@
 /**
- * Климат со стола → bang-bang defineRule (порог + запас).
+ * Климат со стола → bang-bang defineRule.
+ * Абсолютные on/off или желаемая + превышение (пол).
  */
 import { liveDeskDeviceKey } from "./runtime-desk-rules-marks.mjs";
 
 const CLIMATE = new Set([
   "vent_humidity",
+  "vent_humidity_motion",
   "vent_co2",
+  "vent_diy_vav",
   "humidifier_low",
   "warm_floor_comfort",
   "warm_floor_electric_comfort",
   "warm_floor_water_comfort",
   "ac_cool_comfort",
   "thermostat_simple_vd",
+  "weather_climate_link",
 ]);
 
 function esc(s) {
@@ -28,11 +32,24 @@ function num(params, key, fallback) {
   return Number.isFinite(n) ? n : fallback;
 }
 
-/** gte: жарко/влажно/CO₂ — ON выше порога; lte: пол — греет ниже уставки. */
 function modeOf(sid) {
   if (/warm_floor|thermostat/.test(sid)) return "lte";
   if (sid === "humidifier_low") return "range";
   return "gte";
+}
+
+function gteBand(sid, p) {
+  const defOn = sid === "vent_co2" || sid === "vent_diy_vav" ? 1000 : sid === "ac_cool_comfort" ? 25 : sid === "weather_climate_link" ? 24 : 70;
+  const defOff = sid === "vent_co2" || sid === "vent_diy_vav" ? 800 : sid === "ac_cool_comfort" ? 24 : sid === "weather_climate_link" ? 23 : 65;
+  if (p.on != null || p.off != null) {
+    const on = num(p, "on", defOn);
+    let off = num(p, "off", defOff);
+    if (off >= on) off = on - (sid.includes("co2") || sid === "vent_diy_vav" ? 50 : 1);
+    return { on, off };
+  }
+  const thr = num(p, "thr", defOn);
+  const h = Math.max(0.1, num(p, "hyst", sid.includes("co2") || sid === "vent_diy_vav" ? 200 : 5));
+  return { on: thr, off: thr - h };
 }
 
 export function isDeskClimateSolution(sol) {
@@ -69,12 +86,10 @@ export function emitDeskClimate(sol) {
       `      var __want = ${latch};`,
     ].join("\n");
   } else {
-    const thr = num(p, "thr", sid === "vent_co2" ? 1000 : sid === "ac_cool_comfort" ? 25 : 70);
-    const h = Math.max(0.1, num(p, "hyst", sid === "vent_co2" ? 50 : 5));
+    const { on, off } = gteBand(sid, p);
     body = [
-      `      var thr = ${thr}; var h = ${h};`,
-      `      if (v >= thr) ${latch} = true;`,
-      `      else if (v <= thr - h) ${latch} = false;`,
+      `      if (v >= ${on}) ${latch} = true;`,
+      `      else if (v <= ${off}) ${latch} = false;`,
       `      var __want = ${latch};`,
     ].join("\n");
   }

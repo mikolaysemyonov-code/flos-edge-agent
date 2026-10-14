@@ -51,15 +51,15 @@ export const DESK_SOLUTION_CARDS = [
   C("anti_ice_cron_off", "Общее", "Антилёд: выключить", "По расписанию выключает греющий кабель."),
   L("ac_cool_comfort", "Климат", "Кондиционер по температуре", "Если в комнате жарче нужного → кондей ON.", {
     fields: [
-      { key: "thr", label: "Жарче чем", unit: "°C", def: 25 },
-      { key: "hyst", label: "Стоп ниже на", unit: "°C", def: 1 },
+      { key: "on", label: "Включать выше", unit: "°C", def: 25 },
+      { key: "off", label: "Выключать ниже", unit: "°C", def: 24 },
     ],
   }),
   L("ac_window_off", "Климат", "Окно открыто — стоп кондея", "Если окно открыто → кондей OFF. Сам обратно не включает."),
   L("thermostat_simple_vd", "Климат", "Термостат на щите", "Если холоднее нужного → греет; теплее — стоп.", {
     fields: [
-      { key: "thr", label: "Нужно", unit: "°C", def: 25 },
-      { key: "hyst", label: "Стоп выше на", unit: "°C", def: 1 },
+      { key: "thr", label: "Желаемая температура", unit: "°C", def: 25 },
+      { key: "hyst", label: "Превышение для отключения", unit: "+°C", def: 1 },
     ],
   }),
   C("rollers_evening", "Шторы", "Роллеты: вечер", "По расписанию закрывает роллеты."),
@@ -73,51 +73,60 @@ export const DESK_SOLUTION_CARDS = [
   C("curtain_dawn_open", "Шторы", "Шторы: утро — открыть", "По расписанию открывает шторы."),
   L("vent_humidity", "Климат", "Вытяжка по влажности", "Если влажно → вытяжка ON; когда сухо — OFF.", {
     fields: [
-      { key: "thr", label: "Влажнее чем", unit: "%", def: 70 },
-      { key: "hyst", label: "Суше на", unit: "%", def: 5 },
+      { key: "on", label: "Включать при влажности выше", unit: "%", def: 70 },
+      { key: "off", label: "Выключать при влажности ниже", unit: "%", def: 65 },
     ],
   }),
   L("vent_humidity_motion", "Климат", "Вытяжка: влажность и движение", "Если влажно и есть люди → вытяжка; никого — OFF.", {
     fields: [
-      { key: "thr", label: "Влажнее чем", unit: "%", def: 70 },
-      { key: "hyst", label: "Суше на", unit: "%", def: 5 },
+      { key: "on", label: "Включать при влажности выше", unit: "%", def: 70 },
+      { key: "off", label: "Выключать при влажности ниже", unit: "%", def: 65 },
     ],
   }),
   L("vent_co2", "Климат", "Вентиляция по CO₂", "Если душно → приточка ON; воздух чистый — OFF.", {
     fields: [
-      { key: "thr", label: "Душно от", unit: "ppm", def: 1000 },
-      { key: "hyst", label: "Чище на", unit: "ppm", def: 50 },
+      { key: "on", label: "Включать при CO₂ выше", unit: "ppm", def: 1000 },
+      { key: "off", label: "Выключать при CO₂ ниже", unit: "ppm", def: 800 },
     ],
   }),
-  L("vent_diy_vav", "Климат", "Приточка DIY / VAV", "Если душно → мотор и заслонки. Калорифер — только после пуска."),
+  L("vent_diy_vav", "Климат", "Приточка DIY / VAV", "Если душно → мотор и заслонки. Калорифер — только после пуска.", {
+    fields: [
+      { key: "on", label: "Включать при CO₂ выше", unit: "ppm", def: 1000 },
+      { key: "off", label: "Выключать при CO₂ ниже", unit: "ppm", def: 800 },
+      { key: "supply", label: "Температура притока", unit: "°C", def: 20 },
+      { key: "delay", label: "Калорифер через", unit: "сек", def: 15 },
+      { key: "spdMin", label: "Скорость мотора мин", unit: "%", def: 20 },
+      { key: "spdMax", label: "Скорость мотора макс", unit: "%", def: 100 },
+    ],
+  }),
   L("humidifier_low", "Климат", "Увлажнитель в диапазоне", "Если сухо → увлажнитель ON; влажно — OFF.", {
     fields: [
-      { key: "lo", label: "Сухо ниже", unit: "%", def: 40 },
-      { key: "hi", label: "Хватит выше", unit: "%", def: 55 },
+      { key: "lo", label: "Включать при влажности ниже", unit: "%", def: 40 },
+      { key: "hi", label: "Выключать при влажности выше", unit: "%", def: 55 },
     ],
   }),
   L("warm_floor_comfort", "Климат", "Тёплый пол: комфорт", "Если пол холоднее нужного → греет; теплее — стоп.", {
     fields: [
-      { key: "thr", label: "Греть ниже", unit: "°C", def: 22 },
-      { key: "hyst", label: "Стоп выше на", unit: "°C", def: 1 },
+      { key: "thr", label: "Желаемая температура", unit: "°C", def: 22 },
+      { key: "hyst", label: "Превышение для отключения", unit: "+°C", def: 1 },
     ],
   }),
   L("warm_floor_electric_comfort", "Климат", "Тёплый пол электрический", "Если холоднее нужного → реле ON; теплее — OFF.", {
     fields: [
-      { key: "thr", label: "Греть ниже", unit: "°C", def: 22 },
-      { key: "hyst", label: "Стоп выше на", unit: "°C", def: 1 },
+      { key: "thr", label: "Желаемая температура", unit: "°C", def: 22 },
+      { key: "hyst", label: "Превышение для отключения", unit: "+°C", def: 1 },
     ],
   }),
   L("warm_floor_water_comfort", "Климат", "Тёплый пол водяной", "Если холоднее нужного → насос / серво ON.", {
     fields: [
-      { key: "thr", label: "Греть ниже", unit: "°C", def: 22 },
-      { key: "hyst", label: "Стоп выше на", unit: "°C", def: 1 },
+      { key: "thr", label: "Желаемая температура", unit: "°C", def: 22 },
+      { key: "hyst", label: "Превышение для отключения", unit: "+°C", def: 1 },
     ],
   }),
   L("weather_climate_link", "Климат", "Погода → климат", "Если на улице жарко → можно охлаждение / вентиляцию.", {
     fields: [
-      { key: "thr", label: "На улице жарче", unit: "°C", def: 24 },
-      { key: "hyst", label: "Стоп ниже на", unit: "°C", def: 1 },
+      { key: "on", label: "Включать при улице выше", unit: "°C", def: 24 },
+      { key: "off", label: "Выключать при улице ниже", unit: "°C", def: 23 },
     ],
   }),
   M("leak_close_valves", "Охрана", "Протечка — закрыть краны", "Если протечка → закрыть краны. Можно несколько линий."),

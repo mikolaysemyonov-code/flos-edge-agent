@@ -441,6 +441,9 @@
     }
     .sheet-params .fld { grid-column: span 1; }
     .sheet-params input.bind { margin: 0 0 .15rem; }
+    /* Длинные подписи (вкл/выкл при…) — на всю ширину пары. */
+    .sheet-params .fld.wide { grid-column: 1 / -1; }
+    .sheet-params input.bind.wide { grid-column: 1 / -1; }
     .rooms { display: flex; flex-wrap: wrap; gap: .35rem; margin: 0 0 .85rem; }
     .rooms.need {
       outline: 1px solid rgb(var(--sky) / .55);
