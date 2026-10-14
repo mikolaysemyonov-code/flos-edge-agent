@@ -19,6 +19,7 @@ import {
   listDeskSolutions,
   upsertDeskSolution,
 } from "./runtime-desk-solutions.mjs";
+import { buildFieldCertificate } from "./runtime-desk-field-cert.mjs";
 import {
   cardsFromHints,
   pouredHintsForContact,
@@ -296,4 +297,14 @@ export function handleRuntimeDeskPoured(_req, res) {
     })),
   }));
   jsonEnd(res, 200, { ok: true, ...snap, rules });
+}
+
+/** Полевой сертификат: checklist + passport JSON. */
+export function handleRuntimeFieldCert(req, res, live = {}) {
+  const last = readLastDeskShelves();
+  const out = buildFieldCertificate({
+    ...live,
+    shelves: last.shelves || [],
+  });
+  jsonEnd(res, 200, out);
 }

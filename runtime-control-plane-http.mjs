@@ -29,6 +29,7 @@ import {
   handleRuntimeDeskPourPreview,
   handleRuntimeDeskPoured,
   handleRuntimeDeskSolutions,
+  handleRuntimeFieldCert,
   handleRuntimeMqttScan,
   serveCommissionDesk,
   serveCommissionDeskFile,
@@ -681,6 +682,19 @@ export function runtimeHttpPathHandler(req, res) {
   }
   if (method === "GET" && urlPath === "/runtime/desk-poured") {
     handleRuntimeDeskPoured(req, res);
+    return true;
+  }
+  if (method === "GET" && urlPath === "/runtime/field-cert") {
+    const extra = typeof runtimeHealthExtraProvider === "function" ? runtimeHealthExtraProvider() : {};
+    const mirror = extra.mqttMirror || {};
+    const topics = Number(mirror.topicCount) || 0;
+    const cloudState = extra.enrollment && extra.enrollment.state;
+    handleRuntimeFieldCert(req, res, {
+      agentVersion: extra.agentVersion,
+      topics,
+      busOk: mirror.connected === true && topics > 0,
+      cloudOk: /^(restored|online|enrolled_awaiting_heartbeat)$/.test(String(cloudState || "")),
+    });
     return true;
   }
   if (method === "GET" && urlPath === "/runtime/releases") {

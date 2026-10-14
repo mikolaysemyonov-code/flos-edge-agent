@@ -2093,6 +2093,62 @@
         if (sub) { sub.hidden = true; sub.textContent = ""; }
       }
     }
+    async function openFieldCert() {
+      const box = $("cardSheet");
+      const mask = $("cardMask");
+      box.hidden = false;
+      mask.hidden = false;
+      box.replaceChildren();
+      const h = document.createElement("h3");
+      h.textContent = "Полевой сертификат";
+      const p = document.createElement("p");
+      p.className = "meta";
+      p.textContent = "Спрашиваю щит…";
+      const head = document.createElement("div");
+      head.className = "sheet-head";
+      head.append(h, p);
+      const body = document.createElement("div");
+      body.className = "sheet-body";
+      const actions = document.createElement("div");
+      actions.className = "actions";
+      const close = document.createElement("button");
+      close.type = "button";
+      close.className = "ghost";
+      close.textContent = "Закрыть";
+      close.addEventListener("click", closeCardSheet);
+      actions.appendChild(close);
+      box.append(head, body, actions);
+      try {
+        const r = await fetch("/runtime/field-cert");
+        const j = await r.json();
+        if (!j.ok) {
+          p.textContent = "Не собрал сертификат";
+          return;
+        }
+        p.textContent = j.ready
+          ? "Готово · " + j.passed + "/" + j.total
+          : "Ещё " + (j.total - j.passed) + " пункта · " + j.passed + "/" + j.total;
+        const ul = document.createElement("ul");
+        ul.className = "cert-list";
+        (j.checks || []).forEach((c) => {
+          const li = document.createElement("li");
+          li.className = c.ok ? "ok" : "bad";
+          li.innerHTML = "<strong></strong><div class=\"meta\"></div>";
+          li.querySelector("strong").textContent = (c.ok ? "✓ " : "· ") + c.title;
+          li.querySelector(".meta").textContent = c.detail || "";
+          ul.appendChild(li);
+        });
+        body.appendChild(ul);
+        if (j.passport) {
+          const pre = document.createElement("pre");
+          pre.className = "cert-passport";
+          pre.textContent = JSON.stringify(j.passport, null, 2);
+          body.appendChild(pre);
+        }
+      } catch (_) {
+        p.textContent = "Нет связи с /runtime/field-cert";
+      }
+    }
     async function saveMark(body) {
       await fetch("/runtime/desk-marking", {
         method: "PUT",
@@ -2926,6 +2982,7 @@
       }
     }
     $("scan").onclick = () => { void scanNow(); };
+    if ($("fieldCert")) $("fieldCert").onclick = () => { void openFieldCert(); };
     $("cardMask").addEventListener("click", closeCardSheet);
     document.addEventListener("keydown", (e) => {
       if (e.key !== "Escape") return;

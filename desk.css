@@ -20,6 +20,22 @@
     main { max-width: 64rem; margin: 0 auto; padding: 1.25rem 1.15rem 11rem; }
     .kicker { margin: 0; color: var(--mute); font-size: .72rem; letter-spacing: .08em; text-transform: uppercase; }
     .top { display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; margin: .35rem 0 1rem; }
+    .top-actions { display: flex; flex-wrap: wrap; gap: .4rem; }
+    .cert-list { list-style: none; margin: 0; padding: 0; display: grid; gap: .4rem; }
+    .cert-list li {
+      padding: .55rem .65rem; border-radius: .75rem;
+      border: 1px solid rgb(255 255 255 / .1);
+      background: rgb(255 255 255 / .04);
+    }
+    .cert-list li.ok { border-color: rgb(52 211 153 / .35); }
+    .cert-list li.bad { border-color: rgb(251 113 133 / .35); }
+    .cert-list li strong { font-size: .86rem; }
+    .cert-list li .meta { margin: .2rem 0 0; font-size: .72rem; }
+    .cert-passport {
+      margin: .75rem 0 0; padding: .65rem; border-radius: .75rem;
+      background: rgb(0 0 0 / .35); color: var(--mute);
+      font-size: .68rem; overflow: auto; max-height: 10rem;
+    }
     h1 { font-size: 1.85rem; font-weight: 650; letter-spacing: -.03em; margin: 0; }
     .ghost {
       appearance: none; border: 0; cursor: pointer;

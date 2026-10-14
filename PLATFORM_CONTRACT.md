@@ -49,7 +49,8 @@ Does not silently delete the entire `/etc/wb-rules` tree without an explicit pro
 
 ## Compatibility
 
-Record model + WB release suite in the field certificate (wave 6 resource passport).
+Record model + WB release suite in the field certificate (wave 6 resource passport).  
+Desk: **Сертификат** → `GET /runtime/field-cert`. Checklist: `FIELD_CERTIFICATE.md`.
 
 ---
 
