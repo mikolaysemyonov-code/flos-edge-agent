@@ -701,8 +701,32 @@
     function pourLane(item) {
       if (item.scene) return item.deskDirty ? "send" : "disk";
       const s = item.status;
-      if (s === "new_name" || s === "name" || s === "blocked") return "send";
+      // card — тоже «Новое»: иначе смена жеста не видна до заливки.
+      if (s === "new_name" || s === "name" || s === "blocked" || s === "card") return "send";
       return "disk";
+    }
+    function clearDeskItem(item) {
+      if (!item) return Promise.resolve();
+      if (item.scene) {
+        const id = item.deskId || (item.deskByCard && item.cardsOn && item.deskByCard[item.cardsOn[0]]) || "";
+        if (!id) return Promise.resolve();
+        return fetch("/runtime/desk-solutions", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ delete: id }),
+        }).then(() => loadSolutions()).then(() => loadPreview());
+      }
+      if (!item.deviceTopicKey || !item.controlId) return Promise.resolve();
+      const jobs = [
+        saveName(item.deviceTopicKey, item.controlId, ""),
+        saveCards(item.deviceTopicKey, item.controlId, []),
+      ];
+      const twin = isDeskDrive(item.controlId) ? driveTwin(item.controlId) : "";
+      if (twin) {
+        jobs.push(saveName(item.deviceTopicKey, twin, ""));
+        jobs.push(saveCards(item.deviceTopicKey, twin, []));
+      }
+      return Promise.all(jobs).then(() => loadLast());
     }
     function loadNeedsButton(item) {
       if (!item || item.scene || !item.isLoad || item.btnLine) return false;
@@ -975,6 +999,21 @@
       top.append(left, st);
       cap.appendChild(top);
       li.appendChild(cap);
+      if (lane === "send") {
+        const drop = document.createElement("button");
+        drop.type = "button";
+        drop.className = "ghost";
+        drop.textContent = item.scene ? "Снять" : (item.pouredName ? "Как на щите" : "Снять");
+        drop.title = item.scene
+          ? "Убрать сценарий со стола"
+          : (item.pouredName ? "Вернуть имя с контроллера" : "Убрать имя со стола");
+        drop.addEventListener("click", (e) => {
+          e.stopPropagation();
+          drop.disabled = true;
+          clearDeskItem(item).catch(() => { drop.disabled = false; });
+        });
+        li.appendChild(drop);
+      }
       if (item.scene && item.cardsOn && item.cardsOn.length) {
         const chips = document.createElement("div");
         chips.className = "chips";
@@ -1019,8 +1058,8 @@
       });
       const wrap = $("pourWrap");
       if (wrap) {
-        // «Залить» виден на «Новое» и в журнале; на разметке/сценариях — нет.
-        const showPour = (pouredPane === "send" || pouredPane === "hist") && !pouredOpen();
+        // «Залить» на Новое / Разметка / Журнал — не прячем с полки разметки.
+        const showPour = (pouredPane === "send" || pouredPane === "hist" || pouredPane === "mark") && !pouredOpen();
         wrap.hidden = !showPour;
         const pourBtn = $("pour");
         const canAct = canPourDesk || canRepairDesk;
@@ -1862,6 +1901,15 @@
       markPending[k] = d;
       const next = composeMark(d.room, d.type);
       if (!next) {
+        // Оба пусто — снять имя со стола (вернётся залитое с щита, если было).
+        if (!d.room && !d.type && (saved.room || saved.type || pairName(s, ch))) {
+          delete markPending[k];
+          const jobs = [saveName(s.deviceTopicKey, ch.controlId, "")];
+          const twin = isDeskDrive(ch.controlId) ? driveTwin(ch.controlId) : "";
+          if (twin) jobs.push(saveName(s.deviceTopicKey, twin, ""));
+          Promise.all(jobs).then(() => loadLast()).catch(() => {});
+          return;
+        }
         renderShelves(lastShelvesRows);
         if (activeTab === "poured") renderReady();
         return;
@@ -1876,7 +1924,14 @@
       const twin = isDeskDrive(ch.controlId) ? driveTwin(ch.controlId) : "";
       if (twin) jobs.push(saveName(s.deviceTopicKey, twin, next));
       delete markPending[k];
-      Promise.all(jobs).then(() => loadLast()).catch(() => {});
+      Promise.all(jobs).then(() => {
+        loadLast().then(() => {
+          const head = $("previewHead");
+          if (head && canPourDesk) {
+            head.textContent = "Имя на столе. «Залито → Новое» или «Залить на щит».";
+          }
+        });
+      }).catch(() => {});
     }
     function promptRoom() {
       const typed = window.prompt("Комната");
@@ -1943,21 +1998,45 @@
         roomsFromBus(),
         current.room,
         "Выбрать",
-        (v) => { if (v) pickMark(s, ch, { room: v }); },
+        (v) => {
+          if (!v) pickMark(s, ch, { room: "", type: "" });
+          else pickMark(s, ch, { room: v });
+        },
         "Новая комната…",
         () => promptRoom().then((name) => { if (name) pickMark(s, ch, { room: name }); }),
         !!(current.type && !current.room),
+        true,
       ));
       fields.appendChild(makeField(
         typeSteph(s, ch, isLoad),
         types,
         current.type,
         "Выбрать",
-        (v) => { if (v) pickMark(s, ch, { type: v }); },
+        (v) => {
+          if (!v) pickMark(s, ch, { room: "", type: "" });
+          else pickMark(s, ch, { type: v });
+        },
         "",
         null,
         !!(current.room && !current.type),
+        true,
       ));
+      if (isLoad) {
+        const selected = new Set(exclusiveCards(Array.isArray(ch.cards) ? ch.cards : []));
+        fields.appendChild(makeLoadChips(s.deviceTopicKey, ch.controlId, selected));
+      }
+      if (original) {
+        const drop = document.createElement("button");
+        drop.type = "button";
+        drop.className = "ghost";
+        drop.textContent = "Снять имя";
+        drop.title = "Убрать имя со стола";
+        drop.addEventListener("click", () => {
+          pickMark(s, ch, { room: "", type: "" });
+        });
+        row.append(cap, fields, drop);
+        return row;
+      }
       row.append(cap, fields);
       return row;
     }
