@@ -52,17 +52,19 @@
     <div id="cardSheet" class="sheet" hidden></div>
 
     <section id="panel-poured" class="panel glass" hidden data-tab="poured">
-      <p class="meta">3 · Сначала имена, потом сценарии. Журнал — откат.</p>
-      <p id="previewHead" class="meta">Сравниваю стол с диском…</p>
-      <p id="pourSummary" class="pour-summary meta" hidden></p>
-      <p id="pouredHead" class="meta">Спрашиваю залитое…</p>
-      <div class="filters" id="pouredTabs" role="tablist" aria-label="Полки заливки"></div>
-      <p id="pourHint" class="meta" hidden></p>
-      <div id="pourWrap" class="pour-strip" hidden>
-        <button id="pourNames" class="ghost pour-primary" type="button" disabled>1 · Залить имена</button>
-        <button id="pourRules" class="ghost pour-primary" type="button" disabled>2 · Залить сценарии</button>
-        <button id="pour" class="ghost" type="button" disabled hidden>Убрать дубли</button>
+      <p class="meta">3 · Модули к заливке → имена, потом сценарии.</p>
+      <div id="pourDock" class="pour-dock">
+        <p id="pourSummary" class="pour-summary" hidden></p>
+        <p id="pouredHead" class="pour-disk meta" hidden></p>
+        <div id="pourWrap" class="pour-strip" hidden>
+          <button id="pourNames" class="ghost pour-primary" type="button" disabled>1 · Имена</button>
+          <button id="pourRules" class="ghost pour-primary" type="button" disabled>2 · Сценарии</button>
+          <button id="pour" class="ghost" type="button" disabled hidden>Убрать дубли</button>
+        </div>
       </div>
+      <div class="filters" id="pouredTabs" role="tablist" aria-label="Полки заливки"></div>
+      <p id="previewHead" class="meta" hidden></p>
+      <p id="pourHint" class="meta" hidden></p>
       <div id="ready"></div>
       <ul id="preview" hidden></ul>
       <p id="gapsHead" class="meta" hidden></p>

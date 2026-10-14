@@ -34,6 +34,7 @@
     let roomFilter = "";
     let openMod = "";
     let pouredPane = "send";
+    let openPourMod = "";
     let lastReleases = [];
     let rollingBack = false;
     let canPourDesk = false;
@@ -916,14 +917,16 @@
       back.setAttribute("aria-label", "К разметке");
       back.innerHTML = "<svg viewBox='0 0 24 24'><path d='M15 18l-6-6 6-6'/></svg><span>К разметке</span>";
       back.addEventListener("click", () => {
-        pouredPane = "mark";
+        pouredPane = "send";
+        openPourMod = "";
         renderReady();
       });
+      back.querySelector("span").textContent = "К новому";
       box.appendChild(back);
       if (!lastReleases.length) {
         const empty = document.createElement("p");
         empty.className = "empty";
-        empty.textContent = "Пока нет заливок. Первая появится после «Залить имена» или «Залить сценарии».";
+        empty.textContent = "Пока нет заливок. Первая появится после «1 · Имена» или «2 · Сценарии».";
         box.appendChild(empty);
         return;
       }
@@ -1034,7 +1037,120 @@
       renderReady();
     }
     function pouredOpen() {
-      return !!(openSceneId || openContact);
+      return !!(openSceneId || openContact || openPourMod);
+    }
+    function closePourMod() {
+      if (!openPourMod) return;
+      openPourMod = "";
+      renderReady();
+    }
+    function pourModuleTile(sku, key, chunk) {
+      const n = chunk.length;
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "vcard sky on";
+      const top = document.createElement("div");
+      top.className = "vtop";
+      const ico = document.createElement("span");
+      ico.className = "ico";
+      const shelf = lastShelvesRows.find((s) => s.deviceTopicKey === key);
+      ico.innerHTML = MOD_ICO[moduleKind(shelf || { deviceTopicKey: key })] || MOD_ICO.led;
+      const cat = document.createElement("span");
+      cat.className = "cat on";
+      cat.textContent = n + " к заливке";
+      top.append(ico, cat);
+      const vt = document.createElement("span");
+      vt.className = "vt";
+      vt.textContent = sku || key;
+      const vs = document.createElement("span");
+      vs.className = "vs";
+      const rooms = [...new Set(chunk.map((i) => i.room).filter(Boolean))];
+      vs.textContent = rooms.length ? rooms.join(" · ") : "имена / карточки";
+      const bars = document.createElement("div");
+      bars.className = "ch-bars";
+      bars.setAttribute("aria-hidden", "true");
+      chunk.forEach(() => {
+        const b = document.createElement("span");
+        b.className = "ch-bar named";
+        bars.appendChild(b);
+      });
+      const foot = document.createElement("div");
+      foot.className = "mod-foot";
+      const open = document.createElement("span");
+      open.className = "mod-open";
+      open.textContent = "Открыть";
+      const badge = document.createElement("span");
+      badge.className = "mod-badge";
+      badge.textContent = "Новое";
+      foot.append(open, badge);
+      btn.append(top, vt, vs, bars, foot);
+      btn.addEventListener("click", () => {
+        openPourMod = key;
+        openContact = "";
+        openSceneId = "";
+        renderReady();
+      });
+      return btn;
+    }
+    function paintSendByModule(box, items) {
+      const loads = items.filter((i) => !i.scene);
+      const scenes = items.filter((i) => i.scene);
+      if (openPourMod) {
+        const chunk = loads.filter((i) => i.deviceTopicKey === openPourMod);
+        const shelf = lastShelvesRows.find((s) => s.deviceTopicKey === openPourMod);
+        const sku = (chunk[0] && chunk[0].sku) || (shelf && shelf.label) || openPourMod;
+        box.className = "modopen";
+        const back = document.createElement("button");
+        back.type = "button";
+        back.className = "back ghost-back";
+        back.innerHTML = "<svg viewBox='0 0 24 24'><path d='M15 18l-6-6 6-6'/></svg><span>Все модули</span>";
+        back.addEventListener("click", closePourMod);
+        const head = document.createElement("div");
+        head.className = "vcard sky on";
+        paintModuleFace(head, shelf || {
+          deviceTopicKey: openPourMod,
+          label: sku,
+          channels: chunk.map((i) => ({ controlId: i.controlId, name: i.title })),
+        }, { drill: true });
+        const tip = document.createElement("p");
+        tip.className = "meta";
+        tip.textContent = chunk.length
+          ? ("К заливке · " + chunk.length + ". Кнопка «1 · Имена» выше.")
+          : "В этом модуле нового нет.";
+        const ul = document.createElement("ul");
+        ul.className = "channels drill-list";
+        chunk.slice().sort(byContact).forEach((i) => ul.appendChild(readyCard(i, i.room)));
+        box.append(back, head, tip, ul);
+        return;
+      }
+      box.className = "vitrine";
+      const byMod = new Map();
+      loads.forEach((i) => {
+        const k = i.deviceTopicKey || "";
+        if (!byMod.has(k)) byMod.set(k, []);
+        byMod.get(k).push(i);
+      });
+      const keys = [...byMod.keys()].sort((a, b) => {
+        const sa = lastShelvesRows.find((s) => s.deviceTopicKey === a);
+        const sb = lastShelvesRows.find((s) => s.deviceTopicKey === b);
+        return moduleSlaveOf(sa || { deviceTopicKey: a }) - moduleSlaveOf(sb || { deviceTopicKey: b })
+          || String(a).localeCompare(String(b));
+      });
+      keys.forEach((k) => {
+        const chunk = byMod.get(k) || [];
+        const sku = (chunk[0] && chunk[0].sku) || k;
+        box.appendChild(pourModuleTile(sku, k, chunk));
+      });
+      if (scenes.length) {
+        const h = document.createElement("p");
+        h.className = "sech";
+        h.textContent = "Сценарии · " + scenes.length;
+        box.appendChild(h);
+        const ul = document.createElement("ul");
+        ul.className = "channels";
+        scenes.slice().sort(byContact).forEach((i) => ul.appendChild(readyCard(i, i.room)));
+        box.appendChild(ul);
+      }
     }
     function readyCard(item, room) {
       const li = document.createElement("li");
@@ -1173,6 +1289,7 @@
         b.addEventListener("click", () => {
           if (t.id !== "rules") openSceneId = "";
           openContact = "";
+          openPourMod = "";
           pouredPane = t.id;
           renderReady();
         });
@@ -1194,29 +1311,21 @@
         if (show && pouredPane === "send") {
           sum.hidden = false;
           const parts = [];
-          if (canPourNamesDesk) parts.push("имена готовы");
-          else parts.push("имён нет");
-          if (canPourRulesDesk) parts.push("сценарии " + (solN || "готовы"));
-          else parts.push("сценариев нет");
-          if (sendN) parts.push("новое · " + sendN);
-          sum.textContent = "К заливке: " + parts.join(" · ");
+          if (canPourNamesDesk) parts.push("имена");
+          if (canPourRulesDesk) parts.push("сценарии" + (solN ? " · " + solN : ""));
+          if (sendN) parts.push(sendN + " новое");
+          sum.textContent = parts.length ? parts.join(" · ") : "Нечего лить — стол как на щите";
+        } else if (show && pouredPane === "hist") {
+          sum.hidden = false;
+          sum.textContent = "Откат — «Вернуть». История не стирается.";
         } else {
           sum.hidden = true;
           sum.textContent = "";
         }
       }
       if (hint) {
-        hint.hidden = !show || pouredPane === "hist";
-        if (canPourNamesDesk && canPourRulesDesk) {
-          hint.textContent = "Лучше сначала «1 · Имена». Или «Снять разметку» → сценарии.";
-        } else if (canPourNamesDesk) {
-          hint.textContent = "Есть новые имена — залейте шаг 1. Лишние — «Снять разметку».";
-        } else if (canPourRulesDesk) {
-          hint.textContent = "Имена на месте — залейте сценарии (шаг 2).";
-        } else {
-          hint.textContent = "";
-          hint.hidden = true;
-        }
+        hint.hidden = true;
+        hint.textContent = "";
       }
       const namesBtn = $("pourNames");
       const rulesBtn = $("pourRules");
@@ -1224,20 +1333,19 @@
       if (namesBtn) {
         namesBtn.hidden = pouredPane === "hist" && !canPourNamesDesk;
         namesBtn.disabled = !canPourNamesDesk;
-        namesBtn.textContent = "1 · Залить имена";
+        namesBtn.textContent = "1 · Имена";
         namesBtn.title = canPourNamesDesk
           ? "Имена каналов на щит"
           : "Нет новых имён";
       }
       if (rulesBtn) {
         rulesBtn.hidden = pouredPane === "hist" && !canPourRulesDesk;
-        // Имена — совет, не жёсткий замок: иначе тестовая разметка блокирует сценарии.
         rulesBtn.disabled = !canPourRulesDesk;
-        rulesBtn.textContent = "2 · Залить сценарии";
+        rulesBtn.textContent = "2 · Сценарии";
         rulesBtn.title = !canPourRulesDesk
           ? "Нет сценариев на столе"
           : canPourNamesDesk
-            ? "Можно сейчас. Лучше сначала имена или «Снять разметку»."
+            ? "Можно сейчас. Лучше сначала имена."
             : "Типовые со стола на щит";
       }
       if (repairBtn) {
@@ -1293,10 +1401,12 @@
       return { rows: rows, want: want };
     }
     function setPouredChrome(drill) {
-      ["pouredTabs", "previewHead", "pouredHead"].forEach((id) => {
-        const el = $(id);
-        if (el) el.hidden = !!drill;
-      });
+      const tabs = $("pouredTabs");
+      if (tabs) tabs.hidden = !!(drill && !openPourMod);
+      const head = $("previewHead");
+      if (head && drill) head.hidden = true;
+      const dock = $("pourDock");
+      if (dock) dock.hidden = !!(openSceneId || openContact);
     }
     function renderSceneDrill(box, item) {
       const p = sceneParts(item.contacts);
@@ -1515,84 +1625,48 @@
       }
       setPouredChrome(false);
       if (pouredPane === "hist") {
+        openPourMod = "";
         renderHistory(box);
         const head = $("previewHead");
         if (head) {
-          head.style.color = "";
-          head.textContent = "Журнал заливок. «Вернуть» — откат. Новое — вкладка сверху.";
+          head.hidden = true;
+          head.textContent = "";
         }
         return;
       }
       const items = paneItems(all);
-      function paintItems(list) {
-        const rooms = roomsFromBus().slice();
-        if (list.some((i) => !i.room)) rooms.push("");
-        rooms.forEach((room) => {
-          const mine = list.filter((i) => (i.room || "") === room);
-          if (!mine.length) return;
-          const h = document.createElement("p");
-          h.className = "roomh";
-          h.textContent = room || "Без комнаты";
-          box.appendChild(h);
-          if (pouredPane === "rules") {
-            const ul = document.createElement("ul");
-            ul.className = "channels";
-            mine.slice().sort(byContact).forEach((i) => ul.appendChild(readyCard(i, room)));
-            box.appendChild(ul);
-            return;
-          }
-          READY_BUCKETS.forEach((b) => {
-            const chunk = mine.filter((i) => i.bucket === b.id);
-            if (!chunk.length) return;
-            const sech = document.createElement("p");
-            sech.className = "sech";
-            sech.textContent = b.ru;
-            box.appendChild(sech);
-            const ul = document.createElement("ul");
-            ul.className = "channels";
-            chunk.slice().sort(byContact).forEach((i) => ul.appendChild(readyCard(i, room)));
-            box.appendChild(ul);
-          });
-        });
-      }
-      if (pouredPane === "send") paintItems(items);
-      else {
+      if (pouredPane === "send") {
+        paintSendByModule(box, items);
+      } else {
+        openPourMod = "";
+        box.className = "";
+        const ul = document.createElement("ul");
+        ul.className = "channels";
         const onCtl = items.filter((i) => !isNewItem(i));
         const neu = items.filter(isNewItem);
-        paintItems(onCtl);
+        onCtl.slice().sort(byContact).forEach((i) => ul.appendChild(readyCard(i, i.room)));
         if (neu.length && onCtl.length) {
-          const h = document.createElement("p");
+          const h = document.createElement("li");
           h.className = "roomh";
-          h.textContent = "Новое";
-          box.appendChild(h);
+          h.textContent = "Новое со стола";
+          ul.appendChild(h);
         }
-        paintItems(neu);
+        neu.slice().sort(byContact).forEach((i) => ul.appendChild(readyCard(i, i.room)));
+        if (ul.childNodes.length) box.appendChild(ul);
       }
       if (!items.length) {
         const empty = document.createElement("p");
         empty.className = "empty";
-        empty.textContent = pouredPane === "send" ? "Нового нет — стол совпадает с контроллером."
-          : pouredPane === "rules" ? "Сценариев на контроллере пока нет."
-          : "Разметки пока нет.";
+        empty.textContent = pouredPane === "send"
+          ? "Нового нет — стол совпадает с контроллером."
+          : "Сценариев на контроллере пока нет.";
         box.appendChild(empty);
       }
       const head = $("previewHead");
       if (head) {
-        const ready = lastPreview.ready || {};
-        const bits = [
-          (ready.blocked || 0) + " без имени",
-          (ready.gaps || 0) + " без карточки",
-        ].join(" · ");
         head.style.color = "";
-        if (pouredPane === "send") {
-          const noCard = items.filter((i) => !i.scene && !(i.cards || []).length && !(i.hints || []).length).length;
-          head.textContent = (canPourNamesDesk || canPourRulesDesk
-            ? "Новое. Сначала «Залить имена», потом «Залить сценарии»."
-            : "Новое. " + (lastPreview.reason || "Пока нечего лить."))
-            + (noCard ? " · " + noCard + " без карточки" : "");
-        } else {
-          head.textContent = "Сценарии на щите. Новые — из шага «Типовые». · " + bits;
-        }
+        head.hidden = true;
+        head.textContent = "";
       }
     }
     function renderPoured() {
@@ -3241,15 +3315,19 @@
           return;
         }
         pouredRules = j.rules || [];
-        const files = (j.files || []).map((f) => f.filename).join(", ");
-        $("pouredHead").style.color = "";
-        const headShort = j.revisionId
-          ? String(j.revisionId).replace(/^fnv1a32:/i, "").slice(0, 8)
-          : "";
-        $("pouredHead").textContent = (j.ruleCount || pouredRules.length) + " правил" +
-          (headShort ? " · " + headShort : "") +
-          (files ? " · " + files : "");
-        if (j.revisionId) $("pouredHead").title = String(j.revisionId);
+        const headEl = $("pouredHead");
+        if (headEl) {
+          headEl.hidden = false;
+          headEl.style.color = "";
+          const headShort = j.revisionId
+            ? String(j.revisionId).replace(/^fnv1a32:/i, "").slice(0, 8)
+            : "";
+          const files = (j.files || []).map((f) => f.filename).filter(Boolean);
+          headEl.textContent = (j.ruleCount || pouredRules.length) + " правил"
+            + (headShort ? " · " + headShort : "")
+            + (files.length ? " · " + releaseWhatRu({ files: files, fileCount: files.length }) : "");
+          if (j.revisionId) headEl.title = String(j.revisionId);
+        }
         await loadReleases();
         renderPoured();
         loadPreview();
@@ -3297,32 +3375,45 @@
           btn.textContent = label;
           if (!j.ok) {
             paintPourButtons();
-            $("previewHead").style.color = "rgb(var(--bad))";
-            $("previewHead").textContent = humanPourError(j.error || j.reason || "Не залил");
+            const head = $("previewHead");
+            if (head) {
+              head.hidden = false;
+              head.style.color = "rgb(var(--bad))";
+              head.textContent = humanPourError(j.error || j.reason || "Не залил");
+            }
             return;
           }
-          $("previewHead").style.color = "";
-          const scopeRu = j.scope === "rules" ? "Сценарии" : j.scope === "names" ? "Имена" : "Щит";
-          const bits = [
-            j.mqttOnly ? "Дубли спрятаны" : scopeRu,
-            j.restarted ? "правила перезапущены" : (j.scope === "rules" || j.scope === "all" ? "проверьте журнал wb-rules" : ""),
-            j.namedCount ? ("имён " + j.namedCount) : "",
-            j.emittedSolutions ? ("сценариев " + j.emittedSolutions) : "",
-            j.hiddenGhosts ? ("скрыто " + j.hiddenGhosts) : "",
-            j.appliedRevisionId
-              ? String(j.appliedRevisionId).replace(/^fnv1a32:/i, "").slice(0, 8)
-              : "",
-          ].filter(Boolean);
-          $("previewHead").textContent = bits.join(" · ") || "Готово";
+          const head = $("previewHead");
+          if (head) {
+            head.hidden = false;
+            head.style.color = "";
+            const scopeRu = j.scope === "rules" ? "Сценарии" : j.scope === "names" ? "Имена" : "Щит";
+            const bits = [
+              j.mqttOnly ? "Дубли спрятаны" : scopeRu,
+              j.restarted ? "перезапуск wb-rules" : "",
+              j.namedCount ? ("имён " + j.namedCount) : "",
+              j.emittedSolutions ? ("сценариев " + j.emittedSolutions) : "",
+              j.hiddenGhosts ? ("скрыто " + j.hiddenGhosts) : "",
+              j.appliedRevisionId
+                ? String(j.appliedRevisionId).replace(/^fnv1a32:/i, "").slice(0, 8)
+                : "",
+            ].filter(Boolean);
+            head.textContent = bits.join(" · ") || "Готово";
+          }
           pouredPane = "hist";
+          openPourMod = "";
           loadPoured();
           loadPreview();
         })
         .catch((e) => {
           btn.textContent = label;
           paintPourButtons();
-          $("previewHead").style.color = "rgb(var(--bad))";
-          $("previewHead").textContent = humanPourError(e && e.message);
+          const head = $("previewHead");
+          if (head) {
+            head.hidden = false;
+            head.style.color = "rgb(var(--bad))";
+            head.textContent = humanPourError(e && e.message);
+          }
         });
     }
     document.querySelectorAll(".tab").forEach((btn) => {

@@ -398,20 +398,34 @@
     }
     .mark-diag summary::-webkit-details-marker { display: none; }
     .mark-diag[open] summary { margin-bottom: .45rem; color: rgb(186 230 253); }
+    .pour-dock {
+      margin: 0 0 .75rem;
+      padding: .7rem .8rem .75rem;
+      border-radius: 1rem;
+      border: 1px solid rgb(255 255 255 / .1);
+      background: linear-gradient(180deg, rgb(255 255 255 / .06), transparent);
+    }
+    .pour-dock[hidden] { display: none; }
     .pour-strip, .pour-row {
-      display: flex; flex-wrap: wrap; gap: .55rem; margin: .35rem 0 .85rem;
+      display: flex; flex-wrap: wrap; gap: .55rem; margin: .35rem 0 0;
     }
     .pour-strip .pour-primary {
       min-height: 2.55rem; padding: .55rem 1rem; font-weight: 700;
+      flex: 1 1 8rem;
     }
     .pour-summary {
-      margin: 0 0 .45rem;
-      padding: .45rem .65rem;
-      border-radius: .65rem;
-      background: rgb(var(--sky) / .08);
-      border: 1px solid rgb(var(--sky) / .22);
+      margin: 0;
+      padding: 0;
+      border: 0;
+      background: none;
       color: rgb(186 230 253);
-      font-size: .78rem;
+      font-size: .82rem;
+      font-weight: 650;
+    }
+    .pour-disk {
+      margin: .25rem 0 0;
+      font-size: .72rem;
+      color: var(--mute);
     }
     .more-cards {
       grid-column: 1 / -1; justify-self: start;
