@@ -56,57 +56,60 @@
     .head { display: flex; justify-content: space-between; gap: 1rem; margin-bottom: .4rem; }
     .sku { font-weight: 600; letter-spacing: -.01em; }
     .ch { color: var(--mute); font-size: .78rem; white-space: nowrap; }
-    .channels { display: flex; flex-direction: column; gap: .65rem; }
+    .channels { display: flex; flex-direction: column; gap: .45rem; }
+    .channels.compact { gap: .4rem; }
     .channels li {
       display: flex; flex-direction: column;
       padding: 0; overflow: hidden;
-      border-radius: 14px;
+      border-radius: 12px;
       border: 1px solid rgb(255 255 255 / .08);
-      background: rgb(44 44 46 / .88);
+      background: rgb(44 44 46 / .72);
     }
     .channels li.roomh {
       display: block;
-      padding: .85rem .2rem .15rem;
+      padding: .55rem .15rem .05rem;
       border: 0; background: none; overflow: visible;
       color: var(--mute);
-      font-size: .72rem; font-weight: 600;
-      letter-spacing: -.01em;
+      font-size: .68rem; font-weight: 650;
+      letter-spacing: .04em; text-transform: uppercase;
     }
-    .channels li.roomh:first-child { padding-top: .15rem; }
-    .ch-cap { padding: .9rem 1rem .7rem; }
+    .channels li.roomh:first-child { padding-top: .05rem; }
+    .ch-cap { padding: .55rem .75rem .4rem; }
+    .channels.compact .ch-cap { padding: .45rem .7rem .3rem; }
     .ch-cap .knob {
       display: block; padding: 0;
-      color: var(--mute); font-size: .68rem; font-weight: 600;
+      color: var(--mute); font-size: .62rem; font-weight: 600;
       letter-spacing: .06em; text-transform: uppercase;
     }
     .ch-cap .ttl {
-      margin-top: .18rem;
-      font-size: 1.05rem; font-weight: 650; letter-spacing: -.022em;
+      margin-top: .1rem;
+      font-size: .9rem; font-weight: 650; letter-spacing: -.02em;
       overflow-wrap: anywhere;
     }
+    .channels.compact .ch-cap .ttl { font-size: .84rem; }
     .ch-cap .ttl.mute { color: var(--mute); font-weight: 500; }
     .ch-cap .hint {
       appearance: none; border: 0; background: none; padding: 0;
-      display: block; margin-top: .22rem; color: var(--mute); font-size: .72rem;
+      display: block; margin-top: .15rem; color: var(--mute); font-size: .68rem;
       font: inherit; text-align: left; cursor: pointer;
     }
     .ch-cap span.hint { cursor: default; overflow-wrap: anywhere; }
     .channels li > .ghost {
       align-self: flex-start;
-      margin: 0 1rem .75rem;
-      padding: .28rem .7rem;
-      font-size: .72rem;
+      margin: 0 .7rem .55rem;
+      padding: .22rem .55rem;
+      font-size: .68rem;
     }
     .ch-cap button.hint { color: rgb(var(--sky) / .92); }
     .rows { display: flex; flex-direction: column; }
     .fldrow {
-      display: grid; grid-template-columns: 6.6rem minmax(0, 1fr);
-      align-items: center; gap: .35rem;
-      min-height: 2.7rem; padding: 0 1rem;
-      border-top: .5px solid rgb(84 84 88 / .55);
+      display: grid; grid-template-columns: 5.4rem minmax(0, 1fr);
+      align-items: center; gap: .25rem;
+      min-height: 2.15rem; padding: 0 .75rem;
+      border-top: .5px solid rgb(84 84 88 / .45);
     }
     .fldrow.need { background: rgb(var(--sky) / .08); }
-    .fldlab { font-size: .86rem; color: var(--ink); }
+    .fldlab { font-size: .78rem; color: var(--mute); }
     .fldsel {
       appearance: none; -webkit-appearance: none;
       width: 100%; margin: 0; border: 0; outline: none;
@@ -322,14 +325,15 @@
     .mark { margin-top: .35rem; }
     .steph { margin: .2rem 0 .25rem; color: var(--mute); font-size: .68rem; letter-spacing: .04em; text-transform: uppercase; }
     .mark .chips { margin: 0 0 .45rem; }
-    .ritual { letter-spacing: .02em; opacity: .9; }
-    .mark-rooms { display: grid; gap: 1rem; }
+    .ritual { letter-spacing: .02em; opacity: .9; margin-bottom: .55rem; }
+    .mark-rooms { display: grid; gap: .85rem; }
     .mark-room-head h2 {
       margin: 0; font-size: 1.05rem; font-weight: 700; letter-spacing: -.01em;
     }
-    .mark-room-head .meta { margin: .25rem 0 0; }
+    .mark-room-head .meta { margin: .2rem 0 0; }
+    .mark-room-actions { display: flex; flex-wrap: wrap; gap: .35rem; margin-top: .45rem; }
     .pnr {
-      margin-top: .55rem; height: .35rem; max-width: 14rem;
+      margin-top: .4rem; height: .28rem; max-width: 11rem;
       border-radius: 999px; background: rgb(255 255 255 / .1); overflow: hidden;
     }
     .pnr > div {
@@ -337,11 +341,29 @@
       background: rgb(var(--sky) / .75);
     }
     .mark-sec h3 {
-      margin: 0 0 .45rem;
-      font-size: .68rem; font-weight: 700; letter-spacing: .08em;
+      margin: 0 0 .35rem;
+      font-size: .65rem; font-weight: 700; letter-spacing: .08em;
       text-transform: uppercase; color: var(--mute);
     }
     .mark-sec .channels { margin: 0; }
+    .mark-free-wrap { display: grid; gap: .45rem; margin-top: .25rem; }
+    .mark-free-title {
+      margin: 0;
+      font-size: .65rem; font-weight: 700; letter-spacing: .08em;
+      text-transform: uppercase; color: var(--mute);
+    }
+    .mark-free {
+      border: 1px dashed rgb(255 255 255 / .14);
+      border-radius: .85rem; padding: .35rem .55rem .55rem;
+      background: rgb(255 255 255 / .02);
+    }
+    .mark-free summary {
+      cursor: pointer; list-style: none;
+      font-size: .8rem; font-weight: 600; color: rgb(186 230 253);
+      padding: .35rem .15rem;
+    }
+    .mark-free summary::-webkit-details-marker { display: none; }
+    .mark-free[open] summary { margin-bottom: .35rem; }
     .pour-strip, .pour-row {
       display: flex; flex-wrap: wrap; gap: .55rem; margin: .35rem 0 .85rem;
     }
@@ -402,7 +424,7 @@
       appearance: none; border: 1px solid rgb(255 255 255 / .12);
       background: linear-gradient(180deg, rgb(255 255 255 / .07), rgb(255 255 255 / .025));
       color: inherit; font: inherit; text-align: left;
-      min-height: 7.2rem; border-radius: 1.15rem; padding: .75rem .85rem .85rem;
+      min-height: 5.4rem; border-radius: 1rem; padding: .65rem .75rem .7rem;
       display: flex; flex-direction: column; gap: .55rem;
     }
     button.vcard { cursor: pointer; }

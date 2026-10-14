@@ -154,10 +154,11 @@
       });
       return chips;
     }
-    function enrollRu(s) {
+    function enrollRu(s, topics) {
+      if (typeof topics === "number" && topics > 0) return "на связи";
       if (s === "restored" || s === "online" || s === "enrolled_awaiting_heartbeat") return "на связи";
       if (s === "enrolling") return "подключаюсь";
-      if (s === "enroll_failed" || s === "enroll_transient") return "нет связи";
+      if (s === "enroll_failed" || s === "enroll_transient") return "нет связи с облаком";
       return s || "—";
     }
     function kindRu(k) {
@@ -1840,8 +1841,8 @@
       try {
         const r = await fetch("/runtime/health");
         const j = await r.json();
-        const en = enrollRu(j.enrollment && j.enrollment.state);
         const topics = j.mqttMirror && j.mqttMirror.topicCount;
+        const en = enrollRu(j.enrollment && j.enrollment.state, topics);
         const ver = String(j.agentVersion || "").replace(/^.*\./, "");
         box.className = "glass status " + (j.ok ? "ok" : "bad");
         line.textContent = j.ok
@@ -2467,30 +2468,65 @@
       h.textContent = title;
       wrap.appendChild(h);
       const ul = document.createElement("ul");
-      ul.className = "channels";
+      ul.className = "channels compact";
       let any = false;
       sortModules(rows).forEach((s) => {
-        const chs = visibleChannels(s).filter((ch) => {
-          const r = nameRoom(pairName(s, ch));
-          return !r || r === roomFilter;
-        });
+        // Только уже в этой комнате — без имени не дублируем в каждую комнату.
+        const chs = visibleChannels(s).filter((ch) => nameRoom(pairName(s, ch)) === roomFilter);
         if (!chs.length) return;
         any = true;
         const mod = document.createElement("li");
         mod.className = "roomh";
         mod.textContent = s.label || s.deviceTopicKey;
         ul.appendChild(mod);
-        chs.forEach((ch) => ul.appendChild(channelRow(s, ch, nameRoom(pairName(s, ch)) || roomFilter)));
+        chs.forEach((ch) => ul.appendChild(channelRow(s, ch, roomFilter)));
       });
       if (!any) {
         const p = document.createElement("p");
         p.className = "meta";
-        p.textContent = "Пока пусто — каналы без имени тоже сюда.";
+        p.textContent = "В комнате пока пусто — добавьте канал ниже.";
         wrap.appendChild(p);
       } else {
         wrap.appendChild(ul);
       }
       box.appendChild(wrap);
+    }
+    function collectUnbound(rows) {
+      const out = [];
+      sortModules(rows).forEach((s) => {
+        visibleChannels(s).forEach((ch) => {
+          if (!nameRoom(pairName(s, ch))) out.push({ s: s, ch: ch });
+        });
+      });
+      return out;
+    }
+    function appendUnboundPicker(box, title, rows) {
+      const free = collectUnbound(rows);
+      if (!free.length) return;
+      const det = document.createElement("details");
+      det.className = "mark-free";
+      const sum = document.createElement("summary");
+      sum.textContent = "Добавить · " + title.toLowerCase() + " · " + free.length + " без имени";
+      det.appendChild(sum);
+      const ul = document.createElement("ul");
+      ul.className = "channels compact";
+      const lim = 8;
+      free.slice(0, lim).forEach((row) => {
+        ul.appendChild(channelRow(row.s, row.ch, roomFilter));
+      });
+      det.appendChild(ul);
+      if (free.length > lim) {
+        const more = document.createElement("button");
+        more.type = "button";
+        more.className = "ghost more-cards";
+        more.textContent = "Ещё " + (free.length - lim);
+        more.addEventListener("click", () => {
+          free.slice(lim).forEach((row) => ul.appendChild(channelRow(row.s, row.ch, roomFilter)));
+          more.remove();
+        });
+        det.appendChild(more);
+      }
+      box.appendChild(det);
     }
     function countRoomMark(room) {
       let named = 0;
@@ -2510,7 +2546,7 @@
         box.className = "vitrine";
         const p = document.createElement("p");
         p.className = "empty";
-        p.textContent = "Добавьте комнату сверху — дальше каналы и тип, как на Vercel.";
+        p.textContent = "Выберите комнату — в ней только её каналы. Без имени — блок «Добавить».";
         box.appendChild(p);
         return;
       }
@@ -2526,31 +2562,53 @@
         const room = roomFromContacts([sol.trigger].concat(sol.targets || []).filter(Boolean));
         return room === roomFilter;
       }).length;
-      sub.textContent = "Имён " + prog.named +
-        (prog.free ? " · без имени на шине " + prog.free : "") +
-        (solN ? " · типовых " + solN : "");
+      sub.textContent = "В комнате " + prog.named +
+        (solN ? " · типовых " + solN : "") +
+        (prog.free ? " · на шине без имени " + prog.free : "");
       head.append(h, sub);
-      if (prog.named || solN) {
+      if (prog.named > 0) {
         const bar = document.createElement("div");
         bar.className = "pnr";
         const fill = document.createElement("div");
-        fill.style.width = Math.min(100, Math.round((prog.named / Math.max(prog.named + prog.free, 1)) * 100)) + "%";
+        fill.style.width = Math.min(100, 12 + prog.named * 8) + "%";
         bar.appendChild(fill);
         head.appendChild(bar);
       }
+      const actions = document.createElement("div");
+      actions.className = "mark-room-actions";
       if (prog.named > 0) {
         const go = document.createElement("button");
         go.type = "button";
         go.className = "ghost more-cards";
-        go.textContent = "Типовые этой комнаты →";
+        go.textContent = "Типовые →";
         go.addEventListener("click", () => setTab("cards"));
-        head.appendChild(go);
+        actions.appendChild(go);
       }
+      const toMod = document.createElement("button");
+      toMod.type = "button";
+      toMod.className = "ghost more-cards";
+      toMod.textContent = "С модулей";
+      toMod.addEventListener("click", () => {
+        markPath = "modules";
+        renderMark();
+      });
+      actions.appendChild(toMod);
+      head.appendChild(actions);
       box.appendChild(head);
       const split = splitShelves(lastShelvesRows);
       appendRoomSection(box, "Свет", split.light);
       appendRoomSection(box, "Кнопки", split.buttons);
       appendRoomSection(box, "Реле", split.relays);
+      const freeWrap = document.createElement("div");
+      freeWrap.className = "mark-free-wrap";
+      const freeH = document.createElement("h3");
+      freeH.className = "mark-free-title";
+      freeH.textContent = "Добавить с шины";
+      freeWrap.appendChild(freeH);
+      appendUnboundPicker(freeWrap, "Свет", split.light);
+      appendUnboundPicker(freeWrap, "Кнопки", split.buttons);
+      appendUnboundPicker(freeWrap, "Реле", split.relays);
+      if (freeWrap.querySelector("details")) box.appendChild(freeWrap);
     }
     function paintMarkPath() {
       document.querySelectorAll("#markPath [data-path]").forEach((btn) => {
