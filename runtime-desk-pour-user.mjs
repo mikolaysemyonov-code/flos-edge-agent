@@ -1,14 +1,20 @@
 /**
- * Типовые со стола → defineRule в 40_rules_user. Дим-удержание — не здесь.
+ * Типовые со стола → defineRule в 40_rules_user.
  */
 import { liveDeskDeviceKey } from "./runtime-desk-rules-marks.mjs";
 import { emitDeskClimate, isDeskClimateSolution } from "./runtime-desk-pour-climate.mjs";
+import { emitDeskLight, isDeskLightSolution } from "./runtime-desk-pour-light.mjs";
 
 const DESK_PREFIX = "desk_sol_";
 const SUPPORTED = new Set([
   "light_button_toggle",
   "light_all_off",
   "socket_button_toggle",
+  "light_dim_hold_mcm",
+  "light_motion",
+  "light_reed_on",
+  "light_night_path",
+  "stair_light_motion",
   "vent_humidity",
   "vent_co2",
   "humidifier_low",
@@ -87,7 +93,7 @@ function emitAllOff(sol) {
 
 export function supportedDeskSolution(sol) {
   const sid = String(sol?.solutionId || "");
-  return SUPPORTED.has(sid) || isDeskClimateSolution(sol);
+  return SUPPORTED.has(sid) || isDeskClimateSolution(sol) || isDeskLightSolution(sol);
 }
 
 export function mergeDeskSolutionsIntoUser(userSrc, solutions) {
@@ -98,6 +104,7 @@ export function mergeDeskSolutionsIntoUser(userSrc, solutions) {
     const sid = String(sol.solutionId || "");
     let js = "";
     if (isDeskClimateSolution(sol)) js = emitDeskClimate(sol);
+    else if (isDeskLightSolution(sol)) js = emitDeskLight(sol);
     else if (sid === "light_all_off") js = emitAllOff(sol);
     else js = emitToggle(sol);
     if (js) chunks.push(js);
