@@ -2,9 +2,22 @@
  * Типовые со стола → defineRule в 40_rules_user. Дим-удержание — не здесь.
  */
 import { liveDeskDeviceKey } from "./runtime-desk-rules-marks.mjs";
+import { emitDeskClimate, isDeskClimateSolution } from "./runtime-desk-pour-climate.mjs";
 
 const DESK_PREFIX = "desk_sol_";
-const SUPPORTED = new Set(["light_button_toggle", "light_all_off", "socket_button_toggle"]);
+const SUPPORTED = new Set([
+  "light_button_toggle",
+  "light_all_off",
+  "socket_button_toggle",
+  "vent_humidity",
+  "vent_co2",
+  "humidifier_low",
+  "warm_floor_comfort",
+  "warm_floor_electric_comfort",
+  "warm_floor_water_comfort",
+  "ac_cool_comfort",
+  "thermostat_simple_vd",
+]);
 
 function esc(s) {
   return JSON.stringify(String(s ?? ""));
@@ -73,7 +86,8 @@ function emitAllOff(sol) {
 }
 
 export function supportedDeskSolution(sol) {
-  return SUPPORTED.has(String(sol?.solutionId || ""));
+  const sid = String(sol?.solutionId || "");
+  return SUPPORTED.has(sid) || isDeskClimateSolution(sol);
 }
 
 export function mergeDeskSolutionsIntoUser(userSrc, solutions) {
@@ -82,13 +96,11 @@ export function mergeDeskSolutionsIntoUser(userSrc, solutions) {
   for (const sol of Array.isArray(solutions) ? solutions : []) {
     if (!supportedDeskSolution(sol)) continue;
     const sid = String(sol.solutionId || "");
-    if (sid === "light_all_off") {
-      const js = emitAllOff(sol);
-      if (js) chunks.push(js);
-    } else {
-      const js = emitToggle(sol);
-      if (js) chunks.push(js);
-    }
+    let js = "";
+    if (isDeskClimateSolution(sol)) js = emitDeskClimate(sol);
+    else if (sid === "light_all_off") js = emitAllOff(sol);
+    else js = emitToggle(sol);
+    if (js) chunks.push(js);
   }
   const banner = "// desk_sol — типовые со стола LAN\n";
   const next = (base ? base + "\n\n" : "") + (chunks.length ? banner + chunks.join("\n\n") + "\n" : "");

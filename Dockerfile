@@ -16,6 +16,7 @@ COPY runtime-desk-releases.mjs /app/runtime-desk-releases.mjs
 COPY runtime-desk-pour.mjs /app/runtime-desk-pour.mjs
 COPY runtime-desk-pour-core.mjs /app/runtime-desk-pour-core.mjs
 COPY runtime-desk-pour-user.mjs /app/runtime-desk-pour-user.mjs
+COPY runtime-desk-pour-climate.mjs /app/runtime-desk-pour-climate.mjs
 COPY runtime-desk-pour-stale.mjs /app/runtime-desk-pour-stale.mjs
 COPY runtime-desk-pour-mqtt.mjs /app/runtime-desk-pour-mqtt.mjs
 COPY desk.html /app/desk.html

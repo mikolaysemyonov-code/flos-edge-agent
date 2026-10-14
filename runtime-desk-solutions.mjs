@@ -49,9 +49,19 @@ export const DESK_SOLUTION_CARDS = [
   C("outdoor_dawn_off", "Свет", "Улица: рассвет OFF", "Если утро по расписанию → улица OFF."),
   C("anti_ice_cron_on", "Общее", "Антилёд: включить", "По расписанию греет кабель / антиобледенение."),
   C("anti_ice_cron_off", "Общее", "Антилёд: выключить", "По расписанию выключает греющий кабель."),
-  L("ac_cool_comfort", "Климат", "Кондиционер по температуре", "Если в комнате жарче уставки → кондей ON. Окно — по желанию."),
+  L("ac_cool_comfort", "Климат", "Кондиционер по температуре", "Если в комнате жарче уставки → кондей ON.", {
+    fields: [
+      { key: "thr", label: "Уставка", unit: "°C", def: 25 },
+      { key: "hyst", label: "Запас", unit: "°C", def: 1 },
+    ],
+  }),
   L("ac_window_off", "Климат", "Окно открыто — стоп кондея", "Если окно открыто → кондей OFF. Сам обратно не включает."),
-  L("thermostat_simple_vd", "Климат", "Термостат (уставка на щите)", "Если холоднее уставки → греет; теплее — стоп. Уставку крутите на щите."),
+  L("thermostat_simple_vd", "Климат", "Термостат (уставка на щите)", "Если холоднее уставки → греет; теплее — стоп.", {
+    fields: [
+      { key: "thr", label: "Уставка", unit: "°C", def: 25 },
+      { key: "hyst", label: "Запас", unit: "°C", def: 1 },
+    ],
+  }),
   C("rollers_evening", "Шторы", "Роллеты: вечер", "По расписанию закрывает роллеты."),
   L("curtain_button_open", "Шторы", "Шторы: открыть кнопкой", "Если нажали → штора / роллета открывается."),
   L("curtain_button_close", "Шторы", "Шторы: закрыть кнопкой", "Если нажали → штора закрывается."),
@@ -61,15 +71,55 @@ export const DESK_SOLUTION_CARDS = [
   L("gate_button_stop", "Общее", "Ворота: стоп кнопкой", "Если нажали → привод ворот стоп."),
   C("curtain_dusk_close", "Шторы", "Шторы: вечер — закрыть", "По расписанию закрывает шторы."),
   C("curtain_dawn_open", "Шторы", "Шторы: утро — открыть", "По расписанию открывает шторы."),
-  L("vent_humidity", "Климат", "Вытяжка по влажности", "Если влажно → вытяжка ON; когда сухо — OFF."),
-  L("vent_humidity_motion", "Климат", "Вытяжка: влажность и движение", "Если влажно и есть люди → вытяжка; никого — OFF."),
-  L("vent_co2", "Климат", "Вентиляция по CO₂", "Если душно (CO₂ высокий) → приточка ON; воздух чистый — OFF."),
+  L("vent_humidity", "Климат", "Вытяжка по влажности", "Если влажно → вытяжка ON; когда сухо — OFF.", {
+    fields: [
+      { key: "thr", label: "Вкл от", unit: "%", def: 70 },
+      { key: "hyst", label: "Запас", unit: "%", def: 5 },
+    ],
+  }),
+  L("vent_humidity_motion", "Климат", "Вытяжка: влажность и движение", "Если влажно и есть люди → вытяжка; никого — OFF.", {
+    fields: [
+      { key: "thr", label: "Вкл от", unit: "%", def: 70 },
+      { key: "hyst", label: "Запас", unit: "%", def: 5 },
+    ],
+  }),
+  L("vent_co2", "Климат", "Вентиляция по CO₂", "Если душно → приточка ON; воздух чистый — OFF.", {
+    fields: [
+      { key: "thr", label: "Вкл от", unit: "ppm", def: 1000 },
+      { key: "hyst", label: "Запас", unit: "ppm", def: 50 },
+    ],
+  }),
   L("vent_diy_vav", "Климат", "Приточка DIY / VAV", "Если душно → мотор и заслонки. Калорифер — только после пуска."),
-  L("humidifier_low", "Климат", "Увлажнитель в диапазоне", "Если сухо → увлажнитель ON (обычно 40–55%)."),
-  L("warm_floor_comfort", "Климат", "Тёплый пол: комфорт", "Если пол холоднее уставки → греет; теплее — стоп."),
-  L("warm_floor_electric_comfort", "Климат", "Тёплый пол электрический", "Если холоднее уставки → реле ON; теплее — OFF."),
-  L("warm_floor_water_comfort", "Климат", "Тёплый пол водяной", "Если холоднее уставки → насос / серво ON."),
-  L("weather_climate_link", "Климат", "Погода → климат", "Если на улице жарко → можно охлаждение / вентиляцию."),
+  L("humidifier_low", "Климат", "Увлажнитель в диапазоне", "Если сухо → увлажнитель ON; влажно — OFF.", {
+    fields: [
+      { key: "lo", label: "Сухо ниже", unit: "%", def: 40 },
+      { key: "hi", label: "Хватит выше", unit: "%", def: 55 },
+    ],
+  }),
+  L("warm_floor_comfort", "Климат", "Тёплый пол: комфорт", "Если пол холоднее уставки → греет; теплее — стоп.", {
+    fields: [
+      { key: "thr", label: "Уставка", unit: "°C", def: 22 },
+      { key: "hyst", label: "Запас", unit: "°C", def: 1 },
+    ],
+  }),
+  L("warm_floor_electric_comfort", "Климат", "Тёплый пол электрический", "Если холоднее уставки → реле ON; теплее — OFF.", {
+    fields: [
+      { key: "thr", label: "Уставка", unit: "°C", def: 22 },
+      { key: "hyst", label: "Запас", unit: "°C", def: 1 },
+    ],
+  }),
+  L("warm_floor_water_comfort", "Климат", "Тёплый пол водяной", "Если холоднее уставки → насос / серво ON.", {
+    fields: [
+      { key: "thr", label: "Уставка", unit: "°C", def: 22 },
+      { key: "hyst", label: "Запас", unit: "°C", def: 1 },
+    ],
+  }),
+  L("weather_climate_link", "Климат", "Погода → климат", "Если на улице жарко → можно охлаждение / вентиляцию.", {
+    fields: [
+      { key: "thr", label: "Улица от", unit: "°C", def: 24 },
+      { key: "hyst", label: "Запас", unit: "°C", def: 1 },
+    ],
+  }),
   M("leak_close_valves", "Охрана", "Протечка — закрыть краны", "Если протечка → закрыть краны. Можно несколько линий."),
   L("lock_button_set", "Охрана", "Замок кнопкой", "Если нажали → команда на замок."),
   L("siren_motion", "Охрана", "Сирена по движению", "Если движение → сирена / тревога."),
@@ -126,7 +176,21 @@ export function upsertDeskSolution(input) {
   if (targets.some((t) => !isPourLoad(t.controlId))) return { ok: false, error: "need_load" };
   const doc = readDeskDocument();
   const id = String(input?.id ?? "").trim() || `sol_${Date.now().toString(36)}`;
-  const row = { id, solutionId: card.id, title: card.title, trigger: trigger || null, targets, savedAt: new Date().toISOString() };
+  const params = {};
+  for (const f of Array.isArray(card.fields) ? card.fields : []) {
+    const raw = input?.params?.[f.key];
+    const n = Number(raw);
+    params[f.key] = Number.isFinite(n) ? n : Number(f.def);
+  }
+  const row = {
+    id,
+    solutionId: card.id,
+    title: card.title,
+    trigger: trigger || null,
+    targets,
+    ...(Object.keys(params).length ? { params } : {}),
+    savedAt: new Date().toISOString(),
+  };
   const next = doc.solutions.filter((s) => s.id !== id);
   next.push(row);
   writeDoc({ ...doc, solutions: next });

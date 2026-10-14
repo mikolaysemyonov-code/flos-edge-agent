@@ -1680,9 +1680,12 @@
         const trigF = solContactLabel(sol.trigger);
         const left = document.createElement("div");
         left.innerHTML = "<strong></strong><div class=\"meta\"></div>";
-        left.querySelector("strong").textContent = sol.title || sol.solutionId;
-        left.querySelector(".meta").textContent = trigH + (tHuman ? " → " + tHuman : "");
-        left.title = trigF + (tFull ? " → " + tFull : "");
+        const cardRow = deskCatalog.find((c) => c.id === sol.solutionId);
+        left.querySelector("strong").textContent = (cardRow && cardRow.title) || sol.title || sol.solutionId;
+        const paramH = solParamsHuman(sol, cardRow);
+        left.querySelector(".meta").textContent =
+          trigH + (tHuman ? " → " + tHuman : "") + (paramH ? " · " + paramH : "");
+        left.title = trigF + (tFull ? " → " + tFull : "") + (paramH ? " · " + paramH : "");
         const del = document.createElement("button");
         del.type = "button";
         del.className = "ghost";
@@ -1844,6 +1847,32 @@
         tgtNode = tgt;
         collectTargets = () => [parseBindValue(tgt.value)].filter(Boolean);
       }
+      const fields = Array.isArray(card.fields) ? card.fields : [];
+      const paramBox = document.createElement("div");
+      paramBox.className = "sheet-params";
+      const paramInputs = {};
+      fields.forEach((f) => {
+        const lab = document.createElement("span");
+        lab.className = "fld";
+        lab.textContent = f.label + (f.unit ? " · " + f.unit : "");
+        const inp = document.createElement("input");
+        inp.type = "number";
+        inp.className = "bind";
+        inp.step = "any";
+        const draftVal = draft && draft.params && draft.params[f.key];
+        inp.value = Number.isFinite(Number(draftVal)) ? Number(draftVal) : Number(f.def);
+        inp.setAttribute("aria-label", lab.textContent);
+        paramInputs[f.key] = inp;
+        paramBox.append(lab, inp);
+      });
+      const collectParams = () => {
+        const out = {};
+        fields.forEach((f) => {
+          const n = Number(paramInputs[f.key].value);
+          out[f.key] = Number.isFinite(n) ? n : Number(f.def);
+        });
+        return out;
+      };
       const actions = document.createElement("div");
       actions.className = "actions";
       const save = document.createElement("button");
@@ -1859,6 +1888,7 @@
             solutionId: card.id,
             trigger: needTrig ? parseBindValue(trig.value) : null,
             targets: collectTargets(),
+            params: fields.length ? collectParams() : undefined,
           }),
         }).then((r) => r.json()).then((j) => {
           if (!j.ok) {
@@ -1899,8 +1929,18 @@
       head.append(h, p);
       const body = document.createElement("div");
       body.className = "sheet-body";
-      body.append(trigLab, trig, tgtLab, tgtNode, err);
+      body.append(trigLab, trig, tgtLab, tgtNode);
+      if (fields.length) body.appendChild(paramBox);
+      body.appendChild(err);
       box.append(head, body, actions);
+    }
+    function solParamsHuman(sol, card) {
+      const fields = (card && card.fields) || (deskCatalog.find((c) => c.id === sol.solutionId) || {}).fields || [];
+      if (!fields.length || !sol.params) return "";
+      return fields.map((f) => {
+        const v = sol.params[f.key];
+        return f.label + " " + (Number.isFinite(Number(v)) ? Number(v) : f.def) + (f.unit || "");
+      }).join(" · ");
     }
     const CARD_ICO = {
       light_button_toggle: "<svg viewBox='0 0 24 24'><rect x='2' y='7' width='20' height='10' rx='5'/><circle cx='16' cy='12' r='3'/></svg>",

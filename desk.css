@@ -427,12 +427,20 @@
       font-size: .65rem; font-weight: 700; letter-spacing: .06em;
       text-transform: uppercase; color: var(--mute);
     }
-    .sheet select.bind {
+    .sheet select.bind, .sheet input.bind {
       width: 100%; min-height: 2.4rem;
       border-radius: .65rem; border: 1px solid rgb(255 255 255 / .12);
       background: rgb(0 0 0 / .25); color: inherit;
       padding: .4rem .65rem; font: inherit; font-size: .86rem;
     }
+    .sheet-params {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 0 .55rem;
+      margin-top: .15rem;
+    }
+    .sheet-params .fld { grid-column: span 1; }
+    .sheet-params input.bind { margin: 0 0 .15rem; }
     .rooms { display: flex; flex-wrap: wrap; gap: .35rem; margin: 0 0 .85rem; }
     .rooms.need {
       outline: 1px solid rgb(var(--sky) / .55);
