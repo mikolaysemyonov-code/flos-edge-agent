@@ -214,7 +214,7 @@ ensure_agent_files() {
     echo "[flos-edge-agent] tip недоступен с щита (таймаут) — беру GitHub"
   fi
   echo "[flos-edge-agent] скачиваю файлы с GitHub ($RAW)…"
-  for f in Dockerfile docker-compose.yml entrypoint.sh package.json reactor-edge-agent.mjs runtime-control-plane-http.mjs runtime-desk-http.mjs runtime-desk-shelves.mjs runtime-desk-marking.mjs runtime-desk-solutions.mjs runtime-desk-rules-marks.mjs runtime-desk-releases.mjs runtime-desk-pour.mjs runtime-desk-pour-core.mjs runtime-desk-pour-user.mjs runtime-desk-pour-climate.mjs runtime-desk-pour-light.mjs runtime-desk-field-cert.mjs runtime-desk-pour-stale.mjs runtime-desk-pour-mqtt.mjs desk.html desk.css desk.js runtime-rules-inventory.mjs wb-rules-journal-incidents.mjs; do
+  for f in Dockerfile docker-compose.yml entrypoint.sh package.json reactor-edge-agent.mjs runtime-control-plane-http.mjs runtime-desk-http.mjs runtime-desk-shelves.mjs runtime-desk-marking.mjs runtime-desk-solutions.mjs runtime-desk-rules-marks.mjs runtime-desk-releases.mjs runtime-desk-pour.mjs runtime-desk-pour-core.mjs runtime-desk-pour-user.mjs runtime-desk-pour-climate.mjs runtime-desk-pour-light.mjs runtime-desk-pour-scenes.mjs runtime-desk-field-cert.mjs runtime-desk-pour-stale.mjs runtime-desk-pour-mqtt.mjs desk.html desk.css desk.js runtime-rules-inventory.mjs wb-rules-journal-incidents.mjs; do
     curl_get "$RAW/$f" -o "$AGENT_DIR/$f"
   done
   curl_get "$RAW/lib/mark-shield-discoverable-device.mjs" -o "$AGENT_DIR/lib/mark-shield-discoverable-device.mjs"
@@ -224,7 +224,7 @@ ensure_agent_files() {
 # Не поднимать Restarting-контейнер, если GitHub/tip отдал JS без модуля в образе.
 assert_field_image_complete() {
   local missing=0
-  for f in runtime-rules-inventory.mjs wb-rules-journal-incidents.mjs runtime-control-plane-http.mjs runtime-desk-http.mjs runtime-desk-shelves.mjs runtime-desk-marking.mjs runtime-desk-solutions.mjs runtime-desk-rules-marks.mjs runtime-desk-releases.mjs runtime-desk-pour.mjs runtime-desk-pour-core.mjs runtime-desk-pour-user.mjs runtime-desk-pour-climate.mjs runtime-desk-pour-light.mjs runtime-desk-field-cert.mjs runtime-desk-pour-stale.mjs runtime-desk-pour-mqtt.mjs desk.html desk.css desk.js reactor-edge-agent.mjs Dockerfile; do
+  for f in runtime-rules-inventory.mjs wb-rules-journal-incidents.mjs runtime-control-plane-http.mjs runtime-desk-http.mjs runtime-desk-shelves.mjs runtime-desk-marking.mjs runtime-desk-solutions.mjs runtime-desk-rules-marks.mjs runtime-desk-releases.mjs runtime-desk-pour.mjs runtime-desk-pour-core.mjs runtime-desk-pour-user.mjs runtime-desk-pour-climate.mjs runtime-desk-pour-light.mjs runtime-desk-pour-scenes.mjs runtime-desk-field-cert.mjs runtime-desk-pour-stale.mjs runtime-desk-pour-mqtt.mjs desk.html desk.css desk.js reactor-edge-agent.mjs Dockerfile; do
     if [[ ! -s "$AGENT_DIR/$f" ]]; then
       echo "[flos-edge-agent] ERROR: нет $AGENT_DIR/$f — не собираю дырявый образ." >&2
       missing=1
@@ -285,8 +285,9 @@ docker compose --env-file "$DATA_DIR/.env" -f "$DATA_DIR/docker-compose.yml" up 
 COMPOSE_RC=$?
 set -e
 if [[ "$COMPOSE_RC" != "0" ]]; then
-  echo "[flos-edge-agent] WARN: compose --build exit=$COMPOSE_RC — пробую up -d без rebuild…" >&2
-  docker compose --env-file "$DATA_DIR/.env" -f "$DATA_DIR/docker-compose.yml" up -d || true
+  # Не оставляем старый образ «как будто обновились» — иначе на щите залипает lan-desk-164.
+  echo "[flos-edge-agent] ERROR: compose --build exit=$COMPOSE_RC — старый контейнер не трогаю. Смотрите лог выше." >&2
+  exit "$COMPOSE_RC"
 fi
 # Never leave the field without a running agent after install/upgrade.
 if ! docker ps --filter name=flos-edge-agent --format '{{.Names}}' | grep -q '^flos-edge-agent$'; then
