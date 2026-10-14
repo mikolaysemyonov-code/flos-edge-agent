@@ -2236,7 +2236,8 @@
         const b = document.createElement("button");
         b.type = "button";
         b.className = "chip";
-        b.textContent = r;
+        const prog = countRoomMark(r);
+        b.textContent = prog.named ? r + " · " + prog.named : r;
         b.setAttribute("aria-pressed", r === roomFilter ? "true" : "false");
         b.addEventListener("click", () => {
           roomFilter = r;
