@@ -364,16 +364,14 @@
       canPourRulesDesk = j.canPourRules === true;
       canRepairDesk = j.canRepair === true;
       paintPourButtons();
-      $("previewHead").style.color = "";
       const ready = j.ready || {};
-      const readyBits = [
-        (ready.solutions || 0) + " типовых на столе",
-        (ready.blocked || 0) + " без имени",
-        (ready.gaps || 0) + " без карточки",
-      ].join(" · ");
       lastPreview = { rows: rows, gaps: gaps, ready: ready, reason: j.reason || "" };
-      $("previewHead").textContent = (j.reason || "Диск не трогаем.") + " · " + readyBits +
-        (rows.length ? " · " + rows.length + " отличий" : "");
+      const head = $("previewHead");
+      if (head) {
+        head.hidden = true;
+        head.style.color = "";
+        head.textContent = "";
+      }
       $("gapsHead").hidden = true;
       lastGapCount = gaps.length;
       renderReady();
@@ -405,14 +403,22 @@
         const r = await fetch("/runtime/desk-pour-preview");
         const j = await r.json();
         if (!j.ok) {
-          $("previewHead").style.color = "rgb(var(--bad))";
-          $("previewHead").textContent = humanPourError(j.error || "Нет превью");
+          const head = $("previewHead");
+          if (head) {
+            head.hidden = false;
+            head.style.color = "rgb(var(--bad))";
+            head.textContent = humanPourError(j.error || "Нет превью");
+          }
           return;
         }
         renderPreview(j);
       } catch (e) {
-        $("previewHead").style.color = "rgb(var(--bad))";
-        $("previewHead").textContent = humanPourError(e && e.message);
+        const head = $("previewHead");
+        if (head) {
+          head.hidden = false;
+          head.style.color = "rgb(var(--bad))";
+          head.textContent = humanPourError(e && e.message);
+        }
       }
     }
     function rowSlave(r) {
