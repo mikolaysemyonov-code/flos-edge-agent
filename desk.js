@@ -1736,35 +1736,33 @@
       if (card.cat === "Общее") return card.multi ? "Нагрузки" : "Нагрузка";
       return card.multi ? "Свет / линии" : "Свет";
     }
-    function preferRows(rows, hitFn) {
+    /** onlyHits: если есть подходящие — не подмешивать чужие линии (свет в шторах и т.п.). */
+    function preferRows(rows, hitFn, onlyHits) {
       const hit = rows.filter(hitFn);
-      return hit.length ? hit.concat(rows.filter((r) => !hitFn(r))) : rows;
+      if (!hit.length) return rows;
+      return onlyHits ? hit : hit.concat(rows.filter((r) => !hitFn(r)));
+    }
+    function isSensorLabel(label) {
+      return /датчик|темпер|влажн|co[₂2]|геркон|движен|протеч|двер|окн|pir/i.test(String(label || ""));
+    }
+    function isCurtainLoad(r) {
+      return isDeskDrive(r.controlId) || /штор|роллет|жалюз|тюль|экран|привод/i.test(r.label || "");
     }
     function triggersForCard(card) {
       const all = namedTriggers().filter((r) => String(r.label || "").trim());
       if (!sheetNeedSensor(card)) return all;
-      return preferRows(all, (r) => /датчик|темпер|влажн|co[₂2]|геркон|движен|протеч|двер|окн/i.test(r.label || ""));
+      return preferRows(all, (r) => isSensorLabel(r.label), true);
     }
     function loadsForCard(card, room) {
       const all = loadsForRoom(room);
-      if (card.cat === "Шторы") {
-        return preferRows(all, (r) => isDeskDrive(r.controlId) || /штор|роллет|жалюз|тюль|экран|привод/i.test(r.label || ""));
-      }
+      if (card.cat === "Шторы") return preferRows(all, isCurtainLoad, true);
       if (card.cat === "Климат") {
-        return preferRows(all, (r) => /кондей|кондиц|тепл|пол|вытяж|вентил|насос|увлажн|калорифер|серво/i.test(r.label || ""));
+        return preferRows(all, (r) => /кондей|кондиц|тепл|пол|вытяж|вентил|насос|увлажн|калорифер|серво/i.test(r.label || ""), true);
       }
-      if (card.cat === "Розетки") {
-        return preferRows(all, (r) => /розетк/i.test(r.label || ""));
-      }
-      if (/leak/.test(card.id)) {
-        return preferRows(all, (r) => /кран|клапан|перекрыт/i.test(r.label || ""));
-      }
-      if (/siren/.test(card.id)) {
-        return preferRows(all, (r) => /сирен|тревог/i.test(r.label || ""));
-      }
-      if (/lock/.test(card.id)) {
-        return preferRows(all, (r) => /замок/i.test(r.label || ""));
-      }
+      if (card.cat === "Розетки") return preferRows(all, (r) => /розетк/i.test(r.label || ""), true);
+      if (/leak/.test(card.id)) return preferRows(all, (r) => /кран|клапан|перекрыт/i.test(r.label || ""), true);
+      if (/siren/.test(card.id)) return preferRows(all, (r) => /сирен|тревог/i.test(r.label || ""), true);
+      if (/lock/.test(card.id)) return preferRows(all, (r) => /замок/i.test(r.label || ""), true);
       return all;
     }
     function openCardSheet(card, draft) {
@@ -1791,6 +1789,10 @@
         fillSelect(trig, trigs, roomFilter ? ("Из «" + roomFilter + "» или шины") : "С этой шины");
         if (draft && draft.trigger) {
           trig.value = contactKey(draft.trigger.deviceTopicKey, draft.trigger.controlId);
+        } else if (sheetNeedSensor(card)) {
+          const sens = trigs.find((r) => (!roomFilter || nameRoom(r.label) === roomFilter) && isSensorLabel(r.label))
+            || trigs.find((r) => isSensorLabel(r.label));
+          if (sens) trig.value = contactKey(sens.deviceTopicKey, sens.controlId);
         } else if (roomFilter && trigs[0] && nameRoom(trigs[0].label) === roomFilter) {
           trig.value = contactKey(trigs[0].deviceTopicKey, trigs[0].controlId);
         }
