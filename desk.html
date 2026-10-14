@@ -24,21 +24,18 @@
     <p id="ritual" class="meta ritual">1 · Разметить → 2 · Типовые → 3 · Залить</p>
 
     <section id="panel-mark" class="panel glass" data-tab="mark">
-      <p class="meta">Комната → каналы → тип. Как «По комнатам» на Vercel.</p>
-      <div class="filters" id="markPath" role="tablist" aria-label="Путь разметки">
-        <button type="button" data-path="rooms" aria-pressed="true">По комнатам</button>
-        <button type="button" data-path="modules" aria-pressed="false">С модулей</button>
-      </div>
+      <p class="meta">1 · Комната → имя каналам. Модули — только если нужно найти «без имени».</p>
       <div id="rooms-mark" class="rooms" aria-label="Комнаты"></div>
       <div id="mark-body"></div>
-      <div id="modules-body" hidden>
+      <details id="modules-diag" class="mark-diag">
+        <summary>Диагностика · с модулей</summary>
         <div class="filters" id="modFamily" role="tablist" aria-label="Семейство">
           <button type="button" data-fam="light" aria-pressed="true">Свет</button>
           <button type="button" data-fam="buttons" aria-pressed="false">Кнопки</button>
           <button type="button" data-fam="relays" aria-pressed="false">Реле</button>
         </div>
         <div id="shelves-mod" class="vitrine"></div>
-      </div>
+      </details>
     </section>
 
     <section id="panel-cards" class="panel glass" hidden data-tab="cards">
@@ -52,14 +49,15 @@
     <div id="cardSheet" class="sheet" hidden></div>
 
     <section id="panel-poured" class="panel glass" hidden data-tab="poured">
-      <p class="meta">3 · Стол → щит. Как на Vercel: имена отдельно, сценарии отдельно.</p>
+      <p class="meta">3 · Сначала имена, потом сценарии. Журнал — откат.</p>
       <p id="previewHead" class="meta">Сравниваю стол с диском…</p>
+      <p id="pourSummary" class="pour-summary meta" hidden></p>
       <p id="pouredHead" class="meta">Спрашиваю залитое…</p>
       <div class="filters" id="pouredTabs" role="tablist" aria-label="Полки заливки"></div>
       <p id="pourHint" class="meta" hidden></p>
       <div id="pourWrap" class="pour-strip" hidden>
-        <button id="pourNames" class="ghost pour-primary" type="button" disabled>Залить имена</button>
-        <button id="pourRules" class="ghost pour-primary" type="button" disabled>Залить сценарии</button>
+        <button id="pourNames" class="ghost pour-primary" type="button" disabled>1 · Залить имена</button>
+        <button id="pourRules" class="ghost pour-primary" type="button" disabled>2 · Залить сценарии</button>
         <button id="pour" class="ghost" type="button" disabled hidden>Убрать дубли</button>
       </div>
       <div id="ready"></div>

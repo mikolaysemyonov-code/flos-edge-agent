@@ -13,6 +13,7 @@
     let activeTab = "mark";
     let markPath = "rooms";
     let modFamily = "light";
+    /** @deprecated path toggle removed from UI; modules only via diagnostics details */
     let deskCatalog = [];
     let deskSolutions = [];
     let cardFilter = "Свет";
@@ -1159,17 +1160,35 @@
     function paintPourButtons() {
       const wrap = $("pourWrap");
       const hint = $("pourHint");
+      const sum = $("pourSummary");
       if (!wrap) return;
       const show = (pouredPane === "send" || pouredPane === "hist") && !pouredOpen();
       wrap.hidden = !show;
+      const sendN = collectReadyItems().filter((i) => pourLane(i) === "send").length;
+      const solN = deskSolutions.length;
+      if (sum) {
+        if (show && pouredPane === "send") {
+          sum.hidden = false;
+          const parts = [];
+          if (canPourNamesDesk) parts.push("имена готовы");
+          else parts.push("имён нет");
+          if (canPourRulesDesk) parts.push("сценарии " + (solN || "готовы"));
+          else parts.push("сценариев нет");
+          if (sendN) parts.push("новое · " + sendN);
+          sum.textContent = "К заливке: " + parts.join(" · ");
+        } else {
+          sum.hidden = true;
+          sum.textContent = "";
+        }
+      }
       if (hint) {
         hint.hidden = !show || pouredPane === "hist";
         if (canPourNamesDesk && canPourRulesDesk) {
-          hint.textContent = "Сначала имена, потом сценарии.";
+          hint.textContent = "Сначала «1 · Имена», потом «2 · Сценарии».";
         } else if (canPourNamesDesk) {
-          hint.textContent = "Есть новые имена каналов.";
+          hint.textContent = "Есть новые имена — залейте шаг 1.";
         } else if (canPourRulesDesk) {
-          hint.textContent = "Есть сценарии на столе — залейте отдельно от имён.";
+          hint.textContent = "Имена на месте — залейте сценарии (шаг 2).";
         } else {
           hint.textContent = "";
           hint.hidden = true;
@@ -1181,18 +1200,20 @@
       if (namesBtn) {
         namesBtn.hidden = pouredPane === "hist" && !canPourNamesDesk;
         namesBtn.disabled = !canPourNamesDesk;
-        namesBtn.textContent = "Залить имена";
+        namesBtn.textContent = "1 · Залить имена";
         namesBtn.title = canPourNamesDesk
-          ? "Имена каналов на щит (дашборд WB / HA)"
+          ? "Имена каналов на щит"
           : "Нет новых имён";
       }
       if (rulesBtn) {
         rulesBtn.hidden = pouredPane === "hist" && !canPourRulesDesk;
-        rulesBtn.disabled = !canPourRulesDesk;
-        rulesBtn.textContent = "Залить сценарии";
-        rulesBtn.title = canPourRulesDesk
-          ? "Типовые со стола на щит"
-          : "Нет сценариев на столе";
+        rulesBtn.disabled = !canPourRulesDesk || canPourNamesDesk;
+        rulesBtn.textContent = "2 · Залить сценарии";
+        rulesBtn.title = canPourNamesDesk
+          ? "Сначала залейте имена"
+          : canPourRulesDesk
+            ? "Типовые со стола на щит"
+            : "Нет сценариев на столе";
       }
       if (repairBtn) {
         const showRepair = pouredPane === "hist" && canRepairDesk && !canPourNamesDesk;
@@ -2669,13 +2690,16 @@
       const toMod = document.createElement("button");
       toMod.type = "button";
       toMod.className = "ghost more-cards";
-      toMod.textContent = "С модулей";
+      toMod.textContent = "Модули";
       toMod.addEventListener("click", () => {
-        markPath = "modules";
-        renderMark();
+        const det = $("modules-diag");
+        if (det) {
+          det.open = true;
+          det.scrollIntoView({ block: "nearest" });
+        }
       });
       actions.appendChild(toMod);
-      head.appendChild(actions);
+      if (actions.childNodes.length) head.appendChild(actions);
       box.appendChild(head);
       const split = splitShelves(lastShelvesRows);
       appendRoomSection(box, "Свет", split.light);
@@ -2693,39 +2717,42 @@
       if (freeWrap.querySelector("details")) box.appendChild(freeWrap);
     }
     function paintMarkPath() {
-      document.querySelectorAll("#markPath [data-path]").forEach((btn) => {
-        btn.setAttribute("aria-pressed", btn.dataset.path === markPath ? "true" : "false");
-      });
       document.querySelectorAll("#modFamily [data-fam]").forEach((btn) => {
         btn.setAttribute("aria-pressed", btn.dataset.fam === modFamily ? "true" : "false");
       });
     }
+    function countUnboundAll() {
+      let n = 0;
+      (lastShelvesRows || []).forEach((s) => {
+        visibleChannels(s).forEach((ch) => {
+          if (!nameRoom(pairName(s, ch))) n += 1;
+        });
+      });
+      return n;
+    }
     function renderMark() {
       lastShelvesRows = lastShelvesRows || [];
       const split = splitShelves(lastShelvesRows);
-      const total = split.light.length + split.buttons.length + split.relays.length;
+      markPath = "rooms";
+      const namedRooms = roomsFromBus().length;
+      const unbound = countUnboundAll();
       const nMark = $("n-mark");
-      if (nMark) nMark.textContent = total || "";
+      if (nMark) {
+        nMark.textContent = unbound ? String(unbound) : (namedRooms || "");
+      }
       fillRooms($("rooms-mark"));
       paintMarkPath();
       const body = $("mark-body");
-      const mods = $("modules-body");
-      if (!body || !mods) return;
-      if (markPath === "modules") {
-        body.hidden = true;
-        mods.hidden = false;
-        const empty = modFamily === "buttons"
-          ? "Кнопок на шине нет."
-          : modFamily === "relays"
-            ? "Реле на шине нет."
-            : "Света на шине нет.";
-        fillList("shelves-mod", split[modFamily] || [], empty);
-        return;
-      }
-      mods.hidden = true;
+      if (!body) return;
       body.hidden = false;
       openMod = "";
       renderRoomsPath(body);
+      const empty = modFamily === "buttons"
+        ? "Кнопок на шине нет."
+        : modFamily === "relays"
+          ? "Реле на шине нет."
+          : "Света на шине нет.";
+      fillList("shelves-mod", split[modFamily] || [], empty);
     }
     function renderShelves(rows) {
       lastShelvesRows = rows || [];
@@ -2896,20 +2923,13 @@
     document.querySelectorAll(".tab").forEach((btn) => {
       btn.addEventListener("click", () => setTab(btn.dataset.tab));
     });
-    document.querySelectorAll("#markPath [data-path]").forEach((btn) => {
-      btn.addEventListener("click", () => {
-        markPath = btn.dataset.path === "modules" ? "modules" : "rooms";
-        openMod = "";
-        markPending = {};
-        renderMark();
-      });
-    });
     document.querySelectorAll("#modFamily [data-fam]").forEach((btn) => {
       btn.addEventListener("click", () => {
         modFamily = /^(light|buttons|relays)$/.test(btn.dataset.fam) ? btn.dataset.fam : "light";
         openMod = "";
         markPending = {};
-        markPath = "modules";
+        const det = $("modules-diag");
+        if (det) det.open = true;
         renderMark();
       });
     });
