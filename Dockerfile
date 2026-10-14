@@ -18,6 +18,7 @@ COPY runtime-desk-pour-core.mjs /app/runtime-desk-pour-core.mjs
 COPY runtime-desk-pour-user.mjs /app/runtime-desk-pour-user.mjs
 COPY runtime-desk-pour-climate.mjs /app/runtime-desk-pour-climate.mjs
 COPY runtime-desk-pour-light.mjs /app/runtime-desk-pour-light.mjs
+COPY runtime-desk-pour-scenes.mjs /app/runtime-desk-pour-scenes.mjs
 COPY runtime-desk-field-cert.mjs /app/runtime-desk-field-cert.mjs
 COPY runtime-desk-pour-stale.mjs /app/runtime-desk-pour-stale.mjs
 COPY runtime-desk-pour-mqtt.mjs /app/runtime-desk-pour-mqtt.mjs

@@ -177,7 +177,7 @@ want_pinned_github() {
 }
 
 field_dockerfile_ok() {
-  [[ -s "$1" ]] && grep -qE '^COPY runtime-rules-inventory\.mjs ' "$1" && grep -qE '^COPY desk\.html ' "$1" && grep -qE '^COPY desk\.css ' "$1" && grep -qE '^COPY desk\.js ' "$1" && grep -qE '^COPY runtime-desk-shelves\.mjs ' "$1" && grep -qE '^COPY runtime-desk-marking\.mjs ' "$1" && grep -qE '^COPY runtime-desk-solutions\.mjs ' "$1" && grep -qE '^COPY runtime-desk-rules-marks\.mjs ' "$1" && grep -qE '^COPY runtime-desk-releases\.mjs ' "$1" && grep -qE '^COPY runtime-desk-pour\.mjs ' "$1" && grep -qE '^COPY runtime-desk-pour-core\.mjs ' "$1" && grep -qE '^COPY runtime-desk-pour-user\.mjs ' "$1" && grep -qE '^COPY runtime-desk-pour-climate\.mjs ' "$1" && grep -qE '^COPY runtime-desk-pour-light\.mjs ' "$1" && grep -qE '^COPY runtime-desk-field-cert\.mjs ' "$1" && grep -qE '^COPY runtime-desk-pour-stale\.mjs ' "$1" && grep -qE '^COPY runtime-desk-pour-mqtt\.mjs ' "$1"
+  [[ -s "$1" ]] && grep -qE '^COPY runtime-rules-inventory\.mjs ' "$1" && grep -qE '^COPY desk\.html ' "$1" && grep -qE '^COPY desk\.css ' "$1" && grep -qE '^COPY desk\.js ' "$1" && grep -qE '^COPY runtime-desk-shelves\.mjs ' "$1" && grep -qE '^COPY runtime-desk-marking\.mjs ' "$1" && grep -qE '^COPY runtime-desk-solutions\.mjs ' "$1" && grep -qE '^COPY runtime-desk-rules-marks\.mjs ' "$1" && grep -qE '^COPY runtime-desk-releases\.mjs ' "$1" && grep -qE '^COPY runtime-desk-pour\.mjs ' "$1" && grep -qE '^COPY runtime-desk-pour-core\.mjs ' "$1" && grep -qE '^COPY runtime-desk-pour-user\.mjs ' "$1" && grep -qE '^COPY runtime-desk-pour-climate\.mjs ' "$1" && grep -qE '^COPY runtime-desk-pour-light\.mjs ' "$1" && grep -qE '^COPY runtime-desk-pour-scenes\.mjs ' "$1" && grep -qE '^COPY runtime-desk-field-cert\.mjs ' "$1" && grep -qE '^COPY runtime-desk-pour-stale\.mjs ' "$1" && grep -qE '^COPY runtime-desk-pour-mqtt\.mjs ' "$1"
 }
 
 ensure_agent_files() {
@@ -201,7 +201,7 @@ ensure_agent_files() {
   elif cloud_tip_reachable; then
     echo "[flos-edge-agent] скачиваю файлы с tip/облака ($CLOUD_FILES)…"
     local ok=1
-    for f in Dockerfile docker-compose.yml entrypoint.sh package.json reactor-edge-agent.mjs runtime-control-plane-http.mjs runtime-desk-http.mjs runtime-desk-shelves.mjs runtime-desk-marking.mjs runtime-desk-solutions.mjs runtime-desk-rules-marks.mjs runtime-desk-releases.mjs runtime-desk-pour.mjs runtime-desk-pour-core.mjs runtime-desk-pour-user.mjs runtime-desk-pour-climate.mjs runtime-desk-pour-light.mjs runtime-desk-field-cert.mjs runtime-desk-pour-stale.mjs runtime-desk-pour-mqtt.mjs desk.html desk.css desk.js runtime-rules-inventory.mjs wb-rules-journal-incidents.mjs; do
+    for f in Dockerfile docker-compose.yml entrypoint.sh package.json reactor-edge-agent.mjs runtime-control-plane-http.mjs runtime-desk-http.mjs runtime-desk-shelves.mjs runtime-desk-marking.mjs runtime-desk-solutions.mjs runtime-desk-rules-marks.mjs runtime-desk-releases.mjs runtime-desk-pour.mjs runtime-desk-pour-core.mjs runtime-desk-pour-user.mjs runtime-desk-pour-climate.mjs runtime-desk-pour-light.mjs runtime-desk-pour-scenes.mjs runtime-desk-field-cert.mjs runtime-desk-pour-stale.mjs runtime-desk-pour-mqtt.mjs desk.html desk.css desk.js runtime-rules-inventory.mjs wb-rules-journal-incidents.mjs; do
       curl_get "$CLOUD_FILES/$f" -o "$AGENT_DIR/$f" || ok=0
     done
     curl_get "$CLOUD_FILES/lib/mark-shield-discoverable-device.mjs" -o "$AGENT_DIR/lib/mark-shield-discoverable-device.mjs" || ok=0

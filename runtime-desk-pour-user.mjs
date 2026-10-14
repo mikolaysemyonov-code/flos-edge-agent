@@ -4,6 +4,7 @@
 import { liveDeskDeviceKey } from "./runtime-desk-rules-marks.mjs";
 import { emitDeskClimate, isDeskClimateSolution } from "./runtime-desk-pour-climate.mjs";
 import { emitDeskLight, isDeskLightSolution } from "./runtime-desk-pour-light.mjs";
+import { emitDeskScene, isDeskSceneSolution } from "./runtime-desk-pour-scenes.mjs";
 
 const DESK_PREFIX = "desk_sol_";
 const SUPPORTED = new Set([
@@ -93,7 +94,12 @@ function emitAllOff(sol) {
 
 export function supportedDeskSolution(sol) {
   const sid = String(sol?.solutionId || "");
-  return SUPPORTED.has(sid) || isDeskClimateSolution(sol) || isDeskLightSolution(sol);
+  return (
+    SUPPORTED.has(sid) ||
+    isDeskClimateSolution(sol) ||
+    isDeskLightSolution(sol) ||
+    isDeskSceneSolution(sol)
+  );
 }
 
 export function mergeDeskSolutionsIntoUser(userSrc, solutions) {
@@ -105,6 +111,7 @@ export function mergeDeskSolutionsIntoUser(userSrc, solutions) {
     let js = "";
     if (isDeskClimateSolution(sol)) js = emitDeskClimate(sol);
     else if (isDeskLightSolution(sol)) js = emitDeskLight(sol);
+    else if (isDeskSceneSolution(sol)) js = emitDeskScene(sol);
     else if (sid === "light_all_off") js = emitAllOff(sol);
     else js = emitToggle(sol);
     if (js) chunks.push(js);
