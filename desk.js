@@ -154,6 +154,45 @@
       });
       return chips;
     }
+    function busRu(mirror) {
+      if (!mirror) return "Шина: —";
+      const n = Number(mirror.topicCount) || 0;
+      if (mirror.connected && n > 0) return "Шина ок · " + n + " топиков";
+      if (mirror.connected) return "Шина: ждёт топики";
+      return "Шина: нет MQTT";
+    }
+    function cloudRu(state) {
+      if (state === "restored" || state === "online" || state === "enrolled_awaiting_heartbeat") {
+        return "Облако ок";
+      }
+      if (state === "enrolling") return "Облако: подключаюсь";
+      if (state === "enroll_failed" || state === "enroll_transient") return "Облако: нет связи";
+      if (!state) return "Облако: —";
+      return "Облако: " + state;
+    }
+    function humanPourError(raw) {
+      const s = String(raw || "").trim();
+      if (!s) return "Не залил";
+      if (/Failed to fetch|NetworkError|ECONNREFUSED|fetch failed/i.test(s)) {
+        return "Нет связи с агентом на этом адресе.";
+      }
+      if (/need_trigger/i.test(s)) return "В карточке нужна кнопка или датчик с шины.";
+      if (/need_target|need_load/i.test(s)) return "В карточке нужна линия из разметки.";
+      if (/EACCES|EROFS|EPERM|permission denied/i.test(s)) {
+        return "Нет записи на диск щита (/etc/wb-rules).";
+      }
+      if (/wb.?rules|restart|pending_restart/i.test(s)) {
+        return "Файлы записаны, но wb-rules не перезапустился — смотрите журнал на щите.";
+      }
+      if (/debounce|boot grace|self.update/i.test(s)) {
+        return "Агент ещё стартует — подождите минуту и повторите.";
+      }
+      if (/tip|cloud pull|GitHub/i.test(s)) {
+        return "Не скачал обновление с tip — проверьте интернет щита до сервиса (IPv4).";
+      }
+      if (s.length > 140) return s.slice(0, 137) + "…";
+      return s;
+    }
     function enrollRu(s, topics) {
       if (typeof topics === "number" && topics > 0) return "на связи";
       if (s === "restored" || s === "online" || s === "enrolled_awaiting_heartbeat") return "на связи";
@@ -358,13 +397,13 @@
         const j = await r.json();
         if (!j.ok) {
           $("previewHead").style.color = "rgb(var(--bad))";
-          $("previewHead").textContent = j.error || "Нет превью";
+          $("previewHead").textContent = humanPourError(j.error || "Нет превью");
           return;
         }
         renderPreview(j);
       } catch (e) {
         $("previewHead").style.color = "rgb(var(--bad))";
-        $("previewHead").textContent = String(e.message || e);
+        $("previewHead").textContent = humanPourError(e && e.message);
       }
     }
     function rowSlave(r) {
@@ -912,19 +951,46 @@
           go.textContent = "Вернуть";
           go.title = "Вернуть эту заливку на щит и убрать лишние строки в дашборде";
           go.addEventListener("click", () => {
+            const label = short || rel.revisionId || "эту заливку";
+            if (!window.confirm("Вернуть на щит состояние «" + label + "»?\nТекущие правила с диска будут заменены.")) {
+              return;
+            }
             go.disabled = true;
+            go.textContent = "Возвращаю…";
             fetch("/runtime/rollback?revisionId=" + encodeURIComponent(rel.revisionId), { method: "POST" })
               .then((r) => r.json())
               .then((j) => {
                 if (!j || (j.status !== "applied" && !j.ok)) {
                   go.disabled = false;
-                  go.title = (j && (j.error || (j.reasons || []).join(" · "))) || "Не вернул";
+                  go.textContent = "Вернуть";
+                  const err = humanPourError((j && (j.error || (j.reasons || []).join(" · "))) || "Не вернул");
+                  go.title = err;
+                  const head = $("previewHead");
+                  if (head) {
+                    head.style.color = "rgb(var(--bad))";
+                    head.textContent = err;
+                  }
                   return;
+                }
+                const head = $("previewHead");
+                if (head) {
+                  head.style.color = "";
+                  head.textContent = "Откат выполнен · " + label;
                 }
                 loadPoured();
                 loadReleases().then(() => renderReady());
               })
-              .catch(() => { go.disabled = false; });
+              .catch((e) => {
+                go.disabled = false;
+                go.textContent = "Вернуть";
+                const err = humanPourError(e && e.message);
+                go.title = err;
+                const head = $("previewHead");
+                if (head) {
+                  head.style.color = "rgb(var(--bad))";
+                  head.textContent = err;
+                }
+              });
           });
           li.appendChild(go);
         }
@@ -1837,20 +1903,36 @@
     }
     async function loadHealth() {
       const box = $("health");
-      const line = box.querySelector("p");
+      const main = $("healthMain") || box.querySelector("p");
+      const sub = $("healthSub");
       try {
         const r = await fetch("/runtime/health");
         const j = await r.json();
-        const topics = j.mqttMirror && j.mqttMirror.topicCount;
-        const en = enrollRu(j.enrollment && j.enrollment.state, topics);
-        const ver = String(j.agentVersion || "").replace(/^.*\./, "");
-        box.className = "glass status " + (j.ok ? "ok" : "bad");
-        line.textContent = j.ok
-          ? "Агент · " + en + (ver ? " · " + ver : "") + (topics != null ? " · " + topics + " топиков" : "")
-          : "Агент не ответил";
+        const mirror = j.mqttMirror || {};
+        const topics = Number(mirror.topicCount) || 0;
+        const busOk = mirror.connected === true && topics > 0;
+        const cloudState = j.enrollment && j.enrollment.state;
+        const cloudOk = /^(restored|online|enrolled_awaiting_heartbeat)$/.test(String(cloudState || ""));
+        const ver = String(j.agentVersion || "").replace(/^.*\./, "") || "—";
+        if (!j.ok) {
+          box.className = "glass status bad";
+          main.textContent = "Агент не ответил";
+          if (sub) { sub.hidden = true; sub.textContent = ""; }
+          return;
+        }
+        box.className = "glass status " + (busOk ? "ok" : cloudOk ? "warn" : "bad");
+        main.textContent = busRu(mirror) + " · " + cloudRu(cloudState) + " · " + ver;
+        if (sub) {
+          const bits = [];
+          if (!busOk) bits.push("Проверьте mosquitto на щите");
+          if (!cloudOk) bits.push("Облако не обязательно для локальной заливки");
+          sub.textContent = bits.join(" · ");
+          sub.hidden = !bits.length;
+        }
       } catch (e) {
         box.className = "glass status bad";
-        line.textContent = "Нет /runtime/health — откройте этот адрес с машины в сети щита.";
+        main.textContent = "Нет /runtime/health — откройте стол с сети щита.";
+        if (sub) { sub.hidden = true; sub.textContent = ""; }
       }
     }
     async function saveMark(body) {
@@ -2784,17 +2866,20 @@
           if (!j.ok) {
             paintPourButtons();
             $("previewHead").style.color = "rgb(var(--bad))";
-            $("previewHead").textContent = j.error || j.reason || "Не залил";
+            $("previewHead").textContent = humanPourError(j.error || j.reason || "Не залил");
             return;
           }
           $("previewHead").style.color = "";
           const scopeRu = j.scope === "rules" ? "Сценарии" : j.scope === "names" ? "Имена" : "Щит";
           const bits = [
-            j.mqttOnly ? "Дубли спрятаны" : (scopeRu + " · " + (j.appliedRevisionId || "").replace(/^fnv1a32:/i, "").slice(0, 8)),
-            j.restarted ? "правила перезапущены" : "",
+            j.mqttOnly ? "Дубли спрятаны" : scopeRu,
+            j.restarted ? "правила перезапущены" : (j.scope === "rules" || j.scope === "all" ? "проверьте журнал wb-rules" : ""),
             j.namedCount ? ("имён " + j.namedCount) : "",
             j.emittedSolutions ? ("сценариев " + j.emittedSolutions) : "",
             j.hiddenGhosts ? ("скрыто " + j.hiddenGhosts) : "",
+            j.appliedRevisionId
+              ? String(j.appliedRevisionId).replace(/^fnv1a32:/i, "").slice(0, 8)
+              : "",
           ].filter(Boolean);
           $("previewHead").textContent = bits.join(" · ") || "Готово";
           pouredPane = "hist";
@@ -2805,7 +2890,7 @@
           btn.textContent = label;
           paintPourButtons();
           $("previewHead").style.color = "rgb(var(--bad))";
-          $("previewHead").textContent = String(e.message || e);
+          $("previewHead").textContent = humanPourError(e && e.message);
         });
     }
     document.querySelectorAll(".tab").forEach((btn) => {
