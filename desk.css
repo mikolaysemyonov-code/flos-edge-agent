@@ -31,8 +31,10 @@
     .cert-list li.bad { border-color: rgb(251 113 133 / .35); }
     .cert-list li strong { font-size: .86rem; }
     .cert-list li .meta { margin: .2rem 0 0; font-size: .72rem; }
+    .cert-more { margin: .75rem 0 0; font-size: .78rem; color: var(--mute); }
+    .cert-more summary { cursor: pointer; color: rgb(186 230 253); }
     .cert-passport {
-      margin: .75rem 0 0; padding: .65rem; border-radius: .75rem;
+      margin: .45rem 0 0; padding: .65rem; border-radius: .75rem;
       background: rgb(0 0 0 / .35); color: var(--mute);
       font-size: .68rem; overflow: auto; max-height: 10rem;
     }

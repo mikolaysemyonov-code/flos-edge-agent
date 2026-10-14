@@ -2140,10 +2140,15 @@
         });
         body.appendChild(ul);
         if (j.passport) {
+          const det = document.createElement("details");
+          det.className = "cert-more";
+          const sum = document.createElement("summary");
+          sum.textContent = "Техпаспорт (для сдачи)";
           const pre = document.createElement("pre");
           pre.className = "cert-passport";
           pre.textContent = JSON.stringify(j.passport, null, 2);
-          body.appendChild(pre);
+          det.append(sum, pre);
+          body.appendChild(det);
         }
       } catch (_) {
         p.textContent = "Нет связи с /runtime/field-cert";

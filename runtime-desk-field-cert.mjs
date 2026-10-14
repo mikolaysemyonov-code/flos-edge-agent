@@ -5,11 +5,13 @@ import { readDeskDocument } from "./runtime-desk-marking.mjs";
 import { assessDeskCanPour } from "./runtime-desk-pour.mjs";
 import { supportedDeskSolution } from "./runtime-desk-pour-user.mjs";
 
-function namedCount(shelves) {
+/** Имена из разметки (объект shelves → channels), не из сырого скана шины. */
+function namedFromMarking(docShelves) {
   let n = 0;
-  for (const s of shelves || []) {
-    for (const ch of s.channels || []) {
-      if (String(ch.name || "").trim()) n += 1;
+  for (const shelf of Object.values(docShelves || {})) {
+    const chs = shelf?.channels && typeof shelf.channels === "object" ? shelf.channels : {};
+    for (const ch of Object.values(chs)) {
+      if (String(ch?.name || "").trim()) n += 1;
     }
   }
   return n;
@@ -23,7 +25,7 @@ export function buildFieldCertificate(live = {}) {
   const doc = readDeskDocument();
   const sols = Array.isArray(doc.solutions) ? doc.solutions : [];
   const gate = assessDeskCanPour();
-  const named = namedCount(shelves);
+  const named = namedFromMarking(doc.shelves);
   const supported = sols.filter(supportedDeskSolution).length;
   const unsupported = sols.length - supported;
   const topics = Number(live.topics) || 0;
@@ -31,19 +33,21 @@ export function buildFieldCertificate(live = {}) {
   const checks = [
     { id: "bus", title: "Шина отвечает", ok: busOk, detail: topics ? topics + " топиков" : "нет топиков" },
     { id: "version", title: "Версия агента", ok: Boolean(live.agentVersion), detail: live.agentVersion || "неизвестно" },
-    { id: "names", title: "Есть имена в разметке", ok: named > 0, detail: named + " имён" },
+    { id: "names", title: "Есть имена в разметке", ok: named > 0, detail: named ? named + " имён" : "пока ни одного" },
     { id: "modules", title: "Модули на шине", ok: shelves.length > 0, detail: shelves.length + " модулей" },
     {
       id: "solutions",
-      title: "Типовые на столе льются",
-      ok: sols.length === 0 || unsupported === 0,
-      detail: sols.length
-        ? supported + " готовы" + (unsupported ? " · " + unsupported + " ещё не в заливке" : "")
-        : "пока пусто — ок для имён",
+      title: "Типовые можно залить",
+      ok: sols.length === 0 || supported > 0,
+      detail: sols.length === 0
+        ? "на столе пусто — можно лить только имена"
+        : unsupported
+          ? supported + " из " + sols.length + " уйдут на щит · " + unsupported + " пока только на столе"
+          : "все " + supported + " уйдут на щит",
     },
     {
       id: "pour",
-      title: "Заливка доступна",
+      title: "Можно лить на щит",
       ok: gate.canPourNames || gate.canPourRules || gate.canRepair,
       detail: gate.reason || "—",
     },
