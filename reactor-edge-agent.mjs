@@ -31,7 +31,7 @@ import {
 } from "./wb-rules-journal-incidents.mjs";
 
 /** Одна строка в heartbeat и snapshot — иначе UI врёт версией. */
-const EDGE_AGENT_VERSION = "edge-pilot-v2.lan-desk-144";
+const EDGE_AGENT_VERSION = "edge-pilot-v2.lan-desk-150";
 
 /** Prefer `FLOS_*` (FL OS); fall back to legacy `REACTOR_*` for existing deployments. */
 function env(primary, legacy) {
@@ -1746,9 +1746,10 @@ function runAgentSelfUpdateCommand(payload) {
   const dataDir = String(env("FLOS_EDGE_DATA_DIR", "REACTOR_EDGE_DATA_DIR") ?? "/mnt/data/flos-edge").trim();
   const agentDir = String(env("FLOS_AGENT_DIR", "REACTOR_AGENT_DIR") ?? "/opt/flos/flos-edge-agent").trim();
   const cloudBase = String(baseUrl || "").replace(/\/$/, "");
-  const installUrl = `https://raw.githubusercontent.com/${slug}/${gitRef}/install.sh`;
+  // Tip Vercel = SSOT. GitHub raw — только если tip недоступен.
+  const tipInstallUrl = cloudBase ? `${cloudBase}/api/edge-agent/files/install.sh` : "";
+  const githubInstallUrl = `https://raw.githubusercontent.com/${slug}/${gitRef}/install.sh`;
   const logPath = "/tmp/flos-edge-agent-self-update.log";
-  // Tip/облако = SSOT. GitHub — только fallback, если cloud недоступен.
   const inner = `
 set -uo pipefail
 sleep 2
@@ -1757,6 +1758,8 @@ echo "[flos-edge-agent] self-update start $(date -Iseconds 2>/dev/null || date) 
 AGENT_DIR=${shellQuoteSingle(agentDir)}
 DATA_DIR=${shellQuoteSingle(dataDir)}
 CLOUD=${shellQuoteSingle(cloudBase)}
+TIP_INSTALL=${shellQuoteSingle(tipInstallUrl)}
+GH_INSTALL=${shellQuoteSingle(githubInstallUrl)}
 mkdir -p "$AGENT_DIR/lib" "$DATA_DIR"
 source_ok=0
 if [[ -n "$CLOUD" ]]; then
@@ -1768,9 +1771,8 @@ if [[ -n "$CLOUD" ]]; then
   if [[ $source_ok -eq 0 ]]; then
     curl -fsSL "$CLOUD/api/edge-agent/files/lib/mark-shield-discoverable-device.mjs" -o "$AGENT_DIR/lib/mark-shield-discoverable-device.mjs" || source_ok=1
   fi
-  # Tip мог быть старым деплоем без wb_rules_export — не оставляем такой бинарник.
   if [[ $source_ok -eq 0 ]] && ! grep -q 'wb_rules_export' "$AGENT_DIR/reactor-edge-agent.mjs" 2>/dev/null; then
-    echo "[flos-edge-agent] cloud file stale (no wb_rules_export) — fallback GitHub"
+    echo "[flos-edge-agent] cloud file stale (no wb_rules_export) — fallback install.sh"
     source_ok=1
   fi
   set -e
@@ -1784,11 +1786,20 @@ if [[ -n "$CLOUD" ]]; then
     echo "[flos-edge-agent] self-update cloud done"
     exit 0
   fi
-  echo "[flos-edge-agent] cloud pull failed — fallback GitHub install.sh"
+  echo "[flos-edge-agent] cloud file pull failed — try tip install.sh then GitHub"
 fi
 set +e
-curl -fsSL ${shellQuoteSingle(installUrl)} | bash -s -- --upgrade-only --data-dir "$DATA_DIR" --agent-dir "$AGENT_DIR" --git-ref ${shellQuoteSingle(gitRef)}
-rc=$?
+rc=1
+if [[ -n "$TIP_INSTALL" ]]; then
+  echo "[flos-edge-agent] tip install.sh…"
+  curl -fsSL "$TIP_INSTALL" | bash -s -- --upgrade-only --data-dir "$DATA_DIR" --agent-dir "$AGENT_DIR" --cloud-url "$CLOUD" --git-ref ${shellQuoteSingle(gitRef)}
+  rc=$?
+fi
+if [[ $rc -ne 0 ]]; then
+  echo "[flos-edge-agent] tip install failed (rc=$rc) — GitHub fallback"
+  curl -fsSL "$GH_INSTALL" | bash -s -- --upgrade-only --data-dir "$DATA_DIR" --agent-dir "$AGENT_DIR" --git-ref ${shellQuoteSingle(gitRef)}
+  rc=$?
+fi
 set -e
 echo "[flos-edge-agent] self-update install exit=$rc $(date -Iseconds 2>/dev/null || date)"
 cd "$DATA_DIR" 2>/dev/null || true
