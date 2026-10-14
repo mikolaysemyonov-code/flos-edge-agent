@@ -1412,7 +1412,9 @@
         head.style.color = "";
         if (pouredPane === "send") {
           const noCard = items.filter((i) => !i.scene && !(i.cards || []).length && !(i.hints || []).length).length;
-          head.textContent = (canPourDesk ? "Новое на столе. «Залить на щит» — записать сюда." : "Новое. " + (lastPreview.reason || "Пока нечего лить."))
+          head.textContent = (canPourDesk
+            ? "Новое на столе. «Залить на щит» — записать. «Снять» / «Как на щите» — убрать."
+            : "Новое. " + (lastPreview.reason || "Пока нечего лить."))
             + (noCard ? " · " + noCard + " без карточки" : "");
         } else {
           head.textContent = (pouredPane === "rules"
