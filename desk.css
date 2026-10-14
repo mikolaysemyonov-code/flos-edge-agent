@@ -409,13 +409,13 @@
       font-size: .78rem;
     }
     .desk-sols {
-      display: grid; gap: .45rem;
-      margin: 0 0 .85rem;
+      display: grid; gap: .35rem;
+      margin: 0 0 .65rem;
     }
     .desk-sols li {
-      display: flex; align-items: flex-start; justify-content: space-between; gap: .65rem;
-      padding: .65rem .75rem;
-      border-radius: .85rem;
+      display: flex; align-items: flex-start; justify-content: space-between; gap: .55rem;
+      padding: .5rem .65rem;
+      border-radius: .75rem;
       border: 1px solid rgb(255 255 255 / .08);
       background: rgb(44 44 46 / .55);
     }
@@ -476,15 +476,15 @@
       width: 16px; height: 16px; stroke: currentColor; fill: none;
       stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round;
     }
-    .vitrine { display: grid; gap: .7rem; }
+    .vitrine { display: grid; gap: .55rem; }
     @media (min-width: 640px) { .vitrine { grid-template-columns: 1fr 1fr; } }
     @media (min-width: 900px) { .vitrine { grid-template-columns: 1fr 1fr 1fr; } }
     button.vcard, div.vcard {
       appearance: none; border: 1px solid rgb(255 255 255 / .12);
       background: linear-gradient(180deg, rgb(255 255 255 / .07), rgb(255 255 255 / .025));
       color: inherit; font: inherit; text-align: left;
-      min-height: 5.4rem; border-radius: 1rem; padding: .65rem .75rem .7rem;
-      display: flex; flex-direction: column; gap: .55rem;
+      min-height: 4.6rem; border-radius: .9rem; padding: .55rem .7rem .6rem;
+      display: flex; flex-direction: column; gap: .4rem;
     }
     button.vcard { cursor: pointer; }
     button.vcard:hover {
@@ -499,7 +499,7 @@
     .vcard .cat.on { color: rgb(186 230 253); }
     .vcard .vtop { display: flex; align-items: center; justify-content: space-between; gap: .5rem; }
     .vcard .ico {
-      width: 2.15rem; height: 2.15rem; border-radius: .7rem; flex: none;
+      width: 1.85rem; height: 1.85rem; border-radius: .55rem; flex: none;
       display: grid; place-items: center;
       border: 1px solid rgb(255 255 255 / .12);
       background: rgb(255 255 255 / .06);

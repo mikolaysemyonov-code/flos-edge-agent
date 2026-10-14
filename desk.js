@@ -1708,8 +1708,8 @@
     function stampDiskScenes() {
       const n = (pouredRules || []).filter((r) => r.kind === "user").length;
       $("diskScenes").textContent = n
-        ? n + " сценариев уже на щите — правьте здесь или смотрите «Залить · Сценарии»."
-        : "На щите пользовательских сценариев пока нет — соберите карточку ниже.";
+        ? n + " на щите — правьте здесь или в «Залить · Сценарии»."
+        : "Соберите карточку ниже → «На стол» → «Залить».";
     }
     function closeCardSheet() {
       $("cardSheet").hidden = true;
@@ -2907,10 +2907,10 @@
         return n + (s.channels || []).filter(function (c) { return c.source === "rules" && c.name; }).length;
       }, 0);
       const line = shelves.length + " модулей" +
-        (j.brokerLabel ? " · " + j.brokerLabel : "") +
         (named ? " · " + named + " имён из разметки" : "");
       $("bus").dataset.base = line;
       $("bus").textContent = line;
+      $("bus").title = j.brokerLabel ? ("Шина " + j.brokerLabel) : "";
       renderShelves(shelves);
       stampBusGaps();
       liveKeys = { ready: true };
