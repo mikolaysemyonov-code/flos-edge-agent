@@ -2537,22 +2537,18 @@
     function fillRooms(bar) {
       if (!bar) return;
       const rooms = roomsFromBus();
-      if (!roomFilter && rooms.length && markPath === "rooms") roomFilter = rooms[0];
       bar.replaceChildren();
-      if (markPath === "modules") {
-        const all = document.createElement("button");
-        all.type = "button";
-        all.className = "chip";
-        all.textContent = "Все";
-        all.setAttribute("aria-pressed", roomFilter ? "false" : "true");
-        all.addEventListener("click", () => {
-          roomFilter = "";
-          openMod = "";
-          markPending = {};
-          renderMark();
-        });
-        bar.appendChild(all);
-      }
+      const all = document.createElement("button");
+      all.type = "button";
+      all.className = "chip";
+      all.textContent = "Все модули";
+      all.setAttribute("aria-pressed", roomFilter ? "false" : "true");
+      all.addEventListener("click", () => {
+        roomFilter = "";
+        markPending = {};
+        renderMark();
+      });
+      bar.appendChild(all);
       rooms.forEach((r) => {
         const b = document.createElement("button");
         b.type = "button";
@@ -2560,9 +2556,9 @@
         const prog = countRoomMark(r);
         b.textContent = prog.named ? r + " · " + prog.named : r;
         b.setAttribute("aria-pressed", r === roomFilter ? "true" : "false");
+        b.title = "Фильтр: модули с «" + r + "»";
         b.addEventListener("click", () => {
           roomFilter = r;
-          openMod = "";
           markPending = {};
           renderMark();
         });
@@ -2576,7 +2572,6 @@
         promptRoom().then((roomName) => {
           if (!roomName) return;
           roomFilter = roomName;
-          openMod = "";
           markPending = {};
           renderMark();
         });
@@ -2684,18 +2679,29 @@
         return na - nb || String(a.label || "").localeCompare(String(b.label || ""), "ru");
       });
     }
+    function moduleSlaveOf(s) {
+      const fromRow = Number(s && s.slave);
+      if (Number.isFinite(fromRow) && fromRow > 0) return fromRow;
+      const fromLabel = Number((/№(\d+)/.exec((s && s.label) || "") || [])[1] || 0);
+      if (fromLabel) return fromLabel;
+      return Number((/_(\d+)$/.exec(String((s && s.deviceTopicKey) || "")) || [])[1] || 0);
+    }
     function paintModuleFace(el, s) {
       const n = visibleChannels(s).length || s.channelCount || 0;
       const named = namedCount(s);
       const rooms = moduleRoomsOf(s);
       const kind = moduleKind(s);
+      const slave = moduleSlaveOf(s);
       el.innerHTML = "<span class=\"vtop\"><span class=\"ico\"></span><span class=\"cat\"></span></span><span class=\"vt\"></span><span class=\"vs\"></span>";
       el.querySelector(".ico").innerHTML = MOD_ICO[kind] || MOD_ICO.led;
       const cat = el.querySelector(".cat");
       cat.textContent = named ? named + " из " + n : (n ? n + " кан." : moduleKindRu(kind));
       if (named) cat.classList.add("on");
       el.querySelector(".vt").textContent = s.label || s.deviceTopicKey;
-      el.querySelector(".vs").textContent = rooms.length ? rooms.join(" · ") : "без имён";
+      const bits = [];
+      if (slave) bits.push("S" + slave);
+      bits.push(rooms.length ? rooms.join(" · ") : "без имён");
+      el.querySelector(".vs").textContent = bits.join(" · ");
     }
     function moduleTile(s) {
       const named = namedCount(s);
@@ -2720,10 +2726,13 @@
       const head = document.createElement("div");
       head.className = "vcard" + (namedCount(s) ? " on" : "");
       paintModuleFace(head, s);
+      const tip = document.createElement("p");
+      tip.className = "meta";
+      tip.textContent = "Каждый канал: комната + тип. Потом — вкладка «Типовые».";
       const chs = document.createElement("ul");
       chs.className = "channels";
       appendChannelBlock(chs, s, visibleChannels(s));
-      box.append(back, head, chs);
+      box.append(back, head, tip, chs);
     }
     function fillRoomChannelList(box, rows, emptyText) {
       box.className = "modopen";
@@ -2756,11 +2765,19 @@
       }
       box.append(head, ul);
     }
-    function fillList(id, rows, emptyText) {
-      const box = $(id);
+    function modulesForFilter(rows) {
+      const list = sortModules(rows || []);
+      if (!roomFilter) return list;
+      return list.filter((s) => {
+        if (moduleRoomsOf(s).includes(roomFilter)) return true;
+        return visibleChannels(s).some((ch) => !nameRoom(pairName(s, ch)));
+      });
+    }
+    function fillModuleVitrine(box, rows, emptyText) {
       if (!box) return;
       box.replaceChildren();
-      if (!rows.length) {
+      const filtered = modulesForFilter(rows);
+      if (!filtered.length) {
         box.className = "vitrine";
         const p = document.createElement("p");
         p.className = "empty";
@@ -2768,18 +2785,15 @@
         box.appendChild(p);
         return;
       }
-      if (roomFilter) {
-        fillRoomChannelList(box, rows, emptyText);
-        return;
-      }
-      const open = rows.find((s) => s.deviceTopicKey === openMod);
+      const open = filtered.find((s) => s.deviceTopicKey === openMod)
+        || (rows || []).find((s) => s.deviceTopicKey === openMod);
       if (open) {
         box.className = "modopen";
         renderModuleDrill(box, open);
         return;
       }
       box.className = "vitrine";
-      sortModules(rows).forEach((s) => box.appendChild(moduleTile(s)));
+      filtered.forEach((s) => box.appendChild(moduleTile(s)));
     }
     function appendRoomSection(box, title, rows) {
       const wrap = document.createElement("div");
@@ -2907,13 +2921,12 @@
       const toMod = document.createElement("button");
       toMod.type = "button";
       toMod.className = "ghost more-cards";
-      toMod.textContent = "Модули";
+      toMod.textContent = "К модулям";
       toMod.addEventListener("click", () => {
-        const det = $("modules-diag");
-        if (det) {
-          det.open = true;
-          det.scrollIntoView({ block: "nearest" });
-        }
+        roomFilter = "";
+        openMod = "";
+        markPath = "modules";
+        renderMark();
       });
       actions.appendChild(toMod);
       if (actions.childNodes.length) head.appendChild(actions);
@@ -2950,7 +2963,7 @@
     function renderMark() {
       lastShelvesRows = lastShelvesRows || [];
       const split = splitShelves(lastShelvesRows);
-      markPath = "rooms";
+      markPath = "modules";
       const namedRooms = roomsFromBus().length;
       const unbound = countUnboundAll();
       const nMark = $("n-mark");
@@ -2962,14 +2975,15 @@
       const body = $("mark-body");
       if (!body) return;
       body.hidden = false;
-      openMod = "";
-      renderRoomsPath(body);
-      const empty = modFamily === "buttons"
-        ? "Кнопок на шине нет."
-        : modFamily === "relays"
-          ? "Реле на шине нет."
-          : "Света на шине нет.";
-      fillList("shelves-mod", split[modFamily] || [], empty);
+      const famRows = split[modFamily] || [];
+      const empty = roomFilter
+        ? ("В фильтре «" + roomFilter + "» нет модулей — снимите фильтр или разметьте канал.")
+        : modFamily === "buttons"
+          ? "Кнопок на шине нет."
+          : modFamily === "relays"
+            ? "Реле на шине нет."
+            : "Света на шине нет. Нажмите «Обновить».";
+      fillModuleVitrine(body, famRows, empty);
     }
     function renderShelves(rows) {
       lastShelvesRows = rows || [];
@@ -3146,8 +3160,7 @@
         modFamily = /^(light|buttons|relays)$/.test(btn.dataset.fam) ? btn.dataset.fam : "light";
         openMod = "";
         markPending = {};
-        const det = $("modules-diag");
-        if (det) det.open = true;
+        markPath = "modules";
         renderMark();
       });
     });
