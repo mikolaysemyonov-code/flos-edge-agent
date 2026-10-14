@@ -27,16 +27,17 @@
     <p id="ritual" class="meta ritual">1 · Разметить → 2 · Типовые → 3 · Залить</p>
 
     <section id="panel-mark" class="panel glass" data-tab="mark">
-      <p class="meta">1 · Модуль → каналы. В канале: комната и тип.</p>
+      <p class="meta">1 · Модуль → канал: комната и тип. Как на разметке щита.</p>
       <div class="mark-actions">
         <button id="clearMarks" class="ghost mark-clear" type="button" title="Убрать имена и карточки со стола. Щит и типовые не трогаем.">Снять разметку</button>
       </div>
       <div class="filters" id="modFamily" role="tablist" aria-label="Семейство">
-        <button type="button" data-fam="light" aria-pressed="true">Свет</button>
+        <button type="button" data-fam="all" aria-pressed="true">Все</button>
+        <button type="button" data-fam="light" aria-pressed="false">Свет</button>
         <button type="button" data-fam="buttons" aria-pressed="false">Кнопки</button>
         <button type="button" data-fam="relays" aria-pressed="false">Реле</button>
       </div>
-      <div id="rooms-mark" class="rooms" aria-label="Фильтр комнаты"></div>
+      <div id="rooms-mark" class="rooms" hidden aria-hidden="true"></div>
       <div id="mark-body" class="vitrine"></div>
     </section>
 

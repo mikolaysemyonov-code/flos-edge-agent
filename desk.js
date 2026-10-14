@@ -11,9 +11,9 @@
       { id: "scenes", ru: "Сценарии" },
     ];
     let activeTab = "mark";
-    let markPath = "rooms";
-    let modFamily = "light";
-    /** @deprecated path toggle removed from UI; modules only via diagnostics details */
+    let markPath = "modules";
+    let modFamily = "all";
+    let openAssign = "";
     let deskCatalog = [];
     let deskSolutions = [];
     let cardFilter = "Свет";
@@ -228,13 +228,14 @@
     function closeModule() {
       if (!openMod) return;
       openMod = "";
+      openAssign = "";
       markPending = {};
       renderMark();
     }
     function normalizeTab(tab) {
-      if (tab === "light" || tab === "buttons" || tab === "relays") {
+      if (tab === "light" || tab === "buttons" || tab === "relays" || tab === "all") {
         markPath = "modules";
-        modFamily = tab === "buttons" ? "buttons" : tab === "relays" ? "relays" : "light";
+        modFamily = tab === "buttons" ? "buttons" : tab === "relays" ? "relays" : tab === "all" ? "all" : "light";
         return "mark";
       }
       return tab;
@@ -2686,53 +2687,210 @@
       if (fromLabel) return fromLabel;
       return Number((/_(\d+)$/.exec(String((s && s.deviceTopicKey) || "")) || [])[1] || 0);
     }
-    function paintModuleFace(el, s) {
+    function moduleTone(s) {
+      const kind = moduleKind(s);
+      if (kind === "led" || kind === "dali") return "amber";
+      return "sky";
+    }
+    function paintModuleFace(el, s, opts) {
+      const drill = opts && opts.drill;
       const n = visibleChannels(s).length || s.channelCount || 0;
       const named = namedCount(s);
-      const rooms = moduleRoomsOf(s);
+      const free = Math.max(0, n - named);
       const kind = moduleKind(s);
-      const slave = moduleSlaveOf(s);
-      el.innerHTML = "<span class=\"vtop\"><span class=\"ico\"></span><span class=\"cat\"></span></span><span class=\"vt\"></span><span class=\"vs\"></span>";
-      el.querySelector(".ico").innerHTML = MOD_ICO[kind] || MOD_ICO.led;
-      const cat = el.querySelector(".cat");
-      cat.textContent = named ? named + " из " + n : (n ? n + " кан." : moduleKindRu(kind));
-      if (named) cat.classList.add("on");
-      el.querySelector(".vt").textContent = s.label || s.deviceTopicKey;
-      const bits = [];
-      if (slave) bits.push("S" + slave);
-      bits.push(rooms.length ? rooms.join(" · ") : "без имён");
-      el.querySelector(".vs").textContent = bits.join(" · ");
+      const tone = moduleTone(s);
+      el.classList.add("mod-card", tone);
+      if (named) el.classList.add("on");
+      el.replaceChildren();
+      const top = document.createElement("div");
+      top.className = "vtop";
+      const ico = document.createElement("span");
+      ico.className = "ico";
+      ico.innerHTML = MOD_ICO[kind] || MOD_ICO.led;
+      const cat = document.createElement("span");
+      cat.className = "cat" + (named ? " on" : "");
+      cat.textContent = named + "/" + n + " занято";
+      top.append(ico, cat);
+      const vt = document.createElement("span");
+      vt.className = "vt";
+      vt.textContent = s.label || s.deviceTopicKey;
+      const vs = document.createElement("span");
+      vs.className = "vs";
+      vs.textContent = drill
+        ? "Дальше: комната → тип нагрузки"
+        : "Клеммы модуля · комната → тип";
+      const bars = document.createElement("div");
+      bars.className = "ch-bars";
+      bars.setAttribute("aria-hidden", "true");
+      visibleChannels(s).forEach((ch) => {
+        const b = document.createElement("span");
+        b.className = "ch-bar" + (pairName(s, ch) ? " named" : "");
+        bars.appendChild(b);
+      });
+      if (!n) {
+        const b = document.createElement("span");
+        b.className = "ch-bar";
+        bars.appendChild(b);
+      }
+      el.append(top, vt, vs, bars);
+      if (!drill) {
+        const foot = document.createElement("div");
+        foot.className = "mod-foot";
+        const open = document.createElement("span");
+        open.className = "mod-open";
+        open.textContent = "Открыть";
+        const freeEl = document.createElement("span");
+        freeEl.className = "mod-free";
+        freeEl.textContent = free ? "свободно " + free : "все заняты";
+        const badge = document.createElement("span");
+        badge.className = "mod-badge";
+        badge.textContent = "На шине";
+        foot.append(open, freeEl, badge);
+        el.appendChild(foot);
+      } else {
+        const pills = document.createElement("div");
+        pills.className = "mod-pills";
+        const occ = document.createElement("span");
+        occ.className = "mod-pill";
+        occ.textContent = named + "/" + n + " занято";
+        const bus = document.createElement("span");
+        bus.className = "mod-pill on";
+        bus.textContent = "На шине";
+        pills.append(occ, bus);
+        el.appendChild(pills);
+      }
     }
     function moduleTile(s) {
-      const named = namedCount(s);
       const btn = document.createElement("button");
       btn.type = "button";
-      btn.className = "vcard" + (named ? " on" : "");
-      if (roomFilter && moduleRoomsOf(s).includes(roomFilter)) btn.classList.add("on");
+      btn.className = "vcard";
       paintModuleFace(btn, s);
       btn.addEventListener("click", () => {
         openMod = s.deviceTopicKey;
+        openAssign = "";
         renderMark();
       });
       return btn;
     }
+    function drillChannelRow(s, ch) {
+      const row = document.createElement("li");
+      row.className = "drill-ch";
+      const key = contactKey(s.deviceTopicKey, ch.controlId);
+      row.dataset.contact = key;
+      const original = pairName(s, ch);
+      const bound = Boolean(original);
+      const saved = splitMark(original);
+      const pending = markPending[key] || {};
+      const current = {
+        room: pending.room || saved.room || "",
+        type: pending.type || saved.type,
+      };
+      const assigning = openAssign === key;
+      if (bound) row.classList.add("bound");
+      if (assigning) row.classList.add("assign");
+      const main = document.createElement("div");
+      main.className = "drill-main";
+      const led = document.createElement("span");
+      led.className = "ch-led " + (bound ? "ok" : "free");
+      led.title = bound ? "привязан" : "на шине, свободен";
+      const knob = document.createElement("span");
+      knob.className = "knob";
+      knob.textContent = prettyControlId(ch.controlId);
+      const mid = document.createElement("button");
+      mid.type = "button";
+      mid.className = "drill-mid";
+      const ttl = document.createElement("span");
+      ttl.className = "ttl" + (bound ? "" : " mute");
+      ttl.textContent = bound ? prettyContactName(original) : "Свободен";
+      const sub = document.createElement("span");
+      sub.className = "hint";
+      sub.textContent = bound
+        ? (current.room || "комната")
+        : "Комната не выбрана";
+      mid.append(ttl, sub);
+      mid.addEventListener("click", () => {
+        openAssign = assigning ? "" : key;
+        renderMark();
+      });
+      const act = document.createElement("div");
+      act.className = "drill-act";
+      const bind = document.createElement("button");
+      bind.type = "button";
+      bind.className = "ghost bind";
+      bind.textContent = assigning ? "Свернуть" : (bound ? "Изменить" : "Привязать");
+      bind.addEventListener("click", () => {
+        openAssign = assigning ? "" : key;
+        renderMark();
+      });
+      act.appendChild(bind);
+      if (bound) {
+        const drop = document.createElement("button");
+        drop.type = "button";
+        drop.className = "ghost";
+        drop.textContent = "Снять";
+        drop.addEventListener("click", () => {
+          openAssign = "";
+          pickMark(s, ch, { room: "", type: "" });
+        });
+        act.appendChild(drop);
+      }
+      main.append(led, knob, mid, act);
+      row.appendChild(main);
+      if (assigning) {
+        const fields = document.createElement("div");
+        fields.className = "rows drill-fields";
+        const isLoad = isDeskLoad(ch.controlId);
+        const types = [...markTypes(s, ch, isLoad)];
+        if (current.type && !types.includes(current.type)) types.push(current.type);
+        fields.appendChild(makeField(
+          "Комната",
+          roomsFromBus(),
+          current.room,
+          "Выбрать",
+          (v) => {
+            if (!v) pickMark(s, ch, { room: "", type: "" });
+            else pickMark(s, ch, { room: v });
+          },
+          "Новая комната…",
+          () => promptRoom().then((name) => { if (name) pickMark(s, ch, { room: name }); }),
+          !!(current.type && !current.room),
+          true,
+        ));
+        fields.appendChild(makeField(
+          typeSteph(s, ch, isLoad),
+          types,
+          current.type,
+          "Выбрать",
+          (v) => {
+            if (!v) pickMark(s, ch, { room: "", type: "" });
+            else pickMark(s, ch, { type: v });
+          },
+          "",
+          null,
+          !!(current.room && !current.type),
+          true,
+        ));
+        row.appendChild(fields);
+      }
+      return row;
+    }
     function renderModuleDrill(box, s) {
       const back = document.createElement("button");
       back.type = "button";
-      back.className = "back";
-      back.setAttribute("aria-label", "К модулям");
-      back.innerHTML = "<svg viewBox='0 0 24 24'><path d='M15 18l-6-6 6-6'/></svg><span>К модулям</span>";
-      back.addEventListener("click", closeModule);
+      back.className = "back ghost-back";
+      back.setAttribute("aria-label", "Все модули");
+      back.innerHTML = "<svg viewBox='0 0 24 24'><path d='M15 18l-6-6 6-6'/></svg><span>Все модули</span>";
+      back.addEventListener("click", () => {
+        openAssign = "";
+        closeModule();
+      });
       const head = document.createElement("div");
-      head.className = "vcard" + (namedCount(s) ? " on" : "");
-      paintModuleFace(head, s);
-      const tip = document.createElement("p");
-      tip.className = "meta";
-      tip.textContent = "Каждый канал: комната + тип. Потом — вкладка «Типовые».";
+      head.className = "vcard";
+      paintModuleFace(head, s, { drill: true });
       const chs = document.createElement("ul");
-      chs.className = "channels";
-      appendChannelBlock(chs, s, visibleChannels(s));
-      box.append(back, head, tip, chs);
+      chs.className = "channels drill-list";
+      visibleChannels(s).forEach((ch) => chs.appendChild(drillChannelRow(s, ch)));
+      box.append(back, head, chs);
     }
     function fillRoomChannelList(box, rows, emptyText) {
       box.className = "modopen";
@@ -2975,14 +3133,16 @@
       const body = $("mark-body");
       if (!body) return;
       body.hidden = false;
-      const famRows = split[modFamily] || [];
-      const empty = roomFilter
-        ? ("В фильтре «" + roomFilter + "» нет модулей — снимите фильтр или разметьте канал.")
-        : modFamily === "buttons"
-          ? "Кнопок на шине нет."
-          : modFamily === "relays"
-            ? "Реле на шине нет."
-            : "Света на шине нет. Нажмите «Обновить».";
+      const famRows = modFamily === "all"
+        ? sortModules([].concat(split.light || [], split.buttons || [], split.relays || []))
+        : (split[modFamily] || []);
+      const empty = modFamily === "buttons"
+        ? "Кнопок на шине нет."
+        : modFamily === "relays"
+          ? "Реле на шине нет."
+          : modFamily === "light"
+            ? "Света на шине нет. Нажмите «Обновить»."
+            : "Модулей на шине нет. Нажмите «Обновить».";
       fillModuleVitrine(body, famRows, empty);
     }
     function renderShelves(rows) {
@@ -3157,8 +3317,9 @@
     });
     document.querySelectorAll("#modFamily [data-fam]").forEach((btn) => {
       btn.addEventListener("click", () => {
-        modFamily = /^(light|buttons|relays)$/.test(btn.dataset.fam) ? btn.dataset.fam : "light";
+        modFamily = /^(all|light|buttons|relays)$/.test(btn.dataset.fam) ? btn.dataset.fam : "all";
         openMod = "";
+        openAssign = "";
         markPending = {};
         markPath = "modules";
         renderMark();
