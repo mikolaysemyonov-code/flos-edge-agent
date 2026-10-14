@@ -18,9 +18,11 @@
     let markPending = {};
     let roomFilter = "";
     let openMod = "";
-    let pouredPane = "mark";
+    let pouredPane = "send";
     let lastReleases = [];
     let canPourDesk = false;
+    let canPourNamesDesk = false;
+    let canPourRulesDesk = false;
     let canRepairDesk = false;
     let openSceneId = "";
     let openContact = "";
@@ -278,13 +280,10 @@
       const rows = j.rows || [];
       const gaps = j.gaps || [];
       canPourDesk = j.canPour === true;
-      canRepairDesk = j.canRepair === true || canPourDesk;
-      $("pour").disabled = !(canPourDesk || canRepairDesk);
-      $("pour").title = canPourDesk
-        ? "Записать на щит: имена и типовые (переключение / все выкл)"
-        : canRepairDesk
-          ? "Убрать дубли FORM LOGIC OS"
-          : (j.reason || "");
+      canPourNamesDesk = j.canPourNames === true;
+      canPourRulesDesk = j.canPourRules === true;
+      canRepairDesk = j.canRepair === true;
+      paintPourButtons();
       $("previewHead").style.color = "";
       const ready = j.ready || {};
       const readyBits = [
@@ -833,7 +832,7 @@
       if (!lastReleases.length) {
         const empty = document.createElement("p");
         empty.className = "empty";
-        empty.textContent = "Пока нет заливок. Первая появится после «Залить на щит».";
+        empty.textContent = "Пока нет заливок. Первая появится после «Залить имена» или «Залить сценарии».";
         box.appendChild(empty);
         return;
       }
@@ -1034,13 +1033,13 @@
       const all = collectReadyItems();
       const sendN = all.filter((i) => pourLane(i) === "send").length;
       const diskN = all.filter((i) => pourLane(i) === "disk").length;
+      // Как Vercel: новое → залить; сценарии на щите; журнал откатов. Без лишней «Разметки».
       const tabs = [
-        { id: "mark", ru: "Разметка" },
-        { id: "rules", ru: "Сценарии" },
         { id: "send", ru: "Новое" + (sendN ? " · " + sendN : "") },
+        { id: "rules", ru: "Сценарии" },
         { id: "hist", ru: "Журнал" + (lastReleases.length ? " · " + lastReleases.length : "") },
       ];
-      if (!tabs.some((t) => t.id === pouredPane)) pouredPane = "mark";
+      if (!tabs.some((t) => t.id === pouredPane)) pouredPane = "send";
       bar.hidden = pouredOpen();
       bar.replaceChildren();
       tabs.forEach((t) => {
@@ -1056,30 +1055,40 @@
         });
         bar.appendChild(b);
       });
+      paintPourButtons();
+      $("n-poured").textContent = sendN || "";
+    }
+    function paintPourButtons() {
       const wrap = $("pourWrap");
-      if (wrap) {
-        // «Залить» на Новое / Разметка / Журнал — не прячем с полки разметки.
-        const showPour = (pouredPane === "send" || pouredPane === "hist" || pouredPane === "mark") && !pouredOpen();
-        wrap.hidden = !showPour;
-        const pourBtn = $("pour");
-        const canAct = canPourDesk || canRepairDesk;
-        pourBtn.disabled = !canAct;
-        if (pouredPane === "hist" && canPourDesk) {
-          pourBtn.textContent = "Залить на щит";
-          pourBtn.title = "Записать имена и типовые со стола на щит";
-        } else if (pouredPane === "hist") {
-          pourBtn.textContent = "Убрать дубли";
-          pourBtn.title = canRepairDesk
-            ? "Спрятать лишние строки FORM LOGIC OS"
-            : (lastPreview.reason || "Нечего убирать");
-        } else {
-          pourBtn.textContent = "Залить на щит";
-          pourBtn.title = canPourDesk
-            ? "Записать имена и типовые на щит"
-            : (lastPreview.reason || "Пока нечего лить");
-        }
+      if (!wrap) return;
+      const show = (pouredPane === "send" || pouredPane === "hist") && !pouredOpen();
+      wrap.hidden = !show;
+      const namesBtn = $("pourNames");
+      const rulesBtn = $("pourRules");
+      const repairBtn = $("pour");
+      if (namesBtn) {
+        namesBtn.hidden = pouredPane === "hist" && !canPourNamesDesk;
+        namesBtn.disabled = !canPourNamesDesk;
+        namesBtn.textContent = "Залить имена";
+        namesBtn.title = canPourNamesDesk
+          ? "Только разметка → 00_core (FORM LOGIC OS)"
+          : "Нет новых имён";
       }
-      $("n-poured").textContent = diskN || "";
+      if (rulesBtn) {
+        rulesBtn.hidden = pouredPane === "hist" && !canPourRulesDesk;
+        rulesBtn.disabled = !canPourRulesDesk;
+        rulesBtn.textContent = "Залить сценарии";
+        rulesBtn.title = canPourRulesDesk
+          ? "Типовые со стола → 40_rules_user"
+          : "Нет сценариев на столе";
+      }
+      if (repairBtn) {
+        const showRepair = pouredPane === "hist" && canRepairDesk && !canPourNamesDesk;
+        repairBtn.hidden = !showRepair;
+        repairBtn.disabled = !showRepair;
+        repairBtn.textContent = "Убрать дубли";
+        repairBtn.title = showRepair ? "Спрятать лишнее в FORM LOGIC OS" : "";
+      }
     }
     function mergeContactRows(base, extra) {
       const rows = (base || []).slice();
@@ -1341,11 +1350,7 @@
         const head = $("previewHead");
         if (head) {
           head.style.color = "";
-          head.textContent = canPourDesk
-            ? "Сверху — что сейчас на щите. «Залить на щит» — сохранить. «Вернуть» — откатить. Стрелка — к разметке."
-            : canRepairDesk
-              ? "Сверху — что сейчас на щите. «Вернуть» — откатить. «Убрать дубли» — спрятать лишнее. Стрелка — к разметке."
-              : "Сверху — что сейчас на щите. «Вернуть» — откатить к этой заливке. Стрелка — к разметке.";
+          head.textContent = "Сверху — что на щите. «Вернуть» — откат. Имена и сценарии заливайте отдельно.";
         }
         return;
       }
@@ -1412,14 +1417,12 @@
         head.style.color = "";
         if (pouredPane === "send") {
           const noCard = items.filter((i) => !i.scene && !(i.cards || []).length && !(i.hints || []).length).length;
-          head.textContent = (canPourDesk
-            ? "Новое на столе. «Залить на щит» — записать. «Снять» / «Как на щите» — убрать."
+          head.textContent = (canPourNamesDesk || canPourRulesDesk
+            ? "Новое. «Залить имена» и «Залить сценарии» — как на Vercel, по отдельности."
             : "Новое. " + (lastPreview.reason || "Пока нечего лить."))
             + (noCard ? " · " + noCard + " без карточки" : "");
         } else {
-          head.textContent = (pouredPane === "rules"
-            ? "Сценарии. Логика — типовые и сценарии."
-            : "Разметка. Комната и тип.") + " · " + bits;
+          head.textContent = "Сценарии на щите и на столе. Типовые — отдельная вкладка. · " + bits;
         }
       }
     }
@@ -1926,11 +1929,11 @@
       const twin = isDeskDrive(ch.controlId) ? driveTwin(ch.controlId) : "";
       if (twin) jobs.push(saveName(s.deviceTopicKey, twin, next));
       delete markPending[k];
-      Promise.all(jobs).then(() => {
+          Promise.all(jobs).then(() => {
         loadLast().then(() => {
           const head = $("previewHead");
-          if (head && canPourDesk) {
-            head.textContent = "Имя на столе. «Залито → Новое» или «Залить на щит».";
+          if (head && (canPourNamesDesk || canPourDesk)) {
+            head.textContent = "Имя на столе → вкладка «На щит» → «Залить имена».";
           }
         });
       }).catch(() => {});
@@ -2404,8 +2407,10 @@
         if (j.ok) {
           lastReleases = j.pushes || j.releases || [];
           canPourDesk = j.canPour === true;
-          canRepairDesk = j.canRepair === true || canPourDesk;
-          if ($("pour")) $("pour").disabled = !(canPourDesk || canRepairDesk);
+          canPourNamesDesk = j.canPourNames === true;
+          canPourRulesDesk = j.canPourRules === true;
+          canRepairDesk = j.canRepair === true;
+          paintPourButtons();
         }
       } catch (_) {
         lastReleases = lastReleases || [];
@@ -2419,28 +2424,32 @@
       } catch (_) { /* зеркало ниже */ }
       await scanNow();
     }
-    document.querySelectorAll(".tab").forEach((btn) => {
-      btn.addEventListener("click", () => setTab(btn.dataset.tab));
-    });
-    $("pour").addEventListener("click", () => {
-      if ((!canPourDesk && !canRepairDesk) || $("pour").disabled) return;
-      const onHist = pouredPane === "hist";
-      $("pour").disabled = true;
-      $("pour").textContent = onHist && !canPourDesk ? "Убираю…" : "Заливаю…";
-      fetch("/runtime/desk-pour", { method: "POST" })
+    function runDeskPour(scope, btn) {
+      if (!btn || btn.disabled) return;
+      const label = btn.textContent;
+      btn.disabled = true;
+      btn.textContent = scope === "names" ? "Имена…" : scope === "rules" ? "Сценарии…" : "Убираю…";
+      fetch("/runtime/desk-pour", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ scope: scope === "repair" ? "names" : scope }),
+      })
         .then((r) => r.json())
         .then((j) => {
-          $("pour").textContent = onHist && !canPourDesk ? "Убрать дубли" : "Залить на щит";
+          btn.textContent = label;
           if (!j.ok) {
-            $("pour").disabled = !(canPourDesk || canRepairDesk);
+            paintPourButtons();
             $("previewHead").style.color = "rgb(var(--bad))";
             $("previewHead").textContent = j.error || j.reason || "Не залил";
             return;
           }
           $("previewHead").style.color = "";
+          const scopeRu = j.scope === "rules" ? "Сценарии" : j.scope === "names" ? "Имена" : "Щит";
           const bits = [
-            j.mqttOnly ? "Дубли спрятаны" : ("Залито · " + (j.appliedRevisionId || "").replace(/^fnv1a32:/i, "").slice(0, 8)),
+            j.mqttOnly ? "Дубли спрятаны" : (scopeRu + " · " + (j.appliedRevisionId || "").replace(/^fnv1a32:/i, "").slice(0, 8)),
             j.restarted ? "правила перезапущены" : "",
+            j.namedCount ? ("имён " + j.namedCount) : "",
+            j.emittedSolutions ? ("сценариев " + j.emittedSolutions) : "",
             j.hiddenGhosts ? ("скрыто " + j.hiddenGhosts) : "",
           ].filter(Boolean);
           $("previewHead").textContent = bits.join(" · ") || "Готово";
@@ -2449,12 +2458,33 @@
           loadPreview();
         })
         .catch((e) => {
-          $("pour").textContent = onHist && !canPourDesk ? "Убрать дубли" : "Залить на щит";
-          $("pour").disabled = !(canPourDesk || canRepairDesk);
+          btn.textContent = label;
+          paintPourButtons();
           $("previewHead").style.color = "rgb(var(--bad))";
           $("previewHead").textContent = String(e.message || e);
         });
+    }
+    document.querySelectorAll(".tab").forEach((btn) => {
+      btn.addEventListener("click", () => setTab(btn.dataset.tab));
     });
+    if ($("pourNames")) {
+      $("pourNames").addEventListener("click", () => {
+        if (!canPourNamesDesk) return;
+        runDeskPour("names", $("pourNames"));
+      });
+    }
+    if ($("pourRules")) {
+      $("pourRules").addEventListener("click", () => {
+        if (!canPourRulesDesk) return;
+        runDeskPour("rules", $("pourRules"));
+      });
+    }
+    if ($("pour")) {
+      $("pour").addEventListener("click", () => {
+        if (!canRepairDesk || $("pour").disabled) return;
+        runDeskPour("repair", $("pour"));
+      });
+    }
     const fromHash = location.hash.replace("#", "");
     if (/^(light|buttons|relays|cards|poured)$/.test(fromHash)) setTab(fromHash);
     loadHealth();

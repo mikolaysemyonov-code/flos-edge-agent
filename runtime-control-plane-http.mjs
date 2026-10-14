@@ -522,6 +522,8 @@ export function handleRuntimeReleases(_req, res) {
   jsonWrite(res, 200, {
     ok: true,
     canPour: gate.canPour === true,
+    canPourNames: gate.canPourNames === true,
+    canPourRules: gate.canPourRules === true,
     canRepair: gate.canRepair === true,
     reason: gate.reason || "",
     branch: "main",
@@ -532,16 +534,29 @@ export function handleRuntimeReleases(_req, res) {
   });
 }
 
-export async function handleRuntimeDeskPour(_req, res) {
-  const { buildDeskMqttRepairPlan } = await import("./runtime-desk-pour.mjs");
-  let pkg = buildDeskPourPackage();
+export async function handleRuntimeDeskPour(req, res) {
+  const { buildDeskMqttRepairPlan, normalizePourScope } = await import("./runtime-desk-pour.mjs");
+  let scope = "all";
+  try {
+    const url = new URL(req.url || "/runtime/desk-pour", "http://local");
+    if (url.searchParams.get("scope")) scope = normalizePourScope(url.searchParams.get("scope"));
+    else {
+      const body = await readJsonBody(req, 4096).catch(() => ({}));
+      if (body && body.scope) scope = normalizePourScope(body.scope);
+    }
+  } catch {
+    scope = "all";
+  }
+  let pkg = buildDeskPourPackage(scope);
   let usedMqttOnly = false;
-  if (!pkg.ok || !pkg.canPour || !pkg.shards?.length) {
+  // MQTT-hide только для names/all — иначе «Залить сценарии» не должно чинить ядро взамен.
+  if ((!pkg.ok || !pkg.canPour || !pkg.shards?.length) && scope !== "rules") {
     const plan = buildDeskMqttRepairPlan();
     if (!plan.ok) {
       jsonWrite(res, 400, {
         ok: false,
         canPour: false,
+        scope,
         error: pkg.reason || plan.reason || "blocked",
         reason: pkg.reason || plan.reason,
       });
@@ -551,6 +566,7 @@ export async function handleRuntimeDeskPour(_req, res) {
       ...pkg,
       ok: true,
       canPour: true,
+      scope,
       shards: plan.shards,
       loadOrder: plan.shards.map((s) => s.filename),
       revisionId: plan.revisionId || `mqtt-hide:${Date.now().toString(36)}`,
@@ -561,6 +577,15 @@ export async function handleRuntimeDeskPour(_req, res) {
       emittedSolutions: 0,
     };
     usedMqttOnly = !plan.shards.length;
+  } else if (!pkg.ok || !pkg.canPour || !pkg.shards?.length) {
+    jsonWrite(res, 400, {
+      ok: false,
+      canPour: false,
+      scope,
+      error: pkg.reason || "blocked",
+      reason: pkg.reason,
+    });
+    return;
   }
   try {
     let result = {
@@ -592,6 +617,7 @@ export async function handleRuntimeDeskPour(_req, res) {
     jsonWrite(res, 200, {
       ok: true,
       status: "applied",
+      scope: pkg.scope || scope,
       appliedRevisionId: pkg.revisionId,
       ackCount: result.ackCount,
       deployMode: result.deployMode,

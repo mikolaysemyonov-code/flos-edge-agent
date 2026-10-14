@@ -1,10 +1,11 @@
 /**
- * Заливка со стола: разметка + типовые → шарды → диск. Дим пока не эмитим.
+ * Заливка со стола: имена → 00_core, сценарии → 40_rules_user.
+ * scope: names | rules | all — как split на Vercel.
  */
 import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
-import { buildDeskPourPreview, readDeskDocument, readDeskMarking } from "./runtime-desk-marking.mjs";
+import { buildDeskPourPreview, readDeskMarking } from "./runtime-desk-marking.mjs";
 import { listDeskSolutions } from "./runtime-desk-solutions.mjs";
 import {
   isLoadControl,
@@ -86,6 +87,14 @@ function buildCoreRepair(coreSrc, named, opts = {}) {
   };
 }
 
+/** names | rules | all */
+export function normalizePourScope(raw) {
+  const s = String(raw || "all").trim().toLowerCase();
+  if (s === "names" || s === "marking" || s === "name") return "names";
+  if (s === "rules" || s === "scenarios" || s === "solutions") return "rules";
+  return "all";
+}
+
 export function assessDeskCanPour(preview) {
   const p = preview || buildDeskPourPreview(readDeskMarking(), readPouredChannelMarks(), readPouredDeskSnapshot().rules || []);
   const blocked = p.ready?.blocked || 0;
@@ -97,30 +106,30 @@ export function assessDeskCanPour(preview) {
   const sols = listDeskSolutions();
   const unsupported = sols.filter((s) => !supportedDeskSolution(s));
   const supported = sols.filter(supportedDeskSolution);
-  // blocked (карточка без имени) не стопорит весь пуш — льём именованные, их пропускаем.
   const diffs = (p.rows || []).filter((r) => r.status === "new_name" || r.status === "name" || r.status === "card");
   const named = namedLoadsFromDesk();
   const repair = /form_logic_os/.test(core)
     ? buildCoreRepair(core, named, { persist: false })
     : { changed: false, hiddenGhosts: 0 };
   const canRepair = /form_logic_os/.test(core);
-  const hasPourWork = diffs.length > 0 || supported.length > 0 || Boolean(repair.changed || repair.hiddenGhosts);
+  const canPourNames = hard.length === 0 && /form_logic_os/.test(core) && (diffs.length > 0 || Boolean(repair.changed));
+  const canPourRules = hard.length === 0 && /form_logic_os/.test(core) && supported.length > 0;
+  const hasPourWork = canPourNames || canPourRules || Boolean(repair.hiddenGhosts);
   if (!hasPourWork && !canRepair) hard.push("нечего заливать");
   if (unsupported.length && !supported.length && !diffs.length && !repair.changed && !canRepair) {
     hard.push("дим и прочие карточки — пока из облака");
   }
-  const canPour = hard.length === 0 && /form_logic_os/.test(core) && hasPourWork;
+  const canPour = hard.length === 0 && /form_logic_os/.test(core) && (canPourNames || canPourRules || Boolean(repair.changed || repair.hiddenGhosts));
   const hints = [];
   if (blocked > 0) hints.push(blocked + " без имени — пропустим");
-  if (canPour) {
-    hints.unshift(
-      blocked > 0 ? "Можно залить на щит (частично: только с именами)." : "Можно залить на щит.",
-    );
-  } else if (canRepair) {
-    hints.unshift("Убрать дубли FORM LOGIC OS");
-  }
+  if (canPourNames && canPourRules) hints.unshift("Можно залить имена и сценарии отдельно.");
+  else if (canPourNames) hints.unshift("Можно залить имена на щит.");
+  else if (canPourRules) hints.unshift("Можно залить сценарии на щит.");
+  else if (canRepair) hints.unshift("Убрать дубли FORM LOGIC OS");
   return {
     canPour,
+    canPourNames,
+    canPourRules,
     canRepair,
     reason: (canPour || canRepair ? hints : hard).filter(Boolean).join(" · ") || "Превью. Диск не трогаем.",
     ready: p.ready,
@@ -130,36 +139,84 @@ export function assessDeskCanPour(preview) {
   };
 }
 
-export function buildDeskPourPackage() {
+export function buildDeskPourPackage(scopeRaw = "all") {
+  const scope = normalizePourScope(scopeRaw);
   const gate = assessDeskCanPour();
-  if (!gate.canPour) return { ok: false, ...gate, shards: [], loadOrder: [] };
+  const wantNames = scope === "all" || scope === "names";
+  const wantRules = scope === "all" || scope === "rules";
+  if (scope === "names" && !gate.canPourNames && !gate.canRepair) {
+    return { ok: false, ...gate, scope, shards: [], loadOrder: [] };
+  }
+  if (scope === "rules" && !gate.canPourRules) {
+    return { ok: false, ...gate, scope, shards: [], loadOrder: [] };
+  }
+  if (scope === "all" && !gate.canPour) {
+    return { ok: false, ...gate, scope, shards: [], loadOrder: [] };
+  }
   const coreSrc = readShard("00_core.js");
   const userSrc = readShard("40_rules_user.js") || readShard("40_rules_integrator.js");
   const named = namedLoadsFromDesk();
-  const core = buildCoreRepair(coreSrc, named, { persist: true });
-  if (!core.ok) return { ok: false, canPour: false, reason: core.error || "core", shards: [] };
-  const sols = listDeskSolutions().filter(supportedDeskSolution);
-  const user = mergeDeskSolutionsIntoUser(userSrc, sols);
-  if (!core.changed && !user.changed) {
-    return { ok: false, canPour: false, reason: "стол уже совпадает с диском", shards: [] };
-  }
   const shards = [];
-  if (core.changed) shards.push({ filename: "00_core.js", content: core.content });
-  if (user.changed) shards.push({ filename: "40_rules_user.js", content: user.content });
+  let hiddenGhosts = 0;
+  let removedIds = [];
+  let activeIds = [];
+  let namedCount = 0;
+  let emittedSolutions = 0;
+
+  if (wantNames) {
+    const core = buildCoreRepair(coreSrc, named, { persist: true });
+    if (!core.ok) return { ok: false, canPour: false, reason: core.error || "core", shards: [], scope };
+    if (core.changed) {
+      shards.push({ filename: "00_core.js", content: core.content });
+      namedCount = named.length;
+    }
+    hiddenGhosts = core.hiddenGhosts || 0;
+    removedIds = core.removedIds || [];
+    activeIds = core.activeIds || [];
+  }
+
+  if (wantRules) {
+    const sols = listDeskSolutions().filter(supportedDeskSolution);
+    const user = mergeDeskSolutionsIntoUser(userSrc, sols);
+    if (user.changed) {
+      shards.push({ filename: "40_rules_user.js", content: user.content });
+      emittedSolutions = user.emitted;
+    }
+  }
+
+  if (!shards.length) {
+    return {
+      ok: false,
+      canPour: false,
+      canPourNames: gate.canPourNames,
+      canPourRules: gate.canPourRules,
+      canRepair: gate.canRepair,
+      reason: scope === "names"
+        ? "имена уже на щите"
+        : scope === "rules"
+          ? "сценарии уже на щите"
+          : "стол уже совпадает с диском",
+      shards: [],
+      scope,
+    };
+  }
   const revisionId = fnvRevision(shards.map((s) => s.filename + "\n" + s.content));
   return {
     ok: true,
     canPour: true,
+    canPourNames: gate.canPourNames,
+    canPourRules: gate.canPourRules,
     canRepair: gate.canRepair,
     reason: gate.reason,
+    scope,
     revisionId,
     loadOrder: shards.map((s) => s.filename),
     shards,
-    emittedSolutions: user.emitted,
-    namedCount: named.length,
-    hiddenGhosts: core.hiddenGhosts || 0,
-    removedIds: core.removedIds || [],
-    activeIds: core.activeIds || [],
+    emittedSolutions,
+    namedCount,
+    hiddenGhosts,
+    removedIds,
+    activeIds,
   };
 }
 
