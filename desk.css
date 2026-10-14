@@ -399,6 +399,40 @@
       grid-column: 1 / -1; justify-self: start;
       min-height: 2.4rem; padding: .4rem .9rem;
     }
+    .cards-room {
+      margin: 0 0 .55rem;
+      padding: .4rem .65rem;
+      border-radius: .65rem;
+      background: rgb(255 255 255 / .04);
+      border: 1px solid rgb(255 255 255 / .08);
+      color: rgb(186 230 253);
+      font-size: .78rem;
+    }
+    .desk-sols {
+      display: grid; gap: .45rem;
+      margin: 0 0 .85rem;
+    }
+    .desk-sols li {
+      display: flex; align-items: flex-start; justify-content: space-between; gap: .65rem;
+      padding: .65rem .75rem;
+      border-radius: .85rem;
+      border: 1px solid rgb(255 255 255 / .08);
+      background: rgb(44 44 46 / .55);
+    }
+    .desk-sols li strong { font-size: .86rem; font-weight: 650; }
+    .desk-sols li .meta { margin: .2rem 0 0; font-size: .72rem; }
+    .desk-sols li > .ghost { flex: none; margin: 0; padding: .28rem .55rem; font-size: .68rem; }
+    .sheet .fld {
+      display: block; margin: .55rem 0 .2rem;
+      font-size: .65rem; font-weight: 700; letter-spacing: .06em;
+      text-transform: uppercase; color: var(--mute);
+    }
+    .sheet select.bind {
+      width: 100%; min-height: 2.4rem;
+      border-radius: .65rem; border: 1px solid rgb(255 255 255 / .12);
+      background: rgb(0 0 0 / .25); color: inherit;
+      padding: .4rem .65rem; font: inherit; font-size: .86rem;
+    }
     .rooms { display: flex; flex-wrap: wrap; gap: .35rem; margin: 0 0 .85rem; }
     .rooms.need {
       outline: 1px solid rgb(var(--sky) / .55);

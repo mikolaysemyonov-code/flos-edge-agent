@@ -268,6 +268,11 @@
             : "3 · Залить имена, потом сценарии";
       }
       if (tab === "mark") renderMark();
+      if (tab === "cards") {
+        paintCardsRoomBanner();
+        renderDeskSolutions();
+        renderVitrine();
+      }
       if (location.hash.replace("#", "") !== tab) history.replaceState(null, "", "#" + tab);
     }
     function previewStatusRu(s) {
@@ -1588,6 +1593,28 @@
       if (name) return prettyContactName(name);
       return ((s && s.label) || c.deviceTopicKey) + " · " + prettyControlId(c.controlId);
     }
+    /** Первая строка для человека; техника — в title. */
+    function solContactHuman(c) {
+      if (!c) return "по расписанию";
+      const full = solContactLabel(c);
+      if (!/WB-|GPIO|Channel|Input |EXT/i.test(full)) return full;
+      const s = lastShelvesRows.find((r) => r.deviceTopicKey === c.deviceTopicKey);
+      const ch = s && (s.channels || []).find((x) => x.controlId === c.controlId);
+      const name = ch && String(ch.name || "").trim();
+      if (name) return prettyContactName(name);
+      return prettyControlId(c.controlId);
+    }
+    function paintCardsRoomBanner() {
+      const el = $("cardsRoom");
+      if (!el) return;
+      if (roomFilter) {
+        el.hidden = false;
+        el.textContent = "Комната «" + roomFilter + "» — в списках сначала её кнопки и линии.";
+      } else {
+        el.hidden = true;
+        el.textContent = "";
+      }
+    }
     function preferRoomRows(rows) {
       if (!roomFilter) return rows;
       const home = [];
@@ -1644,14 +1671,18 @@
     function renderDeskSolutions() {
       const ul = $("deskSols");
       ul.innerHTML = "";
+      paintCardsRoomBanner();
       deskSolutions.filter((sol) => catOfSol(sol) === cardFilter).forEach((sol) => {
         const li = document.createElement("li");
-        const t = (sol.targets || []).map(solContactLabel).join(" · ");
-        li.innerHTML = "";
+        const tHuman = (sol.targets || []).map(solContactHuman).join(" · ");
+        const tFull = (sol.targets || []).map(solContactLabel).join(" · ");
+        const trigH = solContactHuman(sol.trigger);
+        const trigF = solContactLabel(sol.trigger);
         const left = document.createElement("div");
         left.innerHTML = "<strong></strong><div class=\"meta\"></div>";
         left.querySelector("strong").textContent = sol.title || sol.solutionId;
-        left.querySelector(".meta").textContent = solContactLabel(sol.trigger) + (t ? " → " + t : "");
+        left.querySelector(".meta").textContent = trigH + (tHuman ? " → " + tHuman : "");
+        left.title = trigF + (tFull ? " → " + tFull : "");
         const del = document.createElement("button");
         del.type = "button";
         del.className = "ghost";
@@ -1700,12 +1731,14 @@
       const trigLab = document.createElement("span");
       trigLab.className = "fld";
       if (needTrig) {
-        trigLab.textContent = "Кнопка / датчик";
+        trigLab.textContent = /motion|reed|геркон|движен/i.test(card.id + card.title)
+          ? "Датчик"
+          : "Кнопка";
         trig = document.createElement("select");
         trig.className = "bind";
-        trig.setAttribute("aria-label", "Кнопка или датчик");
-        const trigs = namedTriggers();
-        fillSelect(trig, trigs, "С этой шины");
+        trig.setAttribute("aria-label", trigLab.textContent);
+        const trigs = namedTriggers().filter((r) => String(r.label || "").trim());
+        fillSelect(trig, trigs, roomFilter ? ("Из «" + roomFilter + "» или шины") : "С этой шины");
         if (draft && draft.trigger) {
           trig.value = contactKey(draft.trigger.deviceTopicKey, draft.trigger.controlId);
         } else if (roomFilter && trigs[0] && nameRoom(trigs[0].label) === roomFilter) {
@@ -1715,12 +1748,12 @@
         trigLab.textContent = "Расписание";
         const note = document.createElement("p");
         note.className = "meta";
-        note.textContent = "По cron. Время настроим при заливке. Сейчас — линии с этой шины.";
+        note.textContent = "По времени на контроллере. Сейчас выберите линии.";
         trig = note;
       }
       const tgtLab = document.createElement("span");
       tgtLab.className = "fld";
-      tgtLab.textContent = card.multi ? "Линии" : "Линия";
+      tgtLab.textContent = card.multi ? "Свет / линии" : "Свет";
       const loads = loadsForRoom(roomFilter);
       const err = document.createElement("p");
       err.className = "meta orphan";
@@ -1789,7 +1822,9 @@
             const head = $("previewHead");
             if (head) {
               head.style.color = "";
-              head.textContent = "На столе. Шаг 3: «Залить имена», потом «Залить сценарии».";
+              head.textContent = canPourNamesDesk
+                ? "На столе. Сначала «1 · Залить имена», потом сценарии."
+                : "На столе. Можно «2 · Залить сценарии».";
             }
             paintPourButtons();
             renderReady();
@@ -1844,11 +1879,15 @@
       catEl.textContent = onDesk.length ? "на столе" + (onDesk.length > 1 ? " · " + onDesk.length : "") : card.cat;
       if (onDesk.length) catEl.classList.add("on");
       btn.querySelector(".vt").textContent = card.title;
-      btn.querySelector(".vs").textContent = onDesk[0]
-        ? (onDesk.length > 1
-            ? onDesk.length + " на столе · нажмите — ещё одно"
-            : solContactLabel(onDesk[0].trigger) + " → " + onDesk[0].targets.map(solContactLabel).join(" · "))
-        : card.summary;
+        btn.querySelector(".vs").textContent = onDesk[0]
+          ? (onDesk.length > 1
+              ? onDesk.length + " на столе · нажмите — ещё"
+              : solContactHuman(onDesk[0].trigger) + " → " + onDesk[0].targets.map(solContactHuman).join(" · "))
+          : card.summary;
+        if (onDesk[0]) {
+          btn.title = solContactLabel(onDesk[0].trigger) + " → " +
+            onDesk[0].targets.map(solContactLabel).join(" · ");
+        }
       btn.addEventListener("click", () => openCardSheet(card, null));
       grid.appendChild(btn);
     }
