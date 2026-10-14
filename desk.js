@@ -3140,7 +3140,8 @@
       if (nMark) {
         nMark.textContent = unbound ? String(unbound) : (namedRooms || "");
       }
-      fillRooms($("rooms-mark"));
+      const roomsBar = $("rooms-mark");
+      if (roomsBar) roomsBar.hidden = true;
       paintMarkPath();
       const body = $("mark-body");
       if (!body) return;
