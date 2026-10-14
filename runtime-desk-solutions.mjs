@@ -117,16 +117,23 @@ export function upsertDeskSolution(input) {
   const next = doc.solutions.filter((s) => s.id !== id);
   next.push(row);
   writeDoc({ ...doc, solutions: next });
-  const stamp = exclusiveDeskCards([card.id]);
-  if (stamp.length) {
-    targets.forEach((t) => {
-      if (!isPourLoad(t.controlId)) return;
-      upsertDeskShelfMark({
-        deviceTopicKey: t.deviceTopicKey,
-        controlId: t.controlId,
-        cards: stamp,
+  // Merge: вкл + дим на одной линии должны жить вместе, не затирать друг друга.
+  {
+    const stamp = exclusiveDeskCards([card.id]);
+    if (stamp.length) {
+      const shelves = doc.shelves || {};
+      targets.forEach((t) => {
+        if (!isPourLoad(t.controlId)) return;
+        const prev = shelves[t.deviceTopicKey]?.channels?.[t.controlId]?.cards;
+        const merged = exclusiveDeskCards([...(Array.isArray(prev) ? prev : []), card.id]);
+        if (!merged.length) return;
+        upsertDeskShelfMark({
+          deviceTopicKey: t.deviceTopicKey,
+          controlId: t.controlId,
+          cards: merged,
+        });
       });
-    });
+    }
   }
   return { ok: true, solution: row, solutions: next };
 }

@@ -1649,9 +1649,12 @@
         if (onDesk.length) catEl.classList.add("on");
         btn.querySelector(".vt").textContent = card.title;
         btn.querySelector(".vs").textContent = onDesk[0]
-          ? solContactLabel(onDesk[0].trigger) + " → " + onDesk[0].targets.map(solContactLabel).join(" · ")
+          ? (onDesk.length > 1
+              ? onDesk.length + " на столе · нажмите — ещё одно"
+              : solContactLabel(onDesk[0].trigger) + " → " + onDesk[0].targets.map(solContactLabel).join(" · "))
           : card.summary;
-        btn.addEventListener("click", () => openCardSheet(card, onDesk[0]));
+        // Всегда новое: иначе клик правит onDesk[0] и нельзя добавить второй вкл/дим.
+        btn.addEventListener("click", () => openCardSheet(card, null));
         grid.appendChild(btn);
       });
     }
