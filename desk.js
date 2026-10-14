@@ -1500,6 +1500,17 @@
       if (name) return prettyContactName(name);
       return ((s && s.label) || c.deviceTopicKey) + " · " + prettyControlId(c.controlId);
     }
+    function preferRoomRows(rows) {
+      if (!roomFilter) return rows;
+      const home = [];
+      const other = [];
+      rows.forEach((r) => {
+        const room = nameRoom(r.label) || roomFromContacts([r]);
+        if (room === roomFilter) home.push(r);
+        else other.push(r);
+      });
+      return home.concat(other);
+    }
     function namedTriggers() {
       const named = [];
       const rest = [];
@@ -1516,7 +1527,7 @@
           else rest.push(row);
         });
       });
-      return named.concat(rest);
+      return preferRoomRows(named.concat(rest));
     }
     function fillSelect(sel, rows, placeholder) {
       sel.replaceChildren();
@@ -1605,8 +1616,13 @@
         trig = document.createElement("select");
         trig.className = "bind";
         trig.setAttribute("aria-label", "Кнопка или датчик");
-        fillSelect(trig, namedTriggers(), "С этой шины");
-        if (draft && draft.trigger) trig.value = contactKey(draft.trigger.deviceTopicKey, draft.trigger.controlId);
+        const trigs = namedTriggers();
+        fillSelect(trig, trigs, "С этой шины");
+        if (draft && draft.trigger) {
+          trig.value = contactKey(draft.trigger.deviceTopicKey, draft.trigger.controlId);
+        } else if (roomFilter && trigs[0] && nameRoom(trigs[0].label) === roomFilter) {
+          trig.value = contactKey(trigs[0].deviceTopicKey, trigs[0].controlId);
+        }
       } else {
         trigLab.textContent = "Расписание";
         const note = document.createElement("p");
@@ -1617,7 +1633,7 @@
       const tgtLab = document.createElement("span");
       tgtLab.className = "fld";
       tgtLab.textContent = card.multi ? "Линии" : "Линия";
-      const loads = namedLoads();
+      const loads = loadsForRoom(roomFilter);
       const err = document.createElement("p");
       err.className = "meta orphan";
       let collectTargets;
@@ -1649,6 +1665,8 @@
         fillSelect(tgt, loads, "Из этой разметки");
         if (draft && draft.targets && draft.targets[0]) {
           tgt.value = contactKey(draft.targets[0].deviceTopicKey, draft.targets[0].controlId);
+        } else if (roomFilter && loads[0] && loads[0].room === roomFilter) {
+          tgt.value = contactKey(loads[0].deviceTopicKey, loads[0].controlId);
         }
         tgtNode = tgt;
         collectTargets = () => [parseBindValue(tgt.value)].filter(Boolean);
@@ -1895,13 +1913,13 @@
           ? r.name + " · " + r.ch
           : r.name,
       }));
-      return all;
+      return preferRoomRows(all);
     }
     function loadsForRoom(room) {
       const all = namedLoads();
       if (!room) return all;
       const hit = all.filter((r) => r.room === room);
-      return hit.length ? hit : all;
+      return hit.length ? hit.concat(all.filter((r) => r.room !== room)) : all;
     }
     function makeField(label, items, value, placeholder, onPick, addText, onAdd, need, allowEmpty) {
       const row = document.createElement("div");
@@ -2509,8 +2527,7 @@
       }).length;
       sub.textContent = "Имён " + prog.named +
         (prog.free ? " · без имени на шине " + prog.free : "") +
-        (solN ? " · типовых " + solN : "") +
-        " · дальше шаг 2 «Типовые»";
+        (solN ? " · типовых " + solN : "");
       head.append(h, sub);
       if (prog.named || solN) {
         const bar = document.createElement("div");
@@ -2519,6 +2536,14 @@
         fill.style.width = Math.min(100, Math.round((prog.named / Math.max(prog.named + prog.free, 1)) * 100)) + "%";
         bar.appendChild(fill);
         head.appendChild(bar);
+      }
+      if (prog.named > 0) {
+        const go = document.createElement("button");
+        go.type = "button";
+        go.className = "ghost more-cards";
+        go.textContent = "Типовые этой комнаты →";
+        go.addEventListener("click", () => setTab("cards"));
+        head.appendChild(go);
       }
       box.appendChild(head);
       const split = splitShelves(lastShelvesRows);
