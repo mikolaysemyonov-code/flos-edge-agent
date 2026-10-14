@@ -2687,19 +2687,27 @@
       if (fromLabel) return fromLabel;
       return Number((/_(\d+)$/.exec(String((s && s.deviceTopicKey) || "")) || [])[1] || 0);
     }
-    function moduleTone(s) {
-      const kind = moduleKind(s);
-      if (kind === "led" || kind === "dali") return "amber";
-      return "sky";
+    function channelIsOn(ch) {
+      const v = ch && ch.lastValue;
+      if (v === 1 || v === true || v === "1" || v === "on") return true;
+      if (typeof v === "number" && Number.isFinite(v) && v > 0) return true;
+      if (typeof v === "string" && /^-?\d+(\.\d+)?$/.test(String(v).trim())) {
+        return Number(v) > 0;
+      }
+      return false;
+    }
+    function litCount(s) {
+      return visibleChannels(s).filter(channelIsOn).length;
     }
     function paintModuleFace(el, s, opts) {
       const drill = opts && opts.drill;
       const n = visibleChannels(s).length || s.channelCount || 0;
       const named = namedCount(s);
       const free = Math.max(0, n - named);
+      const lit = litCount(s);
       const kind = moduleKind(s);
-      const tone = moduleTone(s);
-      el.classList.add("mod-card", tone);
+      el.classList.add("mod-card", "sky");
+      if (lit) el.classList.add("amber", "lit");
       if (named) el.classList.add("on");
       el.replaceChildren();
       const top = document.createElement("div");
@@ -2724,7 +2732,9 @@
       bars.setAttribute("aria-hidden", "true");
       visibleChannels(s).forEach((ch) => {
         const b = document.createElement("span");
-        b.className = "ch-bar" + (pairName(s, ch) ? " named" : "");
+        const on = channelIsOn(ch);
+        const namedCh = Boolean(pairName(s, ch));
+        b.className = "ch-bar" + (on ? " lit" : namedCh ? " named" : "");
         bars.appendChild(b);
       });
       if (!n) {
@@ -2743,8 +2753,8 @@
         freeEl.className = "mod-free";
         freeEl.textContent = free ? "свободно " + free : "все заняты";
         const badge = document.createElement("span");
-        badge.className = "mod-badge";
-        badge.textContent = "На шине";
+        badge.className = "mod-badge" + (lit ? " lit" : "");
+        badge.textContent = lit ? ("Горит " + lit) : "На шине";
         foot.append(open, freeEl, badge);
         el.appendChild(foot);
       } else {
@@ -2754,8 +2764,8 @@
         occ.className = "mod-pill";
         occ.textContent = named + "/" + n + " занято";
         const bus = document.createElement("span");
-        bus.className = "mod-pill on";
-        bus.textContent = "На шине";
+        bus.className = "mod-pill" + (lit ? " lit" : " on");
+        bus.textContent = lit ? ("Горит " + lit) : "На шине";
         pills.append(occ, bus);
         el.appendChild(pills);
       }
@@ -2786,13 +2796,15 @@
         type: pending.type || saved.type,
       };
       const assigning = openAssign === key;
+      const on = channelIsOn(ch);
+      if (on) row.classList.add("lit");
       if (bound) row.classList.add("bound");
       if (assigning) row.classList.add("assign");
       const main = document.createElement("div");
       main.className = "drill-main";
       const led = document.createElement("span");
-      led.className = "ch-led " + (bound ? "ok" : "free");
-      led.title = bound ? "привязан" : "на шине, свободен";
+      led.className = "ch-led " + (on ? "lit" : bound ? "ok" : "free");
+      led.title = on ? "горит" : bound ? "привязан и выкл" : "на шине, свободен";
       const knob = document.createElement("span");
       knob.className = "knob";
       knob.textContent = prettyControlId(ch.controlId);

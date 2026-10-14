@@ -186,7 +186,11 @@ export async function handleRuntimeMqttScan(req, res) {
           out.shelves.map(({ name: _n, room: _r, channels, ...row }) => ({
             ...row,
             channels: Array.isArray(channels)
-              ? channels.map((c) => ({ controlId: c.controlId }))
+              ? channels.map((c) =>
+                  c && Object.prototype.hasOwnProperty.call(c, "lastValue")
+                    ? { controlId: c.controlId, lastValue: c.lastValue }
+                    : { controlId: c.controlId },
+                )
               : [],
           })),
           out.brokerLabel,

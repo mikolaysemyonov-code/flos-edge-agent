@@ -141,6 +141,16 @@ function sortControlIds(a, b) {
   return String(a).localeCompare(String(b));
 }
 
+/** MQTT lastValue → канал «горит» (как янтарь на разметке щита). */
+export function deskChannelIsOn(lastValue) {
+  if (lastValue === 1 || lastValue === true || lastValue === "1" || lastValue === "on") return true;
+  if (typeof lastValue === "number" && Number.isFinite(lastValue) && lastValue > 0) return true;
+  if (typeof lastValue === "string" && /^-?\d+(\.\d+)?$/.test(lastValue.trim())) {
+    return Number(lastValue) > 0;
+  }
+  return false;
+}
+
 export function groupDeskShelves(entries) {
   const map = new Map();
   for (const entry of Array.isArray(entries) ? entries : []) {
@@ -155,6 +165,7 @@ export function groupDeskShelves(entries) {
         label: formatDeskShelfLabel(key) ?? key,
         channelCount: 0,
         controls: new Set(),
+        values: new Map(),
         buses: new Set(),
         type: parsed?.type ?? "",
         slave: parsed?.slave ?? 0,
@@ -168,21 +179,31 @@ export function groupDeskShelves(entries) {
     if (isDeskShelfChannelControl(cid, raw) && !row.controls.has(cid)) {
       row.controls.add(cid);
     }
+    if (cid && entry && Object.prototype.hasOwnProperty.call(entry, "lastValue")) {
+      row.values.set(cid, entry.lastValue);
+    }
   }
   for (const row of map.values()) {
     const drives = [...row.controls].filter(isDeskDriveControl);
     if (drives.length) {
       for (const id of [...row.controls]) {
-        if (slavedKByDrives(id, drives)) row.controls.delete(id);
+        if (slavedKByDrives(id, drives)) {
+          row.controls.delete(id);
+          row.values.delete(id);
+        }
       }
     }
     row.channelCount = row.controls.size;
   }
   return [...map.values()]
-    .map(({ controls, buses, type: _t, slave: _s, ...rest }) => ({
+    .map(({ controls, values, buses, type: _t, slave: _s, ...rest }) => ({
       ...rest,
       hint: buses.size > 0 ? ruShiny(buses.size) : null,
-      channels: [...controls].sort(sortControlIds).map((controlId) => ({ controlId })),
+      channels: [...controls].sort(sortControlIds).map((controlId) => {
+        const ch = { controlId };
+        if (values.has(controlId)) ch.lastValue = values.get(controlId);
+        return ch;
+      }),
     }))
     .sort((a, b) => {
       const pa = parseDeskDeviceKey(a.deviceTopicKey);

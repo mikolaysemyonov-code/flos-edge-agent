@@ -532,13 +532,13 @@
       border-color: rgb(var(--sky) / .45);
       box-shadow: inset 0 0 0 1px rgb(var(--sky) / .14);
     }
-    button.vcard.amber.on, div.vcard.amber.on {
+    /* Янтарь только когда канал реально горит (MQTT lastValue), не от типа LED. */
+    button.vcard.lit, div.vcard.lit {
       border-color: rgb(251 191 36 / .4);
       box-shadow: inset 0 0 0 1px rgb(251 191 36 / .12);
     }
     div.vcard { margin: 0 0 .85rem; cursor: default; }
     .vcard .cat.on { color: rgb(186 230 253); }
-    .vcard.amber .cat.on { color: rgb(253 230 138); }
     .vcard .vtop { display: flex; align-items: center; justify-content: space-between; gap: .5rem; }
     .vcard .ico {
       width: 2.1rem; height: 2.1rem; border-radius: .65rem; flex: none;
@@ -546,8 +546,8 @@
       border: 1px solid rgb(255 255 255 / .12);
       background: rgb(0 0 0 / .3);
     }
-    .vcard.amber .ico { border-color: rgb(251 191 36 / .35); background: rgb(251 191 36 / .12); color: rgb(254 243 199); }
     .vcard.sky .ico { border-color: rgb(var(--sky) / .35); background: rgb(var(--sky) / .1); color: rgb(186 230 253); }
+    .vcard.lit .ico { border-color: rgb(251 191 36 / .35); background: rgb(251 191 36 / .12); color: rgb(254 243 199); }
     .vcard .ico svg { width: 16px; height: 16px; stroke: currentColor; fill: none; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
     .vcard .cat { font-size: .62rem; font-weight: 700; letter-spacing: .04em; text-transform: none; color: var(--mute); font-variant-numeric: tabular-nums; }
     .vcard .vt { font-size: .95rem; font-weight: 650; letter-spacing: -.02em; line-height: 1.25; }
@@ -555,11 +555,19 @@
     .ch-bars { display: flex; gap: .28rem; margin: .2rem 0 .15rem; }
     .ch-bar {
       flex: 1; height: .38rem; border-radius: 999px;
-      background: rgb(var(--sky) / .55);
+      background: rgb(var(--sky) / .28);
+      opacity: .55;
     }
-    .vcard.amber .ch-bar { background: rgb(251 191 36 / .7); }
-    .ch-bar.named { opacity: 1; box-shadow: 0 0 0 1px rgb(255 255 255 / .12); }
-    .ch-bar:not(.named) { opacity: .55; }
+    .ch-bar.named {
+      opacity: 1;
+      background: rgb(var(--sky) / .7);
+      box-shadow: 0 0 0 1px rgb(255 255 255 / .12);
+    }
+    .ch-bar.lit {
+      opacity: 1;
+      background: rgb(251 191 36 / .9);
+      box-shadow: 0 0 8px rgb(251 191 36 / .35);
+    }
     .mod-foot {
       display: flex; align-items: center; gap: .55rem; flex-wrap: wrap;
       margin-top: .15rem; font-size: .72rem;
@@ -571,13 +579,14 @@
       padding: .15rem .55rem; border-radius: 999px;
       background: rgb(var(--sky) / .16); color: rgb(186 230 253); font-weight: 650;
     }
-    .vcard.amber .mod-badge { background: rgb(251 191 36 / .18); color: rgb(254 243 199); }
+    .mod-badge.lit { background: rgb(251 191 36 / .2); color: rgb(254 243 199); }
     .mod-pills { display: flex; flex-wrap: wrap; gap: .35rem; margin-top: .15rem; }
     .mod-pill {
       padding: .15rem .55rem; border-radius: 999px; font-size: .68rem;
       background: rgb(255 255 255 / .08); color: var(--mute);
     }
     .mod-pill.on { background: rgb(var(--sky) / .16); color: rgb(186 230 253); }
+    .mod-pill.lit { background: rgb(251 191 36 / .2); color: rgb(254 243 199); }
     .ghost-back {
       background: transparent !important; color: var(--mute) !important;
       box-shadow: none !important; padding-left: .2rem !important;
@@ -589,6 +598,7 @@
       border-top: 1px solid rgb(255 255 255 / .06);
     }
     .drill-ch.bound { background: rgb(16 185 129 / .04); }
+    .drill-ch.lit { background: rgb(251 191 36 / .1); }
     .drill-ch.assign { background: rgb(var(--sky) / .06); }
     .drill-main {
       display: grid;
@@ -601,6 +611,7 @@
     }
     .ch-led.ok { background: rgb(52 211 153); box-shadow: 0 0 8px rgb(16 185 129 / .4); }
     .ch-led.free { background: rgb(125 211 252); }
+    .ch-led.lit { background: rgb(251 191 36); box-shadow: 0 0 10px rgb(251 191 36 / .55); }
     .drill-mid {
       appearance: none; border: 0; background: none; color: inherit;
       font: inherit; text-align: left; padding: 0; cursor: pointer;
