@@ -8,6 +8,9 @@
 #
 set -euo pipefail
 
+# Сразу в консоль — иначе curl|bash молчит, пока висит DNS/docker.
+echo "[flos-edge-agent] start $(date -Iseconds 2>/dev/null || date)" >&2
+
 DEFAULT_GITHUB_SLUG="${FLOS_EDGE_AGENT_GITHUB_SLUG:-mikolaysemyonov-code/flos-edge-agent}"
 DEFAULT_GIT_REF="${FLOS_GIT_REF:-main}"
 DEFAULT_AGENT_DIR="${FLOS_AGENT_DIR:-/opt/flos/flos-edge-agent}"
@@ -69,14 +72,19 @@ if ! command -v curl >/dev/null 2>&1; then
   echo "[flos-edge-agent] нужен curl" >&2
   exit 1
 fi
+echo "[flos-edge-agent] проверяю docker…" >&2
 if ! command -v docker >/dev/null 2>&1; then
   echo "[flos-edge-agent] docker не найден — установите Docker на WB и повторите." >&2
   exit 1
 fi
-if ! docker compose version >/dev/null 2>&1; then
-  echo "[flos-edge-agent] нужен docker compose plugin." >&2
-  exit 1
+# compose version на WB иногда долго отвечает — таймаут, не вечный hang.
+if ! timeout 20 docker compose version >/dev/null 2>&1; then
+  if ! docker compose version >/dev/null 2>&1; then
+    echo "[flos-edge-agent] нужен docker compose plugin." >&2
+    exit 1
+  fi
 fi
+echo "[flos-edge-agent] docker ok" >&2
 
 if [[ "$DO_UNINSTALL" == "true" ]]; then
   echo "[flos-edge-agent] удаляю контейнер и локальные данные агента ($DATA_DIR)…"
@@ -150,7 +158,9 @@ CLOUD_FILES="${CLOUD_URL}/api/edge-agent/files"
 echo "[flos-edge-agent] install cloud=$CLOUD_URL project=$PROJECT_ID device=$DEVICE_ID fresh=$DO_FRESH"
 
 curl_get() {
-  curl -fsSL --connect-timeout 8 --max-time 25 "$@"
+  # IPv4 first: с щита AAAA→Vercel часто «молчит» минутами.
+  curl -4 -fsSL --connect-timeout 8 --max-time 25 "$@" \
+    || curl -fsSL --connect-timeout 8 --max-time 25 "$@"
 }
 
 cloud_tip_reachable() {
