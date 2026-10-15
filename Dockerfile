@@ -20,6 +20,7 @@ COPY runtime-desk-pour-climate.mjs /app/runtime-desk-pour-climate.mjs
 COPY runtime-desk-pour-light.mjs /app/runtime-desk-pour-light.mjs
 COPY runtime-desk-pour-scenes.mjs /app/runtime-desk-pour-scenes.mjs
 COPY runtime-desk-actuate.mjs /app/runtime-desk-actuate.mjs
+COPY runtime-desk-pour-vav.mjs /app/runtime-desk-pour-vav.mjs
 COPY runtime-desk-field-cert.mjs /app/runtime-desk-field-cert.mjs
 COPY runtime-desk-pour-stale.mjs /app/runtime-desk-pour-stale.mjs
 COPY runtime-desk-pour-mqtt.mjs /app/runtime-desk-pour-mqtt.mjs

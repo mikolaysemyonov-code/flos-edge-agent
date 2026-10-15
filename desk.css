@@ -686,6 +686,22 @@
     .apple-sw:not(:disabled):active .apple-knob { transform: scale(.96); }
     .apple-sw.on:not(:disabled):active .apple-knob { transform: translateX(1.2rem) scale(.96); }
     .drill-fields { margin: .55rem 0 0 1.6rem; }
+    .room-picks { display: flex; flex-direction: column; gap: .45rem; max-height: 14rem; overflow: auto; }
+    .room-acc {
+      border: 1px solid rgb(255 255 255 / .08);
+      border-radius: .7rem;
+      background: rgb(255 255 255 / .03);
+      padding: .15rem .55rem .35rem;
+    }
+    .room-acc > summary {
+      cursor: pointer; list-style: none; font-size: .78rem; font-weight: 600;
+      color: rgb(186 230 253); padding: .35rem 0;
+    }
+    .room-acc > summary::-webkit-details-marker { display: none; }
+    .room-acc-body { display: flex; flex-direction: column; gap: .25rem; padding-bottom: .25rem; }
+    .actions button:disabled {
+      opacity: .4; cursor: not-allowed;
+    }
     #cardMask {
       position: fixed; inset: 0; z-index: 24; border: 0; padding: 0; margin: 0;
       background: rgb(0 0 0 / .55); cursor: pointer;

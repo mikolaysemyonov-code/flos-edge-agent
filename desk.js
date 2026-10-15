@@ -2013,6 +2013,7 @@
     }
     function sheetTrigLab(card) {
       if (card.id === "vent_humidity_motion") return "Влажность";
+      if (card.id === "vent_vav_zone" || card.id === "vent_co2" || card.id === "vent_diy_vav") return "CO₂";
       if (card.id === "ac_window_off") return "Окно / геркон";
       return sheetNeedSensor(card) ? "Датчик" : "Кнопка";
     }
@@ -2030,6 +2031,8 @@
       }
       if (card.cat === "Розетки") return "Розетка";
       if (card.cat === "Сцены") return "Линии";
+      if (card.id === "vent_vav_zone") return "Заслонка 0–10 В";
+      if (card.id === "vent_vav_fan") return "Вентилятор / AO";
       if (/gate_button/.test(card.id)) return "Ворота / привод";
       if (card.cat === "Общее") return card.multi ? "Нагрузки" : "Нагрузка";
       return card.multi ? "Свет / линии" : "Свет";
@@ -2046,25 +2049,65 @@
     function isCurtainLoad(r) {
       return isDeskDrive(r.controlId) || /штор|роллет|жалюз|тюль|экран|привод/i.test(r.label || "");
     }
+    function isLightLoad(r) {
+      if (isCurtainLoad(r)) return false;
+      if (/вентиля|вытяж|приточ|заслон|насос|клапан|кран|калорифер|кондей|кондиц|тёпл|тепл\s*пол|увлажн|замок|сирен|ворот|калитк/i.test(r.label || "")) {
+        return false;
+      }
+      return /свет|лин|подсвет|спот|бра|люстр|ламп|диод|светов|точеч|подвес|ночник|фриз|фартук|канал/i.test(r.label || "")
+        || /^(Channel|CCT|RGB)/i.test(r.controlId || "");
+    }
+    function loadKindHit(kind, r) {
+      const lab = r.label || "";
+      if (kind === "light") return isLightLoad(r);
+      if (kind === "curtain") return isCurtainLoad(r);
+      if (kind === "socket") return /розетк/i.test(lab);
+      if (kind === "exhaust") return /вытяж/i.test(lab);
+      if (kind === "supply") return /приточ|вентиля(?!тор)|приток/i.test(lab) && !/заслон/i.test(lab);
+      if (kind === "damper") {
+        return /заслон|mao|0\s*[-–]?\s*10|аналог/i.test(lab + " " + (r.controlId || ""))
+          || /mao/i.test(r.deviceTopicKey || "");
+      }
+      if (kind === "fan") {
+        return /вентилятор|инвертор|приточ.*мотор|скорость|mao|0\s*[-–]?\s*10/i.test(lab + " " + (r.controlId || ""))
+          || /mao/i.test(r.deviceTopicKey || "");
+      }
+      if (kind === "ac") return /кондей|кондиц/i.test(lab);
+      if (kind === "floor") return /тёпл|тепл|пол|серво|коллект/i.test(lab);
+      if (kind === "heat") return /терм|обогрев|радиат|котёл|котел|тёпл|тепл/i.test(lab);
+      if (kind === "humid") return /увлажн/i.test(lab);
+      if (kind === "valve") return /кран|клапан|перекрыт/i.test(lab);
+      if (kind === "lock") return /замок/i.test(lab);
+      if (kind === "siren") return /сирен|тревог/i.test(lab);
+      if (kind === "gate") return isDeskDrive(r.controlId) || /ворот|калитк|шлагбаум/i.test(lab);
+      if (kind === "climate") return /кондей|вытяж|приточ|вентил|насос|увлажн|калорифер|серво|заслон/i.test(lab);
+      return true;
+    }
     function triggersForCard(card) {
       const all = namedTriggers().filter((r) => String(r.label || "").trim());
+      if (card.id === "vent_vav_zone" || /co2/i.test(card.id)) {
+        return preferRows(all, (r) => /co\s*₂|co2|душно|углекисл/i.test(r.label || "") || isSensorLabel(r.label), true);
+      }
       if (!sheetNeedSensor(card)) return all;
       return preferRows(all, (r) => isSensorLabel(r.label), true);
     }
     function loadsForCard(card, room) {
       const all = loadsForRoom(room);
+      const kind = card.loadKind || "";
+      if (kind) return preferRows(all, (r) => loadKindHit(kind, r), true);
       if (card.cat === "Шторы") return preferRows(all, isCurtainLoad, true);
-      if (card.cat === "Климат") {
-        return preferRows(all, (r) => /кондей|кондиц|тепл|пол|вытяж|вентил|насос|увлажн|калорифер|серво|приточ|заслон/i.test(r.label || ""), true);
-      }
+      if (card.cat === "Свет" || card.cat === "Сцены") return preferRows(all, isLightLoad, true);
       if (card.cat === "Розетки") return preferRows(all, (r) => /розетк/i.test(r.label || ""), true);
-      if (/leak/.test(card.id)) return preferRows(all, (r) => /кран|клапан|перекрыт/i.test(r.label || ""), true);
-      if (/siren/.test(card.id)) return preferRows(all, (r) => /сирен|тревог/i.test(r.label || ""), true);
-      if (/lock/.test(card.id)) return preferRows(all, (r) => /замок/i.test(r.label || ""), true);
-      if (/gate_button/.test(card.id)) {
-        return preferRows(all, (r) => isDeskDrive(r.controlId) || /ворот|калитк|шлагбаум|привод/i.test(r.label || ""), true);
-      }
       return all;
+    }
+    function groupLoadsByRoom(loads) {
+      const map = new Map();
+      (loads || []).forEach((r) => {
+        const room = nameRoom(r.label) || "Без комнаты";
+        if (!map.has(room)) map.set(room, []);
+        map.get(room).push(r);
+      });
+      return [...map.entries()].sort((a, b) => String(a[0]).localeCompare(String(b[0]), "ru"));
     }
     function openCardSheet(card, draft) {
       const box = $("cardSheet");
@@ -2138,24 +2181,40 @@
       let tgtNode;
       if (card.multi) {
         const picks = document.createElement("div");
-        picks.className = "picks";
+        picks.className = "picks room-picks";
         if (!loads.length) {
           const empty = document.createElement("p");
           empty.className = "meta orphan";
-          empty.textContent = /leak/.test(card.id)
+          empty.textContent = /leak|valve/.test(card.id + (card.loadKind || ""))
             ? "Нет линий с именем «кран/клапан» — разметьте краны, не свет."
-            : "Сначала дайте имя подходящим каналам в «Разметить».";
+            : "Нет подходящих нагрузок этого типа — поправьте имена в «Разметить».";
           picks.appendChild(empty);
+        } else {
+          groupLoadsByRoom(loads).forEach(([room, rows]) => {
+            const det = document.createElement("details");
+            det.className = "room-acc";
+            det.open = Boolean(roomFilter) && room === roomFilter;
+            const sum = document.createElement("summary");
+            sum.textContent = room + " · " + rows.length;
+            det.appendChild(sum);
+            const box = document.createElement("div");
+            box.className = "room-acc-body";
+            rows.forEach((load) => {
+              const lab = document.createElement("label");
+              const cb = document.createElement("input");
+              cb.type = "checkbox";
+              cb.value = contactKey(load.deviceTopicKey, load.controlId);
+              lab.append(cb, document.createTextNode(load.label));
+              if (draft && (draft.targets || []).some((t) => contactKey(t.deviceTopicKey, t.controlId) === cb.value)) {
+                cb.checked = true;
+                det.open = true;
+              }
+              box.appendChild(lab);
+            });
+            det.appendChild(box);
+            picks.appendChild(det);
+          });
         }
-        loads.forEach((load) => {
-          const lab = document.createElement("label");
-          const cb = document.createElement("input");
-          cb.type = "checkbox";
-          cb.value = contactKey(load.deviceTopicKey, load.controlId);
-          lab.append(cb, document.createTextNode(load.label));
-          if (draft && (draft.targets || []).some((t) => contactKey(t.deviceTopicKey, t.controlId) === cb.value)) cb.checked = true;
-          picks.appendChild(lab);
-        });
         tgtNode = picks;
         collectTargets = () => [...picks.querySelectorAll("input:checked")].map((o) => parseBindValue(o.value)).filter(Boolean);
       } else {
@@ -2180,15 +2239,28 @@
         const long = String(f.label || "").length > 22;
         lab.className = "fld" + (long ? " wide" : "");
         lab.textContent = f.label + (f.unit ? " · " + f.unit : "");
-        const inp = document.createElement("input");
-        inp.type = "number";
-        inp.className = "bind" + (long ? " wide" : "");
-        inp.step = "any";
-        // null/undefined → дефолт (Number(null) === 0 — ловушка).
-        const draftVal = draft && draft.params ? draft.params[f.key] : undefined;
-        inp.value = draftVal != null && Number.isFinite(Number(draftVal))
-          ? Number(draftVal)
-          : Number(f.def);
+        let inp;
+        if (f.kind === "select") {
+          inp = document.createElement("select");
+          inp.className = "bind" + (long ? " wide" : "");
+          (f.options || []).forEach((o) => {
+            const opt = document.createElement("option");
+            opt.value = o.v;
+            opt.textContent = o.t;
+            inp.appendChild(opt);
+          });
+          const draftVal = draft && draft.params ? draft.params[f.key] : undefined;
+          inp.value = draftVal != null ? String(draftVal) : String(f.def);
+        } else {
+          inp = document.createElement("input");
+          inp.type = "number";
+          inp.className = "bind" + (long ? " wide" : "");
+          inp.step = "any";
+          const draftVal = draft && draft.params ? draft.params[f.key] : undefined;
+          inp.value = draftVal != null && Number.isFinite(Number(draftVal))
+            ? Number(draftVal)
+            : Number(f.def);
+        }
         inp.setAttribute("aria-label", lab.textContent);
         paramInputs[f.key] = inp;
         paramBox.append(lab, inp);
@@ -2196,6 +2268,10 @@
       const collectParams = () => {
         const out = {};
         fields.forEach((f) => {
+          if (f.kind === "select") {
+            out[f.key] = String(paramInputs[f.key].value || f.def || "");
+            return;
+          }
           const n = Number(paramInputs[f.key].value);
           out[f.key] = Number.isFinite(n) ? n : Number(f.def);
         });
@@ -2207,7 +2283,16 @@
       save.type = "button";
       save.className = "ghost";
       save.textContent = "На стол";
+      const refreshSave = () => {
+        const okTrig = !needTrig || (trig && trig.tagName === "SELECT" && trig.value);
+        const okAux = !needAux || (aux && aux.value);
+        const okTgt = collectTargets().length > 0;
+        const ready = Boolean(okTrig && okAux && okTgt);
+        save.disabled = !ready;
+        save.title = ready ? "" : "Нужны датчик/кнопка и хотя бы одна нагрузка";
+      };
       save.addEventListener("click", () => {
+        if (save.disabled) return;
         fetch("/runtime/desk-solutions", {
           method: "PUT",
           headers: { "content-type": "application/json" },
@@ -2248,10 +2333,12 @@
           });
         }).catch(() => { err.textContent = "Нет связи с агентом"; });
       });
-      const clearErr = () => { err.textContent = ""; };
+      const clearErr = () => { err.textContent = ""; refreshSave(); };
       if (needTrig && trig.tagName === "SELECT") trig.addEventListener("change", clearErr);
       if (needAux && aux) aux.addEventListener("change", clearErr);
       tgtNode.addEventListener("change", clearErr);
+      tgtNode.addEventListener("click", refreshSave);
+      refreshSave();
       const cancel = document.createElement("button");
       cancel.type = "button";
       cancel.className = "ghost";
@@ -2275,6 +2362,10 @@
       if (!fields.length || !sol.params) return "";
       return fields.map((f) => {
         const v = sol.params[f.key];
+        if (f.kind === "select") {
+          const opt = (f.options || []).find((o) => String(o.v) === String(v));
+          return f.label + ": " + ((opt && opt.t) || v || f.def);
+        }
         return f.label + " " + (Number.isFinite(Number(v)) ? Number(v) : f.def) + (f.unit || "");
       }).join(" · ");
     }

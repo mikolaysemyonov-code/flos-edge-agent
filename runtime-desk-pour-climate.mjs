@@ -1,6 +1,6 @@
 /**
  * Климат со стола → bang-bang defineRule.
- * Абсолютные on/off или желаемая + превышение (пол).
+ * minOn/minOff — антищелчок; staleSec — страховка тёплого пола.
  */
 import { liveDeskDeviceKey } from "./runtime-desk-rules-marks.mjs";
 
@@ -39,6 +39,10 @@ function modeOf(sid) {
   return "gte";
 }
 
+function isFloor(sid) {
+  return /warm_floor/.test(sid);
+}
+
 function gteBand(sid, p) {
   const defOn = sid === "vent_co2" || sid === "vent_diy_vav" ? 1000 : sid === "ac_cool_comfort" ? 25 : sid === "weather_climate_link" ? 24 : 70;
   const defOff = sid === "vent_co2" || sid === "vent_diy_vav" ? 800 : sid === "ac_cool_comfort" ? 24 : sid === "weather_climate_link" ? 23 : 65;
@@ -67,6 +71,28 @@ function setLoads(loads, wantExpr, id) {
       ].join("\n"),
     )
     .join("\n");
+}
+
+function antiClickGuard(latch, minOnSec, minOffSec) {
+  const onMs = Math.max(0, minOnSec) * 1000;
+  const offMs = Math.max(0, minOffSec) * 1000;
+  if (!onMs && !offMs) return { preface: "", apply: setLoads };
+  const tVar = latch + "_t";
+  const wantVar = latch + "_w";
+  return {
+    preface: `var ${tVar} = 0; var ${wantVar} = false;\n`,
+    wrap: (loads, id) =>
+      [
+        `      var __now = Date.now();`,
+        `      if (__want !== ${wantVar}) {`,
+        `        var __elapsed = __now - ${tVar};`,
+        `        if (${wantVar} && ${onMs} && __elapsed < ${onMs}) __want = ${wantVar};`,
+        `        else if (!${wantVar} && ${offMs} && __elapsed < ${offMs}) __want = ${wantVar};`,
+        `        else { ${wantVar} = __want; ${tVar} = __now; }`,
+        `      }`,
+        setLoads(loads, "__want", id),
+      ].join("\n"),
+  };
 }
 
 function emitWindowOff(sol) {
@@ -99,8 +125,10 @@ function emitHumidityMotion(sol) {
   const p = sol.params || {};
   const { on, off } = gteBand("vent_humidity", p);
   const latch = "_desk_clim_" + String(sol.id || "").replace(/[^a-zA-Z0-9_]/g, "_");
+  const guard = antiClickGuard(latch, num(p, "minOn", 180), num(p, "minOff", 180));
   return [
     `var ${latch} = false;`,
+    guard.preface || "",
     `defineRule(${esc(id)}, {`,
     `  whenChanged: [${esc(humidity)}, ${esc(motion)}],`,
     "  then: function () {",
@@ -111,10 +139,32 @@ function emitHumidityMotion(sol) {
     `      if (v >= ${on} && people) ${latch} = true;`,
     `      else if (v <= ${off} || !people) ${latch} = false;`,
     `      var __want = ${latch};`,
-    setLoads(loads, "__want", id),
+    guard.wrap ? guard.wrap(loads, id) : setLoads(loads, "__want", id),
     "    } catch (e) { if (typeof wbRuleGuardCatch === 'function') wbRuleGuardCatch(" + esc(id) + ", e); }",
     "  }",
     "});",
+  ].filter(Boolean).join("\n");
+}
+
+function emitFloorStaleWatch(sol, loads, latch, staleSec) {
+  if (!staleSec || staleSec <= 0) return "";
+  const id = "desk_sol_" + sol.id + "_stale";
+  const ts = latch + "_ok";
+  const off = loads.map((p) => `      wbActuatorSet(${esc(p)}, false, ${esc(id)}, 50);`).join("\n");
+  return [
+    `var ${ts} = Date.now();`,
+    `(function () {`,
+    `  try {`,
+    `    setInterval(function () {`,
+    `      try {`,
+    `        if (Date.now() - ${ts} > ${staleSec * 1000}) {`,
+    `          ${latch} = false;`,
+    off,
+    `        }`,
+    `      } catch (_e) {}`,
+    `    }, 60000);`,
+    `  } catch (_e2) {}`,
+    `})();`,
   ].join("\n");
 }
 
@@ -135,6 +185,11 @@ export function emitDeskClimate(sol) {
   const p = sol.params || {};
   const mode = modeOf(sid);
   const latch = "_desk_clim_" + String(sol.id || "").replace(/[^a-zA-Z0-9_]/g, "_");
+  const minOn = num(p, "minOn", /vent_|ac_|humidifier/.test(sid) ? 180 : 60);
+  const minOff = num(p, "minOff", /vent_|ac_|humidifier/.test(sid) ? 180 : 60);
+  const guard = antiClickGuard(latch, minOn, minOff);
+  const staleSec = isFloor(sid) ? num(p, "staleSec", 900) : 0;
+  const ts = latch + "_ok";
 
   let body;
   if (mode === "range") {
@@ -163,18 +218,41 @@ export function emitDeskClimate(sol) {
     ].join("\n");
   }
 
+  const staleTouch = staleSec
+    ? [`      ${ts} = Date.now();`, `      if (isNaN(v)) { ${latch} = false; var __want = false;`]
+    : ["      if (isNaN(v)) return;"];
+  // fix stale branch - need proper if/else
+  const readBlock = staleSec
+    ? [
+        `      var v = Number(readValue(${esc(sensor)}));`,
+        `      if (isNaN(v)) {`,
+        `        ${latch} = false;`,
+        `        var __want = false;`,
+        guard.wrap ? guard.wrap(loads, id) : setLoads(loads, "__want", id),
+        `        return;`,
+        `      }`,
+        `      ${ts} = Date.now();`,
+      ].join("\n")
+    : [
+        `      var v = Number(readValue(${esc(sensor)}));`,
+        `      if (isNaN(v)) return;`,
+      ].join("\n");
+
   return [
     `var ${latch} = false;`,
+    guard.preface || "",
+    emitFloorStaleWatch(sol, loads, latch, staleSec),
     `defineRule(${esc(id)}, {`,
     `  whenChanged: ${esc(sensor)},`,
     "  then: function () {",
     "    try {",
-    "      var v = Number(readValue(" + esc(sensor) + "));",
-    "      if (isNaN(v)) return;",
+    readBlock,
     body,
-    setLoads(loads, "__want", id),
+    guard.wrap ? guard.wrap(loads, id) : setLoads(loads, "__want", id),
     "    } catch (e) { if (typeof wbRuleGuardCatch === 'function') wbRuleGuardCatch(" + esc(id) + ", e); }",
     "  }",
     "});",
-  ].join("\n");
+  ]
+    .filter(Boolean)
+    .join("\n");
 }

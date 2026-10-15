@@ -5,6 +5,7 @@ import { liveDeskDeviceKey } from "./runtime-desk-rules-marks.mjs";
 import { emitDeskClimate, isDeskClimateSolution } from "./runtime-desk-pour-climate.mjs";
 import { emitDeskLight, isDeskLightSolution } from "./runtime-desk-pour-light.mjs";
 import { emitDeskScene, isDeskSceneSolution } from "./runtime-desk-pour-scenes.mjs";
+import { emitDeskVavBlock, isDeskVavSolution } from "./runtime-desk-pour-vav.mjs";
 
 const DESK_PREFIX = "desk_sol_";
 const SUPPORTED = new Set([
@@ -48,16 +49,24 @@ function emitToggle(sol) {
   const when = triggerWhen(sol.trigger);
   const loads = (sol.targets || []).map(pathOf).filter(Boolean);
   if (!when || !loads.length) return "";
-  const sets = loads
-    .map((p) => `      wbActuatorSet(${esc(p)}, next, ${esc(id)}, 50);`)
-    .join("\n");
+  const mode = String(sol?.params?.mode || "toggle").toLowerCase();
+  let body;
+  if (mode === "off") {
+    body = loads.map((p) => `      wbActuatorSet(${esc(p)}, 0, ${esc(id)}, 50);`).join("\n");
+  } else if (mode === "on") {
+    body = loads.map((p) => `      wbActuatorSet(${esc(p)}, 1, ${esc(id)}, 50);`).join("\n");
+  } else {
+    body = [
+      `      var next = !wbIsOn(readValue(${esc(loads[0])}));`,
+      ...loads.map((p) => `      wbActuatorSet(${esc(p)}, next, ${esc(id)}, 50);`),
+    ].join("\n");
+  }
   return [
     `defineRule(${esc(id)}, {`,
     `  whenChanged: ${esc(when)},`,
     "  then: function () {",
     "    try {",
-    `      var next = !wbIsOn(readValue(${esc(loads[0])}));`,
-    sets,
+    body,
     "    } catch (e) { if (typeof wbRuleGuardCatch === 'function') wbRuleGuardCatch(" + esc(id) + ", e); }",
     "  }",
     "});",
@@ -112,15 +121,19 @@ export function supportedDeskSolution(sol) {
     SUPPORTED.has(sid) ||
     isDeskClimateSolution(sol) ||
     isDeskLightSolution(sol) ||
-    isDeskSceneSolution(sol)
+    isDeskSceneSolution(sol) ||
+    isDeskVavSolution(sol)
   );
 }
 
 export function mergeDeskSolutionsIntoUser(userSrc, solutions) {
   const base = stripDeskRules(userSrc);
+  const list = Array.isArray(solutions) ? solutions : [];
   const chunks = [];
-  for (const sol of Array.isArray(solutions) ? solutions : []) {
-    if (!supportedDeskSolution(sol)) continue;
+  const vavBlock = emitDeskVavBlock(list);
+  if (vavBlock) chunks.push(vavBlock);
+  for (const sol of list) {
+    if (!supportedDeskSolution(sol) || isDeskVavSolution(sol)) continue;
     const sid = String(sol.solutionId || "");
     let js = "";
     if (isDeskClimateSolution(sol)) js = emitDeskClimate(sol);
