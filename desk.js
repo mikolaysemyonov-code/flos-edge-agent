@@ -18,6 +18,10 @@
     let keyScanTimer = 0;
     let keyRoomFilter = "";
     let keyPlanFocus = false; /* после «+» вернуть фокус в поле подписей */
+    let linePlan = [];
+    let lineRoomFilter = "";
+    let linePlanFocus = false;
+    let lineBeacon = null; /* { id, candidates, idx, timer, current } */
     let openAssign = "";
     let deskCatalog = [];
     let deskSolutions = [];
@@ -386,7 +390,7 @@
       renderMark();
     }
     function normalizeTab(tab) {
-      if (tab === "light" || tab === "buttons" || tab === "relays" || tab === "all" || tab === "keys") {
+      if (tab === "light" || tab === "buttons" || tab === "relays" || tab === "all" || tab === "keys" || tab === "lines") {
         markPath = "modules";
         modFamily = tab === "buttons"
           ? "buttons"
@@ -396,7 +400,9 @@
               ? "all"
               : tab === "keys"
                 ? "keys"
-                : "light";
+                : tab === "lines"
+                  ? "lines"
+                  : "light";
         return "mark";
       }
       return tab;
@@ -4364,6 +4370,334 @@
         body.appendChild(det);
       });
     }
+    function stopLineBeacon() {
+      if (lineBeacon && lineBeacon.timer) clearTimeout(lineBeacon.timer);
+      const cur = lineBeacon && lineBeacon.current;
+      lineBeacon = null;
+      if (cur && cur.deviceTopicKey && cur.controlId) {
+        void actuateChannel(cur.deviceTopicKey, cur.controlId, "off");
+      }
+    }
+    async function loadLinePlan() {
+      try {
+        const r = await fetch("/runtime/desk-line-plan");
+        const j = await r.json();
+        linePlan = Array.isArray(j.linePlan) ? j.linePlan : [];
+      } catch {
+        linePlan = [];
+      }
+    }
+    function nextLineLabelForRoom(room) {
+      const n = linePlan.filter((k) => k.room === room).length + 1;
+      return "линия " + n;
+    }
+    function postLinePlanLabels(room, labelsText, done) {
+      const roomName = String(room || "").trim();
+      const text = String(labelsText || "").trim();
+      if (!roomName || !text) return;
+      fetch("/runtime/desk-line-plan", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ room: roomName, labelsText: text }),
+      })
+        .then((r) => r.json())
+        .then((j) => {
+          if (j && j.ok) {
+            linePlan = j.linePlan || [];
+            lineRoomFilter = roomName;
+            linePlanFocus = true;
+            if (typeof done === "function") done(j);
+            renderMark();
+          }
+        });
+    }
+    async function fetchBeaconCandidates(includeNamed) {
+      try {
+        const r = await fetch("/runtime/desk-line-plan", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            candidates: true,
+            shelves: lastShelvesRows || [],
+            includeNamed: includeNamed === true,
+          }),
+        });
+        const j = await r.json();
+        return Array.isArray(j.candidates) ? j.candidates : [];
+      } catch {
+        return [];
+      }
+    }
+    async function startLineBeacon(item) {
+      stopLineBeacon();
+      stopKeyScan();
+      const candidates = await fetchBeaconCandidates(false);
+      if (!candidates.length) {
+        const head = $("previewHead");
+        if (head) {
+          head.hidden = false;
+          head.textContent = "Нет свободных линий для маяка — разметьте модули или снимите лишние имена.";
+        }
+        renderMark();
+        return;
+      }
+      const tick = async () => {
+        if (!lineBeacon || lineBeacon.id !== item.id) return;
+        const prev = lineBeacon.current;
+        if (prev) {
+          try { await actuateChannel(prev.deviceTopicKey, prev.controlId, "off"); } catch (_) { /* */ }
+        }
+        if (!lineBeacon || lineBeacon.id !== item.id) return;
+        const cur = lineBeacon.candidates[lineBeacon.idx % lineBeacon.candidates.length];
+        lineBeacon.current = cur;
+        lineBeacon.idx += 1;
+        renderMark();
+        try { await actuateChannel(cur.deviceTopicKey, cur.controlId, "on"); } catch (_) { /* */ }
+        if (!lineBeacon || lineBeacon.id !== item.id) return;
+        lineBeacon.timer = setTimeout(() => { void tick(); }, 900);
+      };
+      lineBeacon = {
+        id: item.id,
+        candidates,
+        idx: 0,
+        timer: 0,
+        current: null,
+        advance: () => {
+          if (!lineBeacon || lineBeacon.id !== item.id) return;
+          if (lineBeacon.timer) clearTimeout(lineBeacon.timer);
+          void tick();
+        },
+      };
+      renderMark();
+      void tick();
+    }
+    function confirmLineBeacon() {
+      if (!lineBeacon || !lineBeacon.current) return;
+      const armedId = lineBeacon.id;
+      const cur = lineBeacon.current;
+      stopLineBeacon();
+      fetch("/runtime/desk-line-plan", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          bind: true,
+          id: armedId,
+          deviceTopicKey: cur.deviceTopicKey,
+          controlId: cur.controlId,
+        }),
+      })
+        .then((r) => r.json())
+        .then((res) => {
+          if (res && res.ok) {
+            linePlan = res.linePlan || linePlan;
+            const head = $("previewHead");
+            if (head) {
+              head.hidden = false;
+              head.style.color = "";
+              head.textContent = "Линия привязана · " + cur.deviceTopicKey + "/" + cur.controlId;
+            }
+            lastShelvesRows = (lastShelvesRows || []).map((s) => {
+              if (!s || s.deviceTopicKey !== cur.deviceTopicKey) return s;
+              const bound = (linePlan || []).find((k) => k.id === armedId);
+              const markName = bound ? bound.room + " · " + bound.label : "";
+              return {
+                ...s,
+                channels: (s.channels || []).map((c) =>
+                  c && c.controlId === cur.controlId && markName
+                    ? { ...c, name: markName, source: "desk" }
+                    : c,
+                ),
+              };
+            });
+            return loadLast().then(() => loadLinePlan()).then(() => renderMark());
+          }
+          renderMark();
+        })
+        .catch(() => renderMark());
+    }
+    function renderLineBeaconPanel(body) {
+      body.replaceChildren();
+      const intro = document.createElement("p");
+      intro.className = "meta";
+      intro.textContent = "План линий → «Найти в щите» → стойте в комнате → когда мигнуло нужное — «Это она».";
+      body.appendChild(intro);
+      const status = document.createElement("p");
+      status.className = "meta key-scan-status";
+      if (lineBeacon && lineBeacon.current) {
+        const row = linePlan.find((k) => k.id === lineBeacon.id);
+        status.textContent = "Маяк «"
+          + (row ? row.room + " · " + row.label : "линия")
+          + "» · сейчас "
+          + lineBeacon.current.deviceTopicKey + "/" + lineBeacon.current.controlId
+          + " · "
+          + ((lineBeacon.idx - 1) % Math.max(1, lineBeacon.candidates.length) + 1)
+          + "/" + lineBeacon.candidates.length;
+        status.classList.add("live");
+      } else {
+        const unbound = linePlan.filter((k) => !k.deviceTopicKey).length;
+        status.textContent = unbound
+          ? ("В плане " + linePlan.length + ", без привязки " + unbound + " — запускайте маяк.")
+          : "Сначала список линий по комнатам, потом обход с маяком.";
+      }
+      body.appendChild(status);
+      if (lineBeacon) {
+        const bar = document.createElement("div");
+        bar.className = "key-plan-actions line-beacon-bar";
+        const hit = document.createElement("button");
+        hit.type = "button";
+        hit.className = "ghost key-add-all";
+        hit.textContent = "Это она!";
+        hit.addEventListener("click", () => confirmLineBeacon());
+        const skip = document.createElement("button");
+        skip.type = "button";
+        skip.className = "ghost";
+        skip.textContent = "Не та →";
+        skip.addEventListener("click", () => {
+          if (lineBeacon && typeof lineBeacon.advance === "function") lineBeacon.advance();
+        });
+        const stop = document.createElement("button");
+        stop.type = "button";
+        stop.className = "ghost";
+        stop.textContent = "Стоп маяк";
+        stop.addEventListener("click", () => { stopLineBeacon(); renderMark(); });
+        bar.append(hit, skip, stop);
+        body.appendChild(bar);
+      }
+      const addBox = document.createElement("div");
+      addBox.className = "key-plan-add glass";
+      const roomInp = document.createElement("input");
+      roomInp.className = "bind";
+      roomInp.placeholder = "Комната (Спальня)";
+      roomInp.value = lineRoomFilter || "";
+      const labInp = document.createElement("textarea");
+      labInp.className = "bind key-labels";
+      labInp.rows = 4;
+      labInp.placeholder = "Линии — по одной на строку\nсветовая у кровати\nтреки\nбра";
+      const addRow = document.createElement("div");
+      addRow.className = "key-plan-actions";
+      const addBtn = document.createElement("button");
+      addBtn.type = "button";
+      addBtn.className = "ghost key-add-all";
+      addBtn.textContent = "+ Добавить все";
+      const plusOne = document.createElement("button");
+      plusOne.type = "button";
+      plusOne.className = "ghost";
+      plusOne.textContent = "+1";
+      const submit = () => {
+        postLinePlanLabels(roomInp.value, labInp.value, () => { labInp.value = ""; });
+      };
+      addBtn.addEventListener("click", submit);
+      plusOne.addEventListener("click", () => {
+        const room = String(roomInp.value || "").trim();
+        if (!room) { roomInp.focus(); return; }
+        postLinePlanLabels(room, nextLineLabelForRoom(room), () => { labInp.value = ""; });
+      });
+      labInp.addEventListener("keydown", (e) => {
+        if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
+          e.preventDefault();
+          submit();
+        }
+      });
+      addRow.append(addBtn, plusOne);
+      addBox.append(roomInp, labInp, addRow);
+      body.appendChild(addBox);
+      if (linePlanFocus) {
+        linePlanFocus = false;
+        setTimeout(() => labInp.focus(), 30);
+      }
+      const rooms = [...new Set(linePlan.map((k) => k.room))].sort((a, b) => a.localeCompare(b, "ru"));
+      if (!rooms.length) {
+        const empty = document.createElement("p");
+        empty.className = "meta orphan";
+        empty.textContent = "План пуст — впишите комнату и линии списком, затем «+ Добавить все».";
+        body.appendChild(empty);
+        return;
+      }
+      rooms.forEach((room) => {
+        const det = document.createElement("details");
+        det.className = "key-room";
+        det.open = !lineRoomFilter || lineRoomFilter === room;
+        const sum = document.createElement("summary");
+        const lines = linePlan.filter((k) => k.room === room);
+        const bound = lines.filter((k) => k.deviceTopicKey).length;
+        const head = document.createElement("span");
+        head.className = "key-room-title";
+        head.textContent = room + " · " + bound + "/" + lines.length;
+        const roomPlus = document.createElement("button");
+        roomPlus.type = "button";
+        roomPlus.className = "ghost key-room-plus";
+        roomPlus.textContent = "+";
+        roomPlus.title = "Ещё линия в «" + room + "»";
+        roomPlus.addEventListener("click", (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          lineRoomFilter = room;
+          postLinePlanLabels(room, nextLineLabelForRoom(room));
+        });
+        sum.append(head, roomPlus);
+        det.appendChild(sum);
+        const list = document.createElement("ol");
+        list.className = "key-list";
+        lines.forEach((k, i) => {
+          const li = document.createElement("li");
+          li.className = "key-row" + (k.deviceTopicKey ? " bound" : "") + (lineBeacon && lineBeacon.id === k.id ? " armed" : "");
+          const num = document.createElement("span");
+          num.className = "key-num";
+          num.textContent = String(i + 1);
+          const mid = document.createElement("div");
+          mid.className = "key-mid";
+          const ttl = document.createElement("strong");
+          ttl.textContent = k.label;
+          const sub = document.createElement("span");
+          sub.className = "meta";
+          sub.textContent = k.deviceTopicKey
+            ? k.deviceTopicKey + "/" + k.controlId
+            : "не привязана";
+          mid.append(ttl, sub);
+          const act = document.createElement("div");
+          act.className = "key-act";
+          if (lineBeacon && lineBeacon.id === k.id) {
+            const hit = document.createElement("button");
+            hit.type = "button";
+            hit.className = "ghost key-scan-btn";
+            hit.textContent = "Это она";
+            hit.addEventListener("click", () => confirmLineBeacon());
+            act.appendChild(hit);
+          } else {
+            const find = document.createElement("button");
+            find.type = "button";
+            find.className = "ghost key-scan-btn";
+            find.textContent = k.deviceTopicKey ? "Перемаяк" : "Найти в щите";
+            find.addEventListener("click", () => { void startLineBeacon(k); });
+            act.appendChild(find);
+          }
+          const del = document.createElement("button");
+          del.type = "button";
+          del.className = "ghost";
+          del.textContent = "×";
+          del.addEventListener("click", () => {
+            fetch("/runtime/desk-line-plan", {
+              method: "POST",
+              headers: { "content-type": "application/json" },
+              body: JSON.stringify({ delete: k.id }),
+            })
+              .then((r) => r.json())
+              .then((j) => {
+                if (j && j.ok) {
+                  linePlan = j.linePlan || [];
+                  if (lineBeacon && lineBeacon.id === k.id) stopLineBeacon();
+                  renderMark();
+                }
+              });
+          });
+          act.appendChild(del);
+          li.append(num, mid, act);
+          list.appendChild(li);
+        });
+        det.appendChild(list);
+        body.appendChild(det);
+      });
+    }
     function renderMark() {
       lastShelvesRows = lastShelvesRows || [];
       const split = splitShelves(lastShelvesRows);
@@ -4381,13 +4715,19 @@
       if (intro) {
         intro.textContent = modFamily === "keys"
           ? "1 · Клавиши: план комнаты → скан 3× нажатий → канал на шине."
-          : "1 · Модуль → канал: комната и тип. Или «Клавиши» — план и скан нажатий.";
+          : modFamily === "lines"
+            ? "1 · Линии: план комнаты → маяк по щиту → «Это она»."
+            : "1 · Модуль → канал: комната и тип. Или «Клавиши» / «Линии» — план и скан.";
       }
       const body = $("mark-body");
       if (!body) return;
       body.hidden = false;
       if (modFamily === "keys") {
         renderKeyScanPanel(body);
+        return;
+      }
+      if (modFamily === "lines") {
+        renderLineBeaconPanel(body);
         return;
       }
       const famRows = modFamily === "all"
@@ -4591,13 +4931,15 @@
     });
     document.querySelectorAll("#modFamily [data-fam]").forEach((btn) => {
       btn.addEventListener("click", () => {
-        modFamily = /^(all|light|buttons|relays|keys)$/.test(btn.dataset.fam) ? btn.dataset.fam : "all";
+        modFamily = /^(all|light|buttons|relays|keys|lines)$/.test(btn.dataset.fam) ? btn.dataset.fam : "all";
         openMod = "";
         openAssign = "";
         markPending = {};
         markPath = "modules";
         if (modFamily !== "keys") stopKeyScan();
+        if (modFamily !== "lines") stopLineBeacon();
         if (modFamily === "keys") loadKeyPlan().then(() => renderMark());
+        else if (modFamily === "lines") loadLinePlan().then(() => renderMark());
         else renderMark();
       });
     });
@@ -4639,7 +4981,7 @@
       $("clearProject").addEventListener("click", () => {
         if (
           !window.confirm(
-            "Очистить проект полностью?\n\nСотрётся:\n• вся разметка (имена)\n• план клавиш\n• все типовые на столе\n• список комнат\n\nШину MQTT не трогаем.",
+            "Очистить проект полностью?\n\nСотрётся:\n• вся разметка (имена)\n• план клавиш и линий\n• все типовые на столе\n• список комнат\n\nШину MQTT не трогаем.",
           )
         ) {
           return;
@@ -4660,7 +5002,9 @@
             markPending = {};
             deskSolutions = [];
             keyPlan = [];
+            linePlan = [];
             stopKeyScan();
+            stopLineBeacon();
             const head = $("previewHead");
             const baseMsg = j && j.ok
               ? ("Проект очищен"
@@ -4672,7 +5016,9 @@
               head.style.color = "";
               head.textContent = baseMsg;
             }
-            const after = () => Promise.all([loadLast(), loadSolutions(), loadPreview(), loadKeyPlan()]).then(() => {
+            const after = () => Promise.all([
+              loadLast(), loadSolutions(), loadPreview(), loadKeyPlan(), loadLinePlan(),
+            ]).then(() => {
               renderDeskSolutions();
               renderMark();
               setTab("mark");
@@ -4722,7 +5068,7 @@
       });
     }
     const fromHash = location.hash.replace("#", "");
-    if (/^(mark|cards|poured|light|buttons|relays|keys)$/.test(fromHash)) setTab(fromHash);
+    if (/^(mark|cards|poured|light|buttons|relays|keys|lines)$/.test(fromHash)) setTab(fromHash);
     else setTab("mark");
     loadHealth();
     loadPoured();

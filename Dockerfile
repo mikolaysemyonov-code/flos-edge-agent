@@ -22,6 +22,7 @@ COPY runtime-desk-pour-scenes.mjs /app/runtime-desk-pour-scenes.mjs
 COPY runtime-desk-pour-cron.mjs /app/runtime-desk-pour-cron.mjs
 COPY runtime-desk-actuate.mjs /app/runtime-desk-actuate.mjs
 COPY runtime-desk-key-scan.mjs /app/runtime-desk-key-scan.mjs
+COPY runtime-desk-line-beacon.mjs /app/runtime-desk-line-beacon.mjs
 COPY runtime-desk-pour-vav.mjs /app/runtime-desk-pour-vav.mjs
 COPY runtime-desk-field-cert.mjs /app/runtime-desk-field-cert.mjs
 COPY runtime-desk-pour-stale.mjs /app/runtime-desk-pour-stale.mjs

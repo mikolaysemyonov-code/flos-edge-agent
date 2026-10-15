@@ -27,6 +27,7 @@ import {
   assessDeskCanPour,
   handleRuntimeDeskActuate,
   handleRuntimeDeskKeyPlan,
+  handleRuntimeDeskLinePlan,
   handleRuntimeDeskMarking,
   handleRuntimeDeskPourPreview,
   handleRuntimeDeskPoured,
@@ -732,6 +733,17 @@ export function runtimeHttpPathHandler(req, res) {
   if ((method === "GET" || method === "PUT" || method === "POST" || method === "DELETE") && urlPath === "/runtime/desk-key-plan") {
     void handleRuntimeDeskKeyPlan(req, res).catch((err) => {
       console.error("[runtime-control-plane] desk-key-plan:", err?.message ?? err);
+      if (!res.headersSent) {
+        res.statusCode = 500;
+        res.setHeader("content-type", "application/json; charset=utf-8");
+        res.end(JSON.stringify({ ok: false, error: "INTERNAL" }));
+      }
+    });
+    return true;
+  }
+  if ((method === "GET" || method === "PUT" || method === "POST" || method === "DELETE") && urlPath === "/runtime/desk-line-plan") {
+    void handleRuntimeDeskLinePlan(req, res).catch((err) => {
+      console.error("[runtime-control-plane] desk-line-plan:", err?.message ?? err);
       if (!res.headersSent) {
         res.statusCode = 500;
         res.setHeader("content-type", "application/json; charset=utf-8");

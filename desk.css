@@ -546,6 +546,13 @@
       color: rgb(186 230 253) !important;
       border-color: rgb(var(--sky) / .35) !important;
     }
+    .line-beacon-bar {
+      margin: 0 0 .65rem;
+      padding: .55rem .65rem;
+      border-radius: .85rem;
+      border: 1px solid rgb(var(--sky) / .35);
+      background: rgb(var(--sky) / .1);
+    }
     .key-list { margin: 0; padding: 0 0 0 0; list-style: none; }
     .key-row {
       display: flex; align-items: center; gap: .5rem;

@@ -35,7 +35,7 @@ function readRawDoc() {
   try {
     return JSON.parse(fs.readFileSync(deskMarkingPath(), "utf8"));
   } catch {
-    return { version: 3, shelves: {}, solutions: [], rooms: [], keyPlan: [] };
+    return { version: 3, shelves: {}, solutions: [], rooms: [], keyPlan: [], linePlan: [] };
   }
 }
 
@@ -52,6 +52,7 @@ function writeKeyPlan(plan) {
         solutions: Array.isArray(prev.solutions) ? prev.solutions : [],
         rooms: Array.isArray(prev.rooms) ? prev.rooms : [],
         keyPlan: plan,
+        linePlan: Array.isArray(prev.linePlan) ? prev.linePlan : [],
       },
       null,
       2,

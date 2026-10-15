@@ -45,6 +45,14 @@ import {
   upsertDeskKeyPlanBatch,
   upsertDeskKeyPlanItem,
 } from "./runtime-desk-key-scan.mjs";
+import {
+  bindDeskLinePlanItem,
+  deleteDeskLinePlanItem,
+  deskBeaconCandidates,
+  listDeskLinePlan,
+  upsertDeskLinePlanBatch,
+  upsertDeskLinePlanItem,
+} from "./runtime-desk-line-beacon.mjs";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 
@@ -324,6 +332,50 @@ export async function handleRuntimeDeskKeyPlan(req, res) {
     return;
   }
   const out = upsertDeskKeyPlanItem(body);
+  jsonEnd(res, out.ok ? 200 : 400, out);
+}
+
+export async function handleRuntimeDeskLinePlan(req, res) {
+  const method = (req.method ?? "GET").toUpperCase();
+  if (method === "GET") {
+    jsonEnd(res, 200, { ok: true, linePlan: listDeskLinePlan() });
+    return;
+  }
+  const chunks = [];
+  for await (const c of req) chunks.push(c);
+  let body = {};
+  try {
+    const raw = Buffer.concat(chunks).toString("utf8");
+    if (raw.trim()) body = JSON.parse(raw);
+  } catch {
+    jsonEnd(res, 400, { ok: false, error: "invalid_json" });
+    return;
+  }
+  if (method === "DELETE" || body.delete) {
+    jsonEnd(res, 200, deleteDeskLinePlanItem(body.delete || body.id));
+    return;
+  }
+  if (body.candidates === true && Array.isArray(body.shelves)) {
+    jsonEnd(res, 200, {
+      ok: true,
+      candidates: deskBeaconCandidates(body.shelves, { includeNamed: body.includeNamed === true }),
+    });
+    return;
+  }
+  if (body.bind === true || (body.deviceTopicKey && body.controlId && body.id && body.bind !== false)) {
+    jsonEnd(res, 200, bindDeskLinePlanItem(body));
+    return;
+  }
+  if (method !== "PUT" && method !== "POST") {
+    jsonEnd(res, 405, { ok: false, error: "method" });
+    return;
+  }
+  if (Array.isArray(body.labels) || typeof body.labelsText === "string") {
+    const out = upsertDeskLinePlanBatch(body);
+    jsonEnd(res, out.ok ? 200 : 400, out);
+    return;
+  }
+  const out = upsertDeskLinePlanItem(body);
   jsonEnd(res, out.ok ? 200 : 400, out);
 }
 

@@ -427,6 +427,7 @@ function writeDoc(doc) {
       solutions: doc.solutions || [],
       rooms: Array.isArray(doc.rooms) ? doc.rooms : [],
       keyPlan: Array.isArray(doc.keyPlan) ? doc.keyPlan : prev.keyPlan || [],
+      linePlan: Array.isArray(doc.linePlan) ? doc.linePlan : prev.linePlan || [],
     }, null, 2) + "\n",
     "utf8",
   );
