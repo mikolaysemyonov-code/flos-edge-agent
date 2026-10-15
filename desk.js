@@ -2063,7 +2063,10 @@
       if (kind === "curtain") return isCurtainLoad(r);
       if (kind === "socket") return /розетк/i.test(lab);
       if (kind === "exhaust") return /вытяж/i.test(lab);
-      if (kind === "supply") return /приточ|вентиля(?!тор)|приток/i.test(lab) && !/заслон/i.test(lab);
+      if (kind === "supply") {
+        return /приточ|вытяж|вентил|канальн|клапан.*вент|реле.*вент/i.test(lab)
+          && !/заслон|mao|0\s*[-–]?\s*10/i.test(lab + " " + (r.controlId || ""));
+      }
       if (kind === "damper") {
         return /заслон|mao|0\s*[-–]?\s*10|аналог/i.test(lab + " " + (r.controlId || ""))
           || /mao/i.test(r.deviceTopicKey || "");
@@ -2103,7 +2106,7 @@
     function groupLoadsByRoom(loads) {
       const map = new Map();
       (loads || []).forEach((r) => {
-        const room = nameRoom(r.label) || "Без комнаты";
+        const room = nameRoom(r.label) || "Общие (без комнаты в имени)";
         if (!map.has(room)) map.set(room, []);
         map.get(room).push(r);
       });
@@ -2144,6 +2147,13 @@
         } else if (roomFilter && trigs[0] && nameRoom(trigs[0].label) === roomFilter) {
           trig.value = contactKey(trigs[0].deviceTopicKey, trigs[0].controlId);
         }
+      } else if (card.noTrigHint || card.id === "vent_vav_fan") {
+        trigLab.textContent = card.noTrigHint || "Зоны VAV";
+        const note = document.createElement("p");
+        note.className = "meta";
+        note.textContent = card.noTrigNote
+          || "Датчик не нужен — спрос идёт из зон с той же системой вентиляции.";
+        trig = note;
       } else {
         trigLab.textContent = "Расписание";
         const note = document.createElement("p");

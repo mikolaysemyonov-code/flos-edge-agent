@@ -1,6 +1,8 @@
 /**
  * Многозонная VAV: зона = P-регулятор CO₂ → заслонка 0–10 В;
- * вентилятор = Max-Selector по спросу зон.
+ * вентилятор = Max-Selector по спросу зон своей системы (systemId).
+ *
+ * Fan: если max(зон) ≤ stopBelow (покой) → 0%; иначе max(ymin, maxY).
  */
 import { liveDeskDeviceKey } from "./runtime-desk-rules-marks.mjs";
 
@@ -19,6 +21,11 @@ function pathOf(c) {
 function num(params, key, fallback) {
   const n = Number(params?.[key]);
   return Number.isFinite(n) ? n : fallback;
+}
+
+export function vavSystemId(params) {
+  const raw = String(params?.system ?? params?.systemId ?? "pu1").trim().toLowerCase();
+  return raw.replace(/[^a-z0-9_-]/g, "") || "pu1";
 }
 
 /** % открытия → значение AO Wiren Board (MAO: 0…10000 ≈ 0…10 В). */
@@ -40,6 +47,18 @@ export function vavDamperPercent(co2, xmin, xmax, ymin, ymax) {
   return y0 + ((x - lo) * (y1 - y0)) / (hi - lo);
 }
 
+/**
+ * Скорость вентилятора: покой (все зоны ≤ stopBelow) → 0;
+ * иначе пол ymin и max спрос.
+ */
+export function vavFanOutput(maxZonePct, ymin, stopBelow) {
+  const maxY = Number(maxZonePct) || 0;
+  const floor = Math.max(0, Math.min(100, Number(ymin) || 0));
+  const rest = Math.max(0, Math.min(100, Number(stopBelow) || 0));
+  if (maxY <= rest) return 0;
+  return Math.max(floor, Math.min(100, maxY));
+}
+
 export function isDeskVavSolution(sol) {
   const sid = String(sol?.solutionId || "");
   return sid === VAV_ZONE || sid === VAV_FAN;
@@ -55,21 +74,28 @@ function emitHelper() {
     "  return y0 + (x - lo) * (y1 - y0) / (hi - lo);",
     "}",
     "function __deskVavAo(pct) { return Math.round(Math.max(0, Math.min(100, Number(pct) || 0)) * 100); }",
+    "function __deskVavFanOut(maxY, ymin, stopBelow) {",
+    "  maxY = Number(maxY) || 0;",
+    "  var floor = Math.max(0, Math.min(100, Number(ymin) || 0));",
+    "  var rest = Math.max(0, Math.min(100, Number(stopBelow) || 0));",
+    "  if (maxY <= rest) return 0;",
+    "  return Math.max(floor, Math.min(100, maxY));",
+    "}",
     "if (typeof global !== 'undefined') {",
     "  if (!global.__deskVavDemand) global.__deskVavDemand = {};",
     "  if (!global.__deskVavFans) global.__deskVavFans = [];",
     "}",
-    "function __deskVavPushFan() {",
+    "function __deskVavPushFan(sys) {",
     "  try {",
-    "    var dem = (typeof global !== 'undefined' && global.__deskVavDemand) || {};",
+    "    sys = String(sys || 'pu1');",
+    "    var dem = (typeof global !== 'undefined' && global.__deskVavDemand && global.__deskVavDemand[sys]) || {};",
     "    var maxY = 0, k;",
     "    for (k in dem) { if (dem.hasOwnProperty(k)) { var v = Number(dem[k]); if (!isNaN(v) && v > maxY) maxY = v; } }",
     "    var fans = (typeof global !== 'undefined' && global.__deskVavFans) || [];",
     "    for (var i = 0; i < fans.length; i++) {",
     "      var f = fans[i];",
-    "      if (!f || !f.path) continue;",
-    "      var floor = Number(f.ymin); if (isNaN(floor)) floor = 10;",
-    "      var out = Math.max(floor, maxY);",
+    "      if (!f || !f.path || String(f.sys) !== sys) continue;",
+    "      var out = __deskVavFanOut(maxY, f.ymin, f.stopBelow);",
     "      try { wbActuatorSet(f.path, __deskVavAo(out), f.id, 50); } catch (_e) {}",
     "    }",
     "  } catch (_e2) {}",
@@ -82,6 +108,7 @@ function emitZone(sol) {
   const damper = pathOf((sol.targets || [])[0]);
   if (!co2 || !damper) return "";
   const p = sol.params || {};
+  const sys = vavSystemId(p);
   const xmin = num(p, "xmin", 600);
   const xmax = num(p, "xmax", 1100);
   const ymin = num(p, "ymin", 10);
@@ -94,9 +121,13 @@ function emitZone(sol) {
     "  then: function () {",
     "    try {",
     `      var y = __deskVavY(readValue(${esc(co2)}), ${xmin}, ${xmax}, ${ymin}, ${ymax});`,
-    "      if (typeof global !== 'undefined' && global.__deskVavDemand) global.__deskVavDemand[" + esc(key) + "] = y;",
+    "      if (typeof global !== 'undefined') {",
+    "        if (!global.__deskVavDemand) global.__deskVavDemand = {};",
+    `        if (!global.__deskVavDemand[${esc(sys)}]) global.__deskVavDemand[${esc(sys)}] = {};`,
+    `        global.__deskVavDemand[${esc(sys)}][${esc(key)}] = y;`,
+    "      }",
     `      wbActuatorSet(${esc(damper)}, __deskVavAo(y), ${esc(id)}, 50);`,
-    "      __deskVavPushFan();",
+    `      __deskVavPushFan(${esc(sys)});`,
     "    } catch (e) { if (typeof wbRuleGuardCatch === 'function') wbRuleGuardCatch(" + esc(id) + ", e); }",
     "  }",
     "});",
@@ -106,22 +137,21 @@ function emitZone(sol) {
 function emitFanRegister(sol) {
   const fan = pathOf((sol.targets || [])[0]);
   if (!fan) return "";
-  const ymin = num(sol.params || {}, "ymin", 10);
+  const p = sol.params || {};
+  const sys = vavSystemId(p);
+  const ymin = num(p, "ymin", 10);
+  const stopBelow = num(p, "stopBelow", ymin);
   const id = "desk_sol_" + sol.id + "_vavf";
   return [
     `(function () {`,
     "  if (typeof global === 'undefined') return;",
     "  if (!global.__deskVavFans) global.__deskVavFans = [];",
-    `  global.__deskVavFans.push({ path: ${esc(fan)}, ymin: ${ymin}, id: ${esc(id)} });`,
-    "  __deskVavPushFan();",
+    `  global.__deskVavFans.push({ path: ${esc(fan)}, ymin: ${ymin}, stopBelow: ${stopBelow}, sys: ${esc(sys)}, id: ${esc(id)} });`,
+    `  __deskVavPushFan(${esc(sys)});`,
     "})();",
   ].join("\n");
 }
 
-/**
- * Один блок на весь pour: helper + зоны + регистрация вентиляторов.
- * @param {object[]} solutions все solutions со стола
- */
 export function emitDeskVavBlock(solutions) {
   const list = Array.isArray(solutions) ? solutions : [];
   const zones = list.filter((s) => String(s?.solutionId || "") === VAV_ZONE);
