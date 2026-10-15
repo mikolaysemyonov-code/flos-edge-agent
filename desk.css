@@ -699,6 +699,100 @@
     }
     .room-acc > summary::-webkit-details-marker { display: none; }
     .room-acc-body { display: flex; flex-direction: column; gap: .25rem; padding-bottom: .25rem; }
+    /* Dropdown + tags — компактный выбор линий / датчиков */
+    .tag-pick { position: relative; margin: .15rem 0 .35rem; }
+    .tag-field {
+      display: flex; flex-wrap: wrap; align-items: center; gap: .35rem;
+      min-height: 2.55rem;
+      padding: .35rem .45rem;
+      border-radius: .7rem;
+      border: 1px solid rgb(255 255 255 / .14);
+      background: rgb(0 0 0 / .28);
+      cursor: text;
+    }
+    .tag-pick.open .tag-field {
+      border-color: rgb(var(--sky) / .45);
+      box-shadow: 0 0 0 1px rgb(var(--sky) / .2);
+    }
+    .tag-chips { display: contents; }
+    .tag-chip {
+      display: inline-flex; align-items: center; gap: .28rem;
+      max-width: 100%;
+      padding: .2rem .28rem .2rem .5rem;
+      border-radius: 999px;
+      background: rgb(var(--sky) / .16);
+      border: 1px solid rgb(var(--sky) / .28);
+      font-size: .78rem; font-weight: 600;
+      color: rgb(186 230 253);
+    }
+    .tag-chip-lab {
+      max-width: 11rem;
+      overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    }
+    .tag-chip .tag-lvl {
+      width: 3.2rem; height: 1.45rem;
+      margin: 0; padding: 0 .25rem;
+      border-radius: .4rem;
+      border: 1px solid rgb(255 255 255 / .14);
+      background: #1c1c1e; color: var(--ink);
+      font-size: .72rem; text-align: right;
+    }
+    .tag-chip select.tag-lvl { width: 3.8rem; text-align: left; appearance: none; }
+    .tag-x {
+      appearance: none; border: 0; background: rgb(255 255 255 / .08);
+      color: inherit; width: 1.35rem; height: 1.35rem; border-radius: 999px;
+      font-size: .85rem; line-height: 1; cursor: pointer; padding: 0;
+    }
+    .tag-x:hover { background: rgb(248 113 113 / .25); color: #fecaca; }
+    .tag-add {
+      appearance: none; border: 0; background: transparent;
+      color: var(--mute); font: inherit; font-size: .82rem;
+      padding: .2rem .35rem; cursor: pointer;
+    }
+    .tag-add:disabled { cursor: default; opacity: .7; }
+    .tag-add:not(:disabled):hover { color: rgb(186 230 253); }
+    .tag-dd {
+      position: absolute; left: 0; right: 0; top: calc(100% + .28rem);
+      z-index: 30;
+      max-height: min(16rem, 42vh);
+      display: flex; flex-direction: column;
+      border-radius: .75rem;
+      border: 1px solid rgb(255 255 255 / .14);
+      background: #1c1c1e;
+      box-shadow: 0 14px 40px -12px rgb(0 0 0 / .75);
+      overflow: hidden;
+    }
+    .tag-dd[hidden] { display: none; }
+    .tag-search {
+      flex: none; width: 100%;
+      border: 0; border-bottom: 1px solid rgb(255 255 255 / .1);
+      background: rgb(0 0 0 / .25); color: inherit;
+      padding: .55rem .7rem; font: inherit; font-size: .86rem;
+      outline: none;
+    }
+    .tag-dd-list { flex: 1; min-height: 0; overflow: auto; padding: .25rem 0 .4rem; }
+    .tag-dd-room { padding: .15rem 0; }
+    .tag-dd-row {
+      appearance: none; border: 0; background: transparent;
+      display: block; width: 100%; text-align: left;
+      color: inherit; font: inherit; font-size: .84rem;
+      padding: .4rem .75rem .4rem 1rem; cursor: pointer;
+    }
+    .tag-dd-row:hover { background: rgb(var(--sky) / .1); }
+    .tag-dd-row.on { color: rgb(186 230 253); background: rgb(var(--sky) / .12); }
+    .tag-dd-all { font-weight: 650; color: rgb(186 230 253); border-bottom: 1px solid rgb(255 255 255 / .06); }
+    .tag-dd-roomh {
+      font-size: .72rem !important; font-weight: 700 !important;
+      letter-spacing: .04em; text-transform: uppercase;
+      color: rgb(186 230 253) !important;
+      padding-left: .75rem !important;
+    }
+    .tag-dd-roomh.mute {
+      display: block; padding: .35rem .75rem .1rem;
+      color: var(--mute); font-size: .68rem; font-weight: 700;
+      letter-spacing: .05em; text-transform: uppercase;
+    }
+    .tag-pick-lvl .tag-chip { border-radius: .65rem; padding-right: .22rem; }
     .actions button:disabled {
       opacity: .4; cursor: not-allowed;
     }

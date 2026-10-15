@@ -1953,6 +1953,313 @@
       if (i < 0) return null;
       return { deviceTopicKey: v.slice(0, i), controlId: v.slice(i + 2) };
     }
+    /**
+     * Dropdown + chips: поиск, «вся комната», поштучно; для сцен — % / Вкл·Выкл на теге.
+     * Без галки в списке = не в сцене (ignore).
+     */
+    function makeTagPicker(opts) {
+      const rows = Array.isArray(opts.rows) ? opts.rows : [];
+      const multi = opts.multi !== false;
+      const withLevel = Boolean(opts.withLevel);
+      const defLevel = Number.isFinite(Number(opts.defLevel)) ? Number(opts.defLevel) : 100;
+      const placeholder = opts.placeholder || "Выберите…";
+      const emptyText = opts.emptyText || "Нет подходящих имён — разметьте в «Разметить».";
+      const onChange = typeof opts.onChange === "function" ? opts.onChange : () => {};
+      const byKey = new Map();
+      rows.forEach((r) => byKey.set(contactKey(r.deviceTopicKey, r.controlId), r));
+      /** @type {Map<string, number>} */
+      const selected = new Map();
+      (opts.draftKeys || []).forEach((k) => {
+        if (!byKey.has(k)) return;
+        const lv = opts.draftLevels && opts.draftLevels[k];
+        selected.set(k, Number.isFinite(Number(lv)) ? Number(lv) : defLevel);
+      });
+
+      const root = document.createElement("div");
+      root.className = "tag-pick" + (withLevel ? " tag-pick-lvl" : "");
+      const field = document.createElement("div");
+      field.className = "tag-field";
+      const chips = document.createElement("div");
+      chips.className = "tag-chips";
+      const addBtn = document.createElement("button");
+      addBtn.type = "button";
+      addBtn.className = "tag-add";
+      addBtn.textContent = rows.length ? placeholder : emptyText;
+      addBtn.disabled = !rows.length;
+      field.append(chips, addBtn);
+      const panel = document.createElement("div");
+      panel.className = "tag-dd";
+      panel.hidden = true;
+      const search = document.createElement("input");
+      search.type = "search";
+      search.className = "tag-search";
+      search.placeholder = "Поиск: кух, бра, канал…";
+      search.autocomplete = "off";
+      const list = document.createElement("div");
+      list.className = "tag-dd-list";
+      panel.append(search, list);
+      root.append(field, panel);
+
+      function roomOf(r) {
+        return nameRoom(r.label) || "Общие (без комнаты в имени)";
+      }
+      function shortLabel(r) {
+        const room = roomOf(r);
+        const raw = String(r.label || "").trim();
+        if (room && raw.indexOf(room) === 0) {
+          const rest = raw.slice(room.length).replace(/^[\s·\-–—:]+/, "").trim();
+          if (rest) return rest;
+        }
+        return raw || r.controlId || "линия";
+      }
+      function keysInRoom(room) {
+        return rows.filter((r) => roomOf(r) === room).map((r) => contactKey(r.deviceTopicKey, r.controlId));
+      }
+      function collect() {
+        return [...selected.keys()].map((k) => {
+          const base = parseBindValue(k);
+          if (!base) return null;
+          if (!withLevel) return base;
+          const n = Number(selected.get(k));
+          return { ...base, level: Number.isFinite(n) ? Math.max(0, Math.min(100, n)) : defLevel };
+        }).filter(Boolean);
+      }
+      function paintChips() {
+        chips.replaceChildren();
+        if (!selected.size) {
+          addBtn.textContent = rows.length ? placeholder : emptyText;
+          return;
+        }
+        addBtn.textContent = multi ? "+ ещё" : "сменить";
+        const rooms = groupLoadsByRoom(rows);
+        const painted = new Set();
+        rooms.forEach(([room, roomRows]) => {
+          const keys = roomRows.map((r) => contactKey(r.deviceTopicKey, r.controlId));
+          const selKeys = keys.filter((k) => selected.has(k));
+          if (!selKeys.length) return;
+          const allRoom = multi && keys.length > 1 && selKeys.length === keys.length;
+          if (allRoom) {
+            selKeys.forEach((k) => painted.add(k));
+            const chip = document.createElement("div");
+            chip.className = "tag-chip";
+            const lab = document.createElement("span");
+            lab.className = "tag-chip-lab";
+            lab.textContent = room + " (вся)";
+            chip.appendChild(lab);
+            if (withLevel) {
+              const lvl = makeLevelCtrl(selKeys[0], () => {
+                const v = Number(selected.get(selKeys[0]));
+                selKeys.forEach((k) => selected.set(k, v));
+                onChange();
+              });
+              chip.appendChild(lvl);
+            }
+            const x = document.createElement("button");
+            x.type = "button";
+            x.className = "tag-x";
+            x.setAttribute("aria-label", "Убрать " + room);
+            x.textContent = "×";
+            x.addEventListener("click", (e) => {
+              e.stopPropagation();
+              selKeys.forEach((k) => selected.delete(k));
+              paintChips();
+              if (!panel.hidden) paintList();
+              onChange();
+            });
+            chip.appendChild(x);
+            chips.appendChild(chip);
+            return;
+          }
+          selKeys.forEach((k) => {
+            if (painted.has(k)) return;
+            painted.add(k);
+            const r = byKey.get(k);
+            const chip = document.createElement("div");
+            chip.className = "tag-chip";
+            const lab = document.createElement("span");
+            lab.className = "tag-chip-lab";
+            lab.textContent = room + " · " + shortLabel(r);
+            chip.appendChild(lab);
+            if (withLevel) chip.appendChild(makeLevelCtrl(k, onChange));
+            const x = document.createElement("button");
+            x.type = "button";
+            x.className = "tag-x";
+            x.setAttribute("aria-label", "Убрать");
+            x.textContent = "×";
+            x.addEventListener("click", (e) => {
+              e.stopPropagation();
+              selected.delete(k);
+              paintChips();
+              if (!panel.hidden) paintList();
+              onChange();
+            });
+            chip.appendChild(x);
+            chips.appendChild(chip);
+          });
+        });
+      }
+      function makeLevelCtrl(key, after) {
+        const r = byKey.get(key);
+        const dim = r && isLikelyDimmerLoad(r);
+        let ctrl;
+        if (dim) {
+          ctrl = document.createElement("input");
+          ctrl.type = "number";
+          ctrl.className = "tag-lvl";
+          ctrl.min = "0";
+          ctrl.max = "100";
+          ctrl.step = "1";
+          ctrl.value = String(selected.get(key) ?? defLevel);
+          ctrl.title = "% · 0 = гасить";
+          ctrl.addEventListener("click", (e) => e.stopPropagation());
+          ctrl.addEventListener("change", () => {
+            const n = Number(ctrl.value);
+            selected.set(key, Number.isFinite(n) ? Math.max(0, Math.min(100, n)) : defLevel);
+            after();
+          });
+        } else {
+          ctrl = document.createElement("select");
+          ctrl.className = "tag-lvl tag-lvl-sw";
+          [["0", "Выкл"], ["100", "Вкл"]].forEach(([v, t]) => {
+            const o = document.createElement("option");
+            o.value = v;
+            o.textContent = t;
+            ctrl.appendChild(o);
+          });
+          ctrl.value = (selected.get(key) ?? defLevel) >= 50 ? "100" : "0";
+          ctrl.addEventListener("click", (e) => e.stopPropagation());
+          ctrl.addEventListener("change", () => {
+            selected.set(key, Number(ctrl.value) || 0);
+            after();
+          });
+        }
+        return ctrl;
+      }
+      function paintList() {
+        list.replaceChildren();
+        if (!rows.length) {
+          const empty = document.createElement("p");
+          empty.className = "meta orphan";
+          empty.textContent = emptyText;
+          list.appendChild(empty);
+          return;
+        }
+        const q = String(search.value || "").trim().toLowerCase();
+        const match = (r) => !q || String(r.label || "").toLowerCase().includes(q)
+          || String(r.controlId || "").toLowerCase().includes(q)
+          || String(r.deviceTopicKey || "").toLowerCase().includes(q);
+        if (multi) {
+          const allBtn = document.createElement("button");
+          allBtn.type = "button";
+          allBtn.className = "tag-dd-row tag-dd-all";
+          const allOn = rows.length && rows.every((r) => selected.has(contactKey(r.deviceTopicKey, r.controlId)));
+          allBtn.textContent = allOn ? "✓ Снять всё" : "Выбрать всё";
+          allBtn.addEventListener("click", () => {
+            if (allOn) selected.clear();
+            else rows.forEach((r) => {
+              const k = contactKey(r.deviceTopicKey, r.controlId);
+              if (!selected.has(k)) selected.set(k, defLevel);
+            });
+            paintChips();
+            paintList();
+            onChange();
+          });
+          list.appendChild(allBtn);
+        }
+        groupLoadsByRoom(rows).forEach(([room, roomRows]) => {
+          const visible = roomRows.filter(match);
+          if (!visible.length) return;
+          const keys = keysInRoom(room);
+          const roomWrap = document.createElement("div");
+          roomWrap.className = "tag-dd-room";
+          if (multi && keys.length > 1) {
+            const roomBtn = document.createElement("button");
+            roomBtn.type = "button";
+            roomBtn.className = "tag-dd-row tag-dd-roomh";
+            const on = keys.every((k) => selected.has(k));
+            roomBtn.textContent = (on ? "✓ " : "") + "Вся · " + room + " · " + keys.length;
+            roomBtn.addEventListener("click", () => {
+              if (on) keys.forEach((k) => selected.delete(k));
+              else keys.forEach((k) => { if (!selected.has(k)) selected.set(k, defLevel); });
+              paintChips();
+              paintList();
+              onChange();
+            });
+            roomWrap.appendChild(roomBtn);
+          } else {
+            const h = document.createElement("div");
+            h.className = "tag-dd-roomh mute";
+            h.textContent = room;
+            roomWrap.appendChild(h);
+          }
+          visible.forEach((r) => {
+            const k = contactKey(r.deviceTopicKey, r.controlId);
+            const rowBtn = document.createElement("button");
+            rowBtn.type = "button";
+            rowBtn.className = "tag-dd-row" + (selected.has(k) ? " on" : "");
+            rowBtn.textContent = (selected.has(k) ? "✓ " : "") + shortLabel(r);
+            rowBtn.addEventListener("click", () => {
+              if (!multi) {
+                selected.clear();
+                selected.set(k, defLevel);
+                closePanel();
+              } else if (selected.has(k)) selected.delete(k);
+              else selected.set(k, defLevel);
+              paintChips();
+              paintList();
+              onChange();
+            });
+            roomWrap.appendChild(rowBtn);
+          });
+          list.appendChild(roomWrap);
+        });
+        if (!list.children.length) {
+          const empty = document.createElement("p");
+          empty.className = "meta";
+          empty.textContent = "Ничего не найдено";
+          list.appendChild(empty);
+        }
+      }
+      function openPanel() {
+        if (!rows.length) return;
+        panel.hidden = false;
+        root.classList.add("open");
+        paintList();
+        search.focus();
+      }
+      function closePanel() {
+        panel.hidden = true;
+        root.classList.remove("open");
+        search.value = "";
+      }
+      addBtn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        if (panel.hidden) openPanel();
+        else closePanel();
+      });
+      field.addEventListener("click", (e) => {
+        if (e.target === addBtn || e.target.closest(".tag-chip")) return;
+        if (panel.hidden) openPanel();
+      });
+      search.addEventListener("input", paintList);
+      search.addEventListener("keydown", (e) => {
+        if (e.key === "Escape") closePanel();
+      });
+      const onDoc = (e) => {
+        if (!root.contains(e.target)) closePanel();
+      };
+      document.addEventListener("click", onDoc);
+      root._tagPickDispose = () => document.removeEventListener("click", onDoc);
+      paintChips();
+      return {
+        node: root,
+        collect,
+        isEmpty: () => selected.size === 0,
+        dispose: () => {
+          if (root._tagPickDispose) root._tagPickDispose();
+        },
+      };
+    }
     function catOfSol(sol) {
       const card = deskCatalog.find((c) => c.id === sol.solutionId);
       return (card && card.cat) || "";
@@ -2003,7 +2310,12 @@
         ? n + " на щите — правьте здесь или в «Залить · Сценарии»."
         : "Соберите карточку ниже → «На стол» → «Залить».";
     }
+    let cardSheetDispose = null;
     function closeCardSheet() {
+      if (typeof cardSheetDispose === "function") {
+        try { cardSheetDispose(); } catch (_e) {}
+        cardSheetDispose = null;
+      }
       $("cardSheet").hidden = true;
       $("cardMask").hidden = true;
     }
@@ -2113,12 +2425,16 @@
       return /wb-led|Channel|CCT|Brightness|димм|RGB/i.test(blob);
     }
     function loadsForCard(card, room) {
-      const all = loadsForRoom(room);
+      let all = loadsForRoom(room);
       const kind = card.loadKind || "";
-      if (kind) return preferRows(all, (r) => loadKindHit(kind, r), true);
-      if (card.cat === "Шторы") return preferRows(all, isCurtainLoad, true);
-      if (card.cat === "Свет" || card.cat === "Сцены") return preferRows(all, isLightLoad, true);
-      if (card.cat === "Розетки") return preferRows(all, (r) => /розетк/i.test(r.label || ""), true);
+      if (kind) all = preferRows(all, (r) => loadKindHit(kind, r), true);
+      else if (card.cat === "Шторы") all = preferRows(all, isCurtainLoad, true);
+      else if (card.cat === "Свет" || card.cat === "Сцены") all = preferRows(all, isLightLoad, true);
+      else if (card.cat === "Розетки") all = preferRows(all, (r) => /розетк/i.test(r.label || ""), true);
+      // Диммирование — только линии с Auto-Change / Channel (не обычные реле).
+      if (card.id === "light_dim_hold_mcm") {
+        all = preferRows(all, isLikelyDimmerLoad, true);
+      }
       return all;
     }
     function groupLoadsByRoom(loads) {
@@ -2143,28 +2459,42 @@
       p.textContent = card.summary;
       const needTrig = card.needTrig !== false;
       const needAux = card.needAux === true;
+      const disposers = [];
+      let trigPicker = null;
+      let auxPicker = null;
+      let tgtPicker = null;
       let trig = null;
       let aux = null;
       const trigLab = document.createElement("span");
       trigLab.className = "fld";
+      const bump = () => { err.textContent = ""; refreshSave(); };
       if (needTrig) {
         trigLab.textContent = sheetTrigLab(card);
-        trig = document.createElement("select");
-        trig.className = "bind";
-        trig.setAttribute("aria-label", trigLab.textContent);
         const trigs = triggersForCard(card);
-        fillSelect(trig, trigs, roomFilter ? ("Из «" + roomFilter + "» или шины") : "С этой шины");
+        let draftTrigKeys = [];
         if (draft && draft.trigger) {
-          trig.value = contactKey(draft.trigger.deviceTopicKey, draft.trigger.controlId);
-        } else if (sheetNeedSensor(card)) {
+          draftTrigKeys = [contactKey(draft.trigger.deviceTopicKey, draft.trigger.controlId)];
+        } else if (sheetNeedSensor(card) && trigs.length) {
           const preferHum = /humidity|влажн/i.test(card.id + sheetTrigLab(card));
           const sens = trigs.find((r) => preferHum && /влажн|humidity/i.test(r.label || ""))
             || trigs.find((r) => (!roomFilter || nameRoom(r.label) === roomFilter) && isSensorLabel(r.label))
-            || trigs.find((r) => isSensorLabel(r.label));
-          if (sens) trig.value = contactKey(sens.deviceTopicKey, sens.controlId);
+            || trigs.find((r) => isSensorLabel(r.label))
+            || (sheetIsMotion(card) && trigs[0])
+            || (sheetIsReed(card) && trigs[0]);
+          if (sens) draftTrigKeys = [contactKey(sens.deviceTopicKey, sens.controlId)];
         } else if (roomFilter && trigs[0] && nameRoom(trigs[0].label) === roomFilter) {
-          trig.value = contactKey(trigs[0].deviceTopicKey, trigs[0].controlId);
+          draftTrigKeys = [contactKey(trigs[0].deviceTopicKey, trigs[0].controlId)];
         }
+        trigPicker = makeTagPicker({
+          rows: trigs,
+          multi: false,
+          placeholder: "Выберите " + sheetTrigLab(card).toLowerCase() + "…",
+          emptyText: "Нет подходящих имён — разметьте в «Разметить».",
+          draftKeys: draftTrigKeys,
+          onChange: bump,
+        });
+        disposers.push(trigPicker.dispose);
+        trig = trigPicker.node;
       } else if (card.noTrigHint || card.id === "vent_vav_fan") {
         trigLab.textContent = card.noTrigHint || "Зоны VAV";
         const note = document.createElement("p");
@@ -2185,21 +2515,28 @@
       auxLab.className = "fld";
       if (needAux) {
         auxLab.textContent = sheetAuxLab(card);
-        aux = document.createElement("select");
-        aux.className = "bind";
-        aux.setAttribute("aria-label", auxLab.textContent);
         const auxRows = preferRows(
           namedTriggers().filter((r) => String(r.label || "").trim()),
           (r) => /движен|motion|pir|присут/i.test(r.label || ""),
           true,
         );
-        fillSelect(aux, auxRows, "Датчик движения");
+        let draftAuxKeys = [];
         if (draft && draft.aux) {
-          aux.value = contactKey(draft.aux.deviceTopicKey, draft.aux.controlId);
+          draftAuxKeys = [contactKey(draft.aux.deviceTopicKey, draft.aux.controlId)];
         } else {
           const hit = auxRows.find((r) => /движен|motion|pir/i.test(r.label || ""));
-          if (hit) aux.value = contactKey(hit.deviceTopicKey, hit.controlId);
+          if (hit) draftAuxKeys = [contactKey(hit.deviceTopicKey, hit.controlId)];
         }
+        auxPicker = makeTagPicker({
+          rows: auxRows,
+          multi: false,
+          placeholder: "Выберите " + sheetAuxLab(card).toLowerCase() + "…",
+          emptyText: "Нет датчиков движения — разметьте в «Разметить».",
+          draftKeys: draftAuxKeys,
+          onChange: bump,
+        });
+        disposers.push(auxPicker.dispose);
+        aux = auxPicker.node;
       }
       const tgtLab = document.createElement("span");
       tgtLab.className = "fld";
@@ -2212,130 +2549,33 @@
       const defLevel = levelField != null && Number.isFinite(Number(levelField.def))
         ? Number(levelField.def)
         : 100;
-      const draftLevelOf = (key) => {
-        const t = (draft && draft.targets || []).find((x) => contactKey(x.deviceTopicKey, x.controlId) === key);
-        if (t && Number.isFinite(Number(t.level))) return Number(t.level);
-        if (draft && draft.params && Number.isFinite(Number(draft.params.level))) return Number(draft.params.level);
-        return defLevel;
-      };
-      let collectTargets;
-      let tgtNode;
-      if (card.multi) {
-        const picks = document.createElement("div");
-        picks.className = "picks room-picks" + (perLoadLevel ? " with-lvl" : "");
-        if (!loads.length) {
-          const empty = document.createElement("p");
-          empty.className = "meta orphan";
-          empty.textContent = /leak|valve/.test(card.id + (card.loadKind || ""))
-            ? "Нет линий с именем «кран/клапан» — разметьте краны, не свет."
-            : "Нет подходящих нагрузок этого типа — поправьте имена в «Разметить».";
-          picks.appendChild(empty);
-        } else {
-          if (perLoadLevel) {
-            const hint = document.createElement("p");
-            hint.className = "meta";
-            hint.textContent = "Галка = участвует в сцене. Без галки = не трогаем (оставить как есть). 0% / Выкл = погасить.";
-            picks.appendChild(hint);
-          }
-          const rooms = groupLoadsByRoom(loads);
-          rooms.forEach(([room, rows], roomIdx) => {
-            const det = document.createElement("details");
-            det.className = "room-acc";
-            const draftHit = draft && rows.some((load) =>
-              (draft.targets || []).some((t) => contactKey(t.deviceTopicKey, t.controlId) === contactKey(load.deviceTopicKey, load.controlId)));
-            det.open = draftHit
-              || (Boolean(roomFilter) && room === roomFilter)
-              || (perLoadLevel && roomIdx === 0);
-            const sum = document.createElement("summary");
-            sum.textContent = room + " · " + rows.length;
-            det.appendChild(sum);
-            const box = document.createElement("div");
-            box.className = "room-acc-body";
-            rows.forEach((load) => {
-              const lab = document.createElement("label");
-              if (perLoadLevel) lab.className = "pick-lvl";
-              const cb = document.createElement("input");
-              cb.type = "checkbox";
-              cb.value = contactKey(load.deviceTopicKey, load.controlId);
-              const name = document.createElement("span");
-              name.className = "pick-name";
-              name.textContent = load.label;
-              lab.append(cb, name);
-              if (perLoadLevel) {
-                const dim = isLikelyDimmerLoad(load);
-                let lvl;
-                if (dim) {
-                  lvl = document.createElement("input");
-                  lvl.type = "number";
-                  lvl.className = "lvl";
-                  lvl.min = "0";
-                  lvl.max = "100";
-                  lvl.step = "1";
-                  lvl.value = String(draftLevelOf(cb.value));
-                  lvl.title = "% · 0 = гасить";
-                  lvl.setAttribute("aria-label", "Уровень % · " + load.label);
-                } else {
-                  lvl = document.createElement("select");
-                  lvl.className = "lvl lvl-sw";
-                  [["0", "Выкл"], ["100", "Вкл"]].forEach(([v, t]) => {
-                    const opt = document.createElement("option");
-                    opt.value = v;
-                    opt.textContent = t;
-                    lvl.appendChild(opt);
-                  });
-                  const cur = draftLevelOf(cb.value);
-                  lvl.value = cur >= 50 ? "100" : "0";
-                  lvl.title = "Реле: вкл или выкл";
-                  lvl.setAttribute("aria-label", "Реле · " + load.label);
-                }
-                lvl.disabled = true;
-                const syncLvl = () => {
-                  lvl.disabled = !cb.checked;
-                  lab.classList.toggle("ignored", !cb.checked);
-                };
-                cb.addEventListener("change", syncLvl);
-                lab.appendChild(lvl);
-                lab.classList.add("ignored");
-              }
-              if (draft && (draft.targets || []).some((t) => contactKey(t.deviceTopicKey, t.controlId) === cb.value)) {
-                cb.checked = true;
-                det.open = true;
-                if (perLoadLevel) {
-                  const lvl = lab.querySelector(".lvl");
-                  if (lvl) {
-                    lvl.disabled = false;
-                    lab.classList.remove("ignored");
-                  }
-                }
-              }
-              box.appendChild(lab);
-            });
-            det.appendChild(box);
-            picks.appendChild(det);
-          });
-        }
-        tgtNode = picks;
-        collectTargets = () => [...picks.querySelectorAll("input[type=checkbox]:checked")].map((o) => {
-          const base = parseBindValue(o.value);
-          if (!base) return null;
-          if (!perLoadLevel) return base;
-          const lvl = o.closest("label") && o.closest("label").querySelector(".lvl");
-          const n = Number(lvl && lvl.value);
-          return { ...base, level: Number.isFinite(n) ? Math.max(0, Math.min(100, n)) : defLevel };
-        }).filter(Boolean);
-      } else {
-        const tgt = document.createElement("select");
-        tgt.className = "bind";
-        tgt.setAttribute("aria-label", tgtLab.textContent);
-        fillSelect(tgt, loads, "Из этой разметки");
-        if (draft && draft.targets && draft.targets[0]) {
-          tgt.value = contactKey(draft.targets[0].deviceTopicKey, draft.targets[0].controlId);
-        } else if (roomFilter && loads[0] && loads[0].room === roomFilter) {
-          tgt.value = contactKey(loads[0].deviceTopicKey, loads[0].controlId);
-        }
-        tgtNode = tgt;
-        collectTargets = () => [parseBindValue(tgt.value)].filter(Boolean);
-      }
+      const draftKeys = (draft && draft.targets || [])
+        .map((t) => contactKey(t.deviceTopicKey, t.controlId));
+      const draftLevels = {};
+      (draft && draft.targets || []).forEach((t) => {
+        const k = contactKey(t.deviceTopicKey, t.controlId);
+        if (Number.isFinite(Number(t.level))) draftLevels[k] = Number(t.level);
+        else if (draft.params && Number.isFinite(Number(draft.params.level))) draftLevels[k] = Number(draft.params.level);
+      });
+      tgtPicker = makeTagPicker({
+        rows: loads,
+        multi: card.multi !== false,
+        withLevel: perLoadLevel,
+        defLevel,
+        placeholder: perLoadLevel
+          ? "Комнаты / линии в сцену…"
+          : ("Выберите " + sheetTgtLab(card).toLowerCase() + "…"),
+        emptyText: /leak|valve/.test(card.id + (card.loadKind || ""))
+          ? "Нет линий с именем «кран/клапан» — разметьте краны, не свет."
+          : "Нет подходящих нагрузок этого типа — поправьте имена в «Разметить».",
+        draftKeys,
+        draftLevels,
+        onChange: bump,
+      });
+      disposers.push(tgtPicker.dispose);
+      const tgtNode = tgtPicker.node;
+      const collectTargets = () => tgtPicker.collect();
+      cardSheetDispose = () => disposers.forEach((fn) => { try { fn(); } catch (_e) {} });
       const fields = (Array.isArray(card.fields) ? card.fields : [])
         .filter((f) => !(perLoadLevel && f.key === "level"));
       const paramBox = document.createElement("div");
@@ -2392,8 +2632,8 @@
       save.className = "ghost";
       save.textContent = "На стол";
       const refreshSave = () => {
-        const okTrig = !needTrig || (trig && trig.tagName === "SELECT" && trig.value);
-        const okAux = !needAux || (aux && aux.value);
+        const okTrig = !needTrig || (trigPicker && !trigPicker.isEmpty());
+        const okAux = !needAux || (auxPicker && !auxPicker.isEmpty());
         const okTgt = collectTargets().length > 0;
         const ready = Boolean(okTrig && okAux && okTgt);
         save.disabled = !ready;
@@ -2401,16 +2641,18 @@
       };
       save.addEventListener("click", () => {
         if (save.disabled) return;
+        const trigContact = trigPicker ? (trigPicker.collect()[0] || null) : null;
+        const auxContact = auxPicker ? (auxPicker.collect()[0] || null) : null;
         fetch("/runtime/desk-solutions", {
           method: "PUT",
           headers: { "content-type": "application/json" },
           body: JSON.stringify({
             id: draft && draft.id,
             solutionId: card.id,
-            trigger: needTrig ? parseBindValue(trig.value) : null,
-            aux: needAux && aux ? parseBindValue(aux.value) : undefined,
+            trigger: needTrig ? trigContact : null,
+            aux: needAux ? auxContact : undefined,
             targets: collectTargets(),
-            params: fields.length ? collectParams() : undefined,
+            params: (fields.length || perLoadLevel) ? collectParams() : undefined,
           }),
         }).then((r) => r.json()).then((j) => {
           if (!j.ok) {
@@ -2441,11 +2683,6 @@
           });
         }).catch(() => { err.textContent = "Нет связи с агентом"; });
       });
-      const clearErr = () => { err.textContent = ""; refreshSave(); };
-      if (needTrig && trig.tagName === "SELECT") trig.addEventListener("change", clearErr);
-      if (needAux && aux) aux.addEventListener("change", clearErr);
-      tgtNode.addEventListener("change", clearErr);
-      tgtNode.addEventListener("click", refreshSave);
       refreshSave();
       const cancel = document.createElement("button");
       cancel.type = "button";
