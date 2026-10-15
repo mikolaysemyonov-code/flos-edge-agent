@@ -1113,16 +1113,45 @@
         back.addEventListener("click", closePourMod);
         const head = document.createElement("div");
         head.className = "vcard sky on";
-        paintModuleFace(head, shelf || {
-          deviceTopicKey: openPourMod,
-          label: sku,
-          channels: chunk.map((i) => ({ controlId: i.controlId, name: i.title })),
-        }, { drill: true });
+        const top = document.createElement("div");
+        top.className = "vtop";
+        const ico = document.createElement("span");
+        ico.className = "ico";
+        ico.innerHTML = MOD_ICO[moduleKind(shelf || { deviceTopicKey: openPourMod })] || MOD_ICO.led;
+        const cat = document.createElement("span");
+        cat.className = "cat on";
+        cat.textContent = chunk.length + " к заливке";
+        top.append(ico, cat);
+        const vt = document.createElement("span");
+        vt.className = "vt";
+        vt.textContent = sku;
+        const vs = document.createElement("span");
+        vs.className = "vs";
+        vs.textContent = "Имена на щит · кнопка «1 · Имена» выше";
+        const bars = document.createElement("div");
+        bars.className = "ch-bars";
+        bars.setAttribute("aria-hidden", "true");
+        chunk.forEach((i) => {
+          const b = document.createElement("span");
+          b.className = "ch-bar" + (i.status === "blocked" ? "" : " named");
+          bars.appendChild(b);
+        });
+        const pills = document.createElement("div");
+        pills.className = "mod-pills";
+        const occ = document.createElement("span");
+        occ.className = "mod-pill";
+        occ.textContent = chunk.length + " новое";
+        const bus = document.createElement("span");
+        bus.className = "mod-pill on";
+        bus.textContent = "На шине";
+        pills.append(occ, bus);
+        head.append(top, vt, vs, bars, pills);
         const tip = document.createElement("p");
         tip.className = "meta";
-        tip.textContent = chunk.length
-          ? ("К заливке · " + chunk.length + ". Кнопка «1 · Имена» выше.")
-          : "В этом модуле нового нет.";
+        const blocked = chunk.filter((i) => i.status === "blocked").length;
+        tip.textContent = blocked
+          ? ("Блок · " + blocked + " без имени — дайте имя в «Разметить» или «Снять».")
+          : (chunk.length ? "Проверьте каналы, затем «1 · Имена»." : "В этом модуле нового нет.");
         const ul = document.createElement("ul");
         ul.className = "channels drill-list";
         chunk.slice().sort(byContact).forEach((i) => ul.appendChild(readyCard(i, i.room)));
