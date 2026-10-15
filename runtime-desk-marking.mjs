@@ -213,6 +213,7 @@ export function applyMarksToShelves(shelves, doc = readDeskMarking(), poured = r
         shelves: dropped.shelves,
         solutions: Array.isArray(json.solutions) ? json.solutions : [],
         rooms: json.rooms,
+        keyPlan: Array.isArray(json.keyPlan) ? json.keyPlan : [],
       });
     }
   } catch {

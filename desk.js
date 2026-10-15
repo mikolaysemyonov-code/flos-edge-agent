@@ -1932,11 +1932,18 @@
       (lastShelvesRows || []).forEach((s) => {
         (s.channels || []).forEach((ch) => {
           if (isDeskLoad(ch.controlId)) return;
+          // Счётчики — только для скана, в типовые не тащим.
+          if (/Short Press Counter$/i.test(String(ch.controlId || ""))) return;
+          if (!isDeskInput(ch.controlId, s.deviceTopicKey)
+            && !/геркон|движен|reed|motion|pir|co2|влажн|темпер/i.test(String(ch.name || ""))) {
+            return;
+          }
           const name = String(ch.name || "").trim();
           const row = {
             deviceTopicKey: s.deviceTopicKey,
             controlId: ch.controlId,
             label: name ? prettyContactName(name) : (s.label || "вход") + " · " + ch.controlId,
+            named: Boolean(name),
           };
           if (name) named.push(row);
           else rest.push(row);
@@ -2459,7 +2466,11 @@
           /двер|геркон|reed|окн/i.test(r.label || "")
           || /reed|contact|input/i.test(r.controlId || ""), true);
       }
-      if (!sheetNeedSensor(card)) return all;
+      if (!sheetNeedSensor(card)) {
+        // После скана клавиш — только подписанные входы; иначе «Выберите кнопку» путает.
+        const named = all.filter((r) => r.named);
+        return named.length ? named : all;
+      }
       return preferRows(all, (r) => isSensorLabel(r.label), true);
     }
     function isLikelyDimmerLoad(r) {
@@ -2517,6 +2528,21 @@
         let draftTrigKeys = [];
         if (draft && draft.trigger) {
           draftTrigKeys = [contactKey(draft.trigger.deviceTopicKey, draft.trigger.controlId)];
+        } else if (!sheetNeedSensor(card) && trigs.length) {
+          // Свежая привязка со скана — сразу подставить.
+          const fresh = [...(keyPlan || [])]
+            .filter((k) => k.deviceTopicKey && k.controlId)
+            .sort((a, b) => String(b.boundAt || "").localeCompare(String(a.boundAt || "")))[0];
+          if (fresh) {
+            const fk = contactKey(fresh.deviceTopicKey, fresh.controlId);
+            if (trigs.some((r) => contactKey(r.deviceTopicKey, r.controlId) === fk)) {
+              draftTrigKeys = [fk];
+            }
+          }
+          if (!draftTrigKeys.length && roomFilter) {
+            const hit = trigs.find((r) => nameRoom(r.label) === roomFilter && r.named) || trigs.find((r) => r.named);
+            if (hit) draftTrigKeys = [contactKey(hit.deviceTopicKey, hit.controlId)];
+          }
         } else if (sheetNeedSensor(card) && trigs.length) {
           const preferHum = /humidity|влажн/i.test(card.id + sheetTrigLab(card));
           const sens = trigs.find((r) => preferHum && /влажн|humidity/i.test(r.label || ""))
@@ -4084,11 +4110,29 @@
                 .then((res) => {
                   if (res && res.ok) {
                     keyPlan = res.keyPlan || keyPlan;
+                    const bound = (keyPlan || []).find((k) => k.id === armedId);
+                    const markName = bound
+                      ? (bound.room + " · " + bound.label)
+                      : "";
+                    if (markName && sig.deviceTopicKey && sig.controlId) {
+                      lastShelvesRows = (lastShelvesRows || []).map((s) => {
+                        if (!s || s.deviceTopicKey !== sig.deviceTopicKey) return s;
+                        return {
+                          ...s,
+                          channels: (s.channels || []).map((c) =>
+                            c && c.controlId === sig.controlId
+                              ? { ...c, name: markName, source: "desk" }
+                              : c,
+                          ),
+                        };
+                      });
+                    }
                     const head = $("previewHead");
                     if (head) {
                       head.hidden = false;
                       head.style.color = "";
-                      head.textContent = "Клавиша привязана · " + sig.deviceTopicKey + "/" + sig.controlId;
+                      head.textContent = "Клавиша привязана · " + sig.deviceTopicKey + "/" + sig.controlId
+                        + " · в типовых как кнопка";
                     }
                     return loadLast().then(() => loadKeyPlan()).then(() => renderMark());
                   }
