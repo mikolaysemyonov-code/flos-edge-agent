@@ -37,6 +37,13 @@ import {
   deskInputClosed,
   isDeskInputControl,
 } from "./runtime-desk-actuate.mjs";
+import {
+  bindDeskKeyPlanItem,
+  deleteDeskKeyPlanItem,
+  listDeskKeyPlan,
+  replaceDeskKeyPlan,
+  upsertDeskKeyPlanItem,
+} from "./runtime-desk-key-scan.mjs";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 
@@ -277,6 +284,42 @@ export function handleRuntimeDeskPourBuild(_req, res) {
 }
 
 export { buildDeskPourPackage, assessDeskCanPour };
+
+export async function handleRuntimeDeskKeyPlan(req, res) {
+  const method = (req.method ?? "GET").toUpperCase();
+  if (method === "GET") {
+    jsonEnd(res, 200, { ok: true, keyPlan: listDeskKeyPlan() });
+    return;
+  }
+  const chunks = [];
+  for await (const c of req) chunks.push(c);
+  let body = {};
+  try {
+    const raw = Buffer.concat(chunks).toString("utf8");
+    if (raw.trim()) body = JSON.parse(raw);
+  } catch {
+    jsonEnd(res, 400, { ok: false, error: "invalid_json" });
+    return;
+  }
+  if (method === "DELETE" || body.delete) {
+    jsonEnd(res, 200, deleteDeskKeyPlanItem(body.delete || body.id));
+    return;
+  }
+  if (body.replace === true && Array.isArray(body.keyPlan)) {
+    jsonEnd(res, 200, replaceDeskKeyPlan(body.keyPlan));
+    return;
+  }
+  if (body.bind === true || (body.deviceTopicKey && body.controlId && body.id && body.bind !== false)) {
+    jsonEnd(res, 200, bindDeskKeyPlanItem(body));
+    return;
+  }
+  if (method !== "PUT" && method !== "POST") {
+    jsonEnd(res, 405, { ok: false, error: "method" });
+    return;
+  }
+  const out = upsertDeskKeyPlanItem(body);
+  jsonEnd(res, out.ok ? 200 : 400, out);
+}
 
 export async function handleRuntimeDeskSolutions(req, res) {
   const method = (req.method ?? "GET").toUpperCase();

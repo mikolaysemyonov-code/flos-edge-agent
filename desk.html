@@ -27,7 +27,7 @@
     <p id="ritual" class="meta ritual">1 · Разметить → 2 · Типовые → 3 · Залить</p>
 
     <section id="panel-mark" class="panel glass" data-tab="mark">
-      <p class="meta">1 · Модуль → канал: комната и тип. Как на разметке щита.</p>
+      <p class="meta" id="markIntro">1 · Модуль → канал: комната и тип. Или «Клавиши» — план комнаты и скан нажатий.</p>
       <div class="mark-actions">
         <button id="clearMarks" class="ghost mark-clear" type="button" title="Убрать имена со стола. Типовые и комнаты останутся. Щит не трогаем.">Снять разметку</button>
         <button id="clearProject" class="ghost mark-clear mark-wipe" type="button" title="Стереть разметку, типовые на столе и комнаты. Шина и уже залитые правила на щите не трогаем.">Очистить проект</button>
@@ -37,6 +37,7 @@
         <button type="button" data-fam="light" aria-pressed="false">Свет</button>
         <button type="button" data-fam="buttons" aria-pressed="false">Кнопки</button>
         <button type="button" data-fam="relays" aria-pressed="false">Реле</button>
+        <button type="button" data-fam="keys" aria-pressed="false">Клавиши · скан</button>
       </div>
       <div id="rooms-mark" class="rooms" hidden aria-hidden="true"></div>
       <div id="mark-body" class="vitrine"></div>

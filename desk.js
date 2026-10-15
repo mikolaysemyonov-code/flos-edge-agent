@@ -13,6 +13,10 @@
     let activeTab = "mark";
     let markPath = "modules";
     let modFamily = "all";
+    let keyPlan = [];
+    let keyScan = null; /* { id, need, count, hitKey, baseline, prevClosed } */
+    let keyScanTimer = 0;
+    let keyRoomFilter = "";
     let openAssign = "";
     let deskCatalog = [];
     let deskSolutions = [];
@@ -234,7 +238,9 @@
       return m ? m[1] + "Open" : id;
     }
     function visibleChannels(s) {
-      return (s.channels || []).filter((ch) => !isDriveClose(ch.controlId));
+      return (s.channels || []).filter((ch) =>
+        !isDriveClose(ch.controlId) && !/Short Press Counter$/i.test(String(ch.controlId || "")),
+      );
     }
     function pairName(s, ch) {
       const name = String(ch.name || "").trim();
@@ -379,9 +385,17 @@
       renderMark();
     }
     function normalizeTab(tab) {
-      if (tab === "light" || tab === "buttons" || tab === "relays" || tab === "all") {
+      if (tab === "light" || tab === "buttons" || tab === "relays" || tab === "all" || tab === "keys") {
         markPath = "modules";
-        modFamily = tab === "buttons" ? "buttons" : tab === "relays" ? "relays" : tab === "all" ? "all" : "light";
+        modFamily = tab === "buttons"
+          ? "buttons"
+          : tab === "relays"
+            ? "relays"
+            : tab === "all"
+              ? "all"
+              : tab === "keys"
+                ? "keys"
+                : "light";
         return "mark";
       }
       return tab;
@@ -3955,6 +3969,295 @@
       });
       return n;
     }
+    function stopKeyScan() {
+      if (keyScanTimer) clearInterval(keyScanTimer);
+      keyScanTimer = 0;
+      keyScan = null;
+    }
+    function pressSignalMap(shelves) {
+      const map = new Map();
+      (shelves || []).forEach((s) => {
+        (s.channels || []).forEach((ch) => {
+          const cid = String(ch.controlId || "");
+          const m = /^(Input\s+[A-Z]?\d+)\s+Short Press Counter$/i.exec(cid);
+          if (m) {
+            map.set(s.deviceTopicKey + "::" + m[1], {
+              kind: "counter",
+              v: Number(ch.lastValue) || 0,
+              deviceTopicKey: s.deviceTopicKey,
+              controlId: m[1],
+            });
+            return;
+          }
+          if (/^Input\s+[A-Z]?\d+$/i.test(cid) || /^EXT\d+_IN/i.test(cid) || /^[A-D]\d+_IN/i.test(cid)) {
+            const k = s.deviceTopicKey + "::" + cid;
+            if (!map.has(k) || map.get(k).kind !== "counter") {
+              map.set(k, {
+                kind: "level",
+                v: ch.lastValue,
+                closed: ch.lastValue === 1 || ch.lastValue === true || ch.lastValue === "1" || ch.lastValue === "on",
+                deviceTopicKey: s.deviceTopicKey,
+                controlId: cid,
+              });
+            }
+          }
+        });
+      });
+      return map;
+    }
+    async function loadKeyPlan() {
+      try {
+        const r = await fetch("/runtime/desk-key-plan");
+        const j = await r.json();
+        keyPlan = Array.isArray(j.keyPlan) ? j.keyPlan : [];
+      } catch {
+        keyPlan = [];
+      }
+    }
+    function startKeyScan(item) {
+      stopKeyScan();
+      keyScan = {
+        id: item.id,
+        need: 3,
+        count: 0,
+        hitKey: "",
+        baseline: pressSignalMap(lastShelvesRows),
+        prevClosed: new Map(),
+      };
+      pressSignalMap(lastShelvesRows).forEach((sig, k) => {
+        if (sig.kind === "level") keyScan.prevClosed.set(k, Boolean(sig.closed));
+      });
+      const tick = () => {
+        if (!keyScan || keyScan.id !== item.id) return;
+        fetch("/runtime/mqtt-scan", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ instant: true }),
+        })
+          .then((r) => r.json())
+          .then((j) => {
+            if (!keyScan || !j || !j.ok || !Array.isArray(j.shelves)) return;
+            lastShelvesRows = rememberMergeShelves(lastShelvesRows, j.shelves);
+            const now = pressSignalMap(lastShelvesRows);
+            let rose = "";
+            now.forEach((sig, k) => {
+              const base = keyScan.baseline.get(k);
+              if (sig.kind === "counter") {
+                const prev = base && base.kind === "counter" ? base.v : sig.v;
+                if (sig.v > prev) {
+                  rose = k;
+                  keyScan.baseline.set(k, sig);
+                }
+              } else if (sig.kind === "level") {
+                const was = keyScan.prevClosed.get(k);
+                keyScan.prevClosed.set(k, Boolean(sig.closed));
+                if (sig.closed && was === false) rose = k;
+              }
+            });
+            if (!rose) {
+              renderMark();
+              return;
+            }
+            if (keyScan.hitKey && keyScan.hitKey !== rose) {
+              keyScan.hitKey = rose;
+              keyScan.count = 1;
+            } else {
+              keyScan.hitKey = rose;
+              keyScan.count += 1;
+            }
+            renderMark();
+            if (keyScan.count >= keyScan.need) {
+              const sig = now.get(rose);
+              const armedId = keyScan.id;
+              stopKeyScan();
+              fetch("/runtime/desk-key-plan", {
+                method: "POST",
+                headers: { "content-type": "application/json" },
+                body: JSON.stringify({
+                  bind: true,
+                  id: armedId,
+                  deviceTopicKey: sig.deviceTopicKey,
+                  controlId: sig.controlId,
+                }),
+              })
+                .then((r) => r.json())
+                .then((res) => {
+                  if (res && res.ok) {
+                    keyPlan = res.keyPlan || keyPlan;
+                    const head = $("previewHead");
+                    if (head) {
+                      head.hidden = false;
+                      head.style.color = "";
+                      head.textContent = "Клавиша привязана · " + sig.deviceTopicKey + "/" + sig.controlId;
+                    }
+                    return loadLast().then(() => loadKeyPlan()).then(() => renderMark());
+                  }
+                  renderMark();
+                })
+                .catch(() => renderMark());
+            }
+          })
+          .catch(() => {});
+      };
+      keyScanTimer = setInterval(tick, 280);
+      tick();
+      renderMark();
+    }
+    function rememberMergeShelves(prev, next) {
+      if (!Array.isArray(next) || !next.length) return prev || [];
+      const byKey = new Map((prev || []).map((s) => [s.deviceTopicKey, s]));
+      next.forEach((n) => {
+        const old = byKey.get(n.deviceTopicKey);
+        if (!old) {
+          byKey.set(n.deviceTopicKey, n);
+          return;
+        }
+        const vals = new Map((n.channels || []).map((c) => [c.controlId, c]));
+        const channels = (old.channels || []).map((c) => {
+          const nu = vals.get(c.controlId);
+          return nu ? { ...c, lastValue: nu.lastValue } : c;
+        });
+        vals.forEach((c, id) => {
+          if (!(old.channels || []).some((x) => x.controlId === id)) channels.push(c);
+        });
+        byKey.set(n.deviceTopicKey, { ...old, channels });
+      });
+      return [...byKey.values()];
+    }
+    function renderKeyScanPanel(body) {
+      body.replaceChildren();
+      const intro = document.createElement("p");
+      intro.className = "meta";
+      intro.textContent = "План комнаты → «Сканировать» → нажмите клавишу 3 раза. Канал MCM8/WD14 подпишется сам.";
+      body.appendChild(intro);
+      const status = document.createElement("p");
+      status.className = "meta key-scan-status";
+      if (keyScan) {
+        const row = keyPlan.find((k) => k.id === keyScan.id);
+        status.textContent = "Слушаю «"
+          + (row ? row.room + " · " + row.label : "клавишу")
+          + "» · нажатий "
+          + keyScan.count + "/" + keyScan.need
+          + (keyScan.hitKey ? " · " + keyScan.hitKey.replace("::", "/") : "");
+        status.classList.add("live");
+      } else {
+        status.textContent = "Готово к скану. Выберите клавишу ниже.";
+      }
+      body.appendChild(status);
+      const addBox = document.createElement("div");
+      addBox.className = "key-plan-add glass";
+      const roomInp = document.createElement("input");
+      roomInp.className = "bind";
+      roomInp.placeholder = "Комната (Спальня)";
+      roomInp.value = keyRoomFilter || "";
+      const labInp = document.createElement("input");
+      labInp.className = "bind";
+      labInp.placeholder = "Подпись клавиши (вход основное)";
+      const addBtn = document.createElement("button");
+      addBtn.type = "button";
+      addBtn.className = "ghost";
+      addBtn.textContent = "Добавить в план";
+      addBtn.addEventListener("click", () => {
+        const room = String(roomInp.value || "").trim();
+        const label = String(labInp.value || "").trim();
+        if (!room || !label) return;
+        fetch("/runtime/desk-key-plan", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ room, label }),
+        })
+          .then((r) => r.json())
+          .then((j) => {
+            if (j && j.ok) {
+              keyPlan = j.keyPlan || [];
+              keyRoomFilter = room;
+              labInp.value = "";
+              renderMark();
+            }
+          });
+      });
+      addBox.append(roomInp, labInp, addBtn);
+      body.appendChild(addBox);
+      const rooms = [...new Set(keyPlan.map((k) => k.room))].sort((a, b) => a.localeCompare(b, "ru"));
+      if (!rooms.length) {
+        const empty = document.createElement("p");
+        empty.className = "meta orphan";
+        empty.textContent = "План пуст — добавьте комнату и подписи клавиш.";
+        body.appendChild(empty);
+        return;
+      }
+      rooms.forEach((room) => {
+        const det = document.createElement("details");
+        det.className = "key-room";
+        det.open = !keyRoomFilter || keyRoomFilter === room;
+        const sum = document.createElement("summary");
+        const keys = keyPlan.filter((k) => k.room === room);
+        const bound = keys.filter((k) => k.deviceTopicKey).length;
+        sum.textContent = room + " · " + bound + "/" + keys.length;
+        det.appendChild(sum);
+        const list = document.createElement("ol");
+        list.className = "key-list";
+        keys.forEach((k, i) => {
+          const li = document.createElement("li");
+          li.className = "key-row" + (k.deviceTopicKey ? " bound" : "") + (keyScan && keyScan.id === k.id ? " armed" : "");
+          const num = document.createElement("span");
+          num.className = "key-num";
+          num.textContent = String(i + 1);
+          const mid = document.createElement("div");
+          mid.className = "key-mid";
+          const ttl = document.createElement("strong");
+          ttl.textContent = k.label;
+          const sub = document.createElement("span");
+          sub.className = "meta";
+          sub.textContent = k.deviceTopicKey
+            ? k.deviceTopicKey + "/" + k.controlId
+            : "не привязана";
+          mid.append(ttl, sub);
+          const act = document.createElement("div");
+          act.className = "key-act";
+          if (keyScan && keyScan.id === k.id) {
+            const stop = document.createElement("button");
+            stop.type = "button";
+            stop.className = "ghost";
+            stop.textContent = "Стоп";
+            stop.addEventListener("click", () => { stopKeyScan(); renderMark(); });
+            act.appendChild(stop);
+          } else {
+            const scan = document.createElement("button");
+            scan.type = "button";
+            scan.className = "ghost key-scan-btn";
+            scan.textContent = k.deviceTopicKey ? "Перескан" : "Сканировать";
+            scan.addEventListener("click", () => startKeyScan(k));
+            act.appendChild(scan);
+          }
+          const del = document.createElement("button");
+          del.type = "button";
+          del.className = "ghost";
+          del.textContent = "×";
+          del.title = "Убрать из плана";
+          del.addEventListener("click", () => {
+            fetch("/runtime/desk-key-plan", {
+              method: "POST",
+              headers: { "content-type": "application/json" },
+              body: JSON.stringify({ delete: k.id }),
+            })
+              .then((r) => r.json())
+              .then((j) => {
+                if (j && j.ok) {
+                  keyPlan = j.keyPlan || [];
+                  if (keyScan && keyScan.id === k.id) stopKeyScan();
+                  renderMark();
+                }
+              });
+          });
+          act.appendChild(del);
+          li.append(num, mid, act);
+          list.appendChild(li);
+        });
+        det.appendChild(list);
+        body.appendChild(det);
+      });
+    }
     function renderMark() {
       lastShelvesRows = lastShelvesRows || [];
       const split = splitShelves(lastShelvesRows);
@@ -3968,9 +4271,19 @@
       const roomsBar = $("rooms-mark");
       if (roomsBar) roomsBar.hidden = true;
       paintMarkPath();
+      const intro = $("markIntro");
+      if (intro) {
+        intro.textContent = modFamily === "keys"
+          ? "1 · Клавиши: план комнаты → скан 3× нажатий → канал на шине."
+          : "1 · Модуль → канал: комната и тип. Или «Клавиши» — план и скан нажатий.";
+      }
       const body = $("mark-body");
       if (!body) return;
       body.hidden = false;
+      if (modFamily === "keys") {
+        renderKeyScanPanel(body);
+        return;
+      }
       const famRows = modFamily === "all"
         ? sortModules([].concat(split.light || [], split.buttons || [], split.relays || []))
         : (split[modFamily] || []);
@@ -4172,12 +4485,14 @@
     });
     document.querySelectorAll("#modFamily [data-fam]").forEach((btn) => {
       btn.addEventListener("click", () => {
-        modFamily = /^(all|light|buttons|relays)$/.test(btn.dataset.fam) ? btn.dataset.fam : "all";
+        modFamily = /^(all|light|buttons|relays|keys)$/.test(btn.dataset.fam) ? btn.dataset.fam : "all";
         openMod = "";
         openAssign = "";
         markPending = {};
         markPath = "modules";
-        renderMark();
+        if (modFamily !== "keys") stopKeyScan();
+        if (modFamily === "keys") loadKeyPlan().then(() => renderMark());
+        else renderMark();
       });
     });
     if ($("clearMarks")) {
@@ -4246,7 +4561,9 @@
                   + ". Размечайте заново.")
                 : "Не очистил проект";
             }
-            return Promise.all([loadLast(), loadSolutions(), loadPreview()]).then(() => {
+            keyPlan = [];
+            stopKeyScan();
+            return Promise.all([loadLast(), loadSolutions(), loadPreview(), loadKeyPlan()]).then(() => {
               renderDeskSolutions();
               renderMark();
               setTab("mark");
@@ -4276,7 +4593,7 @@
       });
     }
     const fromHash = location.hash.replace("#", "");
-    if (/^(mark|cards|poured|light|buttons|relays)$/.test(fromHash)) setTab(fromHash);
+    if (/^(mark|cards|poured|light|buttons|relays|keys)$/.test(fromHash)) setTab(fromHash);
     else setTab("mark");
     loadHealth();
     loadPoured();

@@ -490,6 +490,64 @@
       border-color: rgb(248 113 113 / .4) !important;
       background: rgb(248 113 113 / .1) !important;
     }
+    .key-plan-add {
+      display: grid;
+      grid-template-columns: 1fr 1fr auto;
+      gap: .4rem;
+      padding: .65rem .7rem;
+      margin: .35rem 0 .75rem;
+      border-radius: .85rem;
+    }
+    @media (max-width: 640px) {
+      .key-plan-add { grid-template-columns: 1fr; }
+    }
+    .key-scan-status.live {
+      color: rgb(186 230 253);
+      font-weight: 650;
+    }
+    .key-room {
+      border: 1px solid rgb(255 255 255 / .1);
+      border-radius: .75rem;
+      background: rgb(255 255 255 / .03);
+      padding: .2rem .65rem .45rem;
+      margin: 0 0 .55rem;
+    }
+    .key-room > summary {
+      cursor: pointer; list-style: none;
+      font-size: .82rem; font-weight: 650;
+      color: rgb(186 230 253);
+      padding: .4rem 0;
+    }
+    .key-room > summary::-webkit-details-marker { display: none; }
+    .key-list { margin: 0; padding: 0 0 0 0; list-style: none; }
+    .key-row {
+      display: flex; align-items: center; gap: .5rem;
+      padding: .4rem 0;
+      border-top: 1px solid rgb(255 255 255 / .06);
+    }
+    .key-row.bound .key-mid strong { color: rgb(167 243 208); }
+    .key-row.armed {
+      background: rgb(var(--sky) / .1);
+      margin: 0 -.45rem;
+      padding-left: .45rem; padding-right: .45rem;
+      border-radius: .5rem;
+    }
+    .key-num {
+      flex: none; width: 1.4rem; height: 1.4rem;
+      display: grid; place-items: center;
+      border-radius: 999px;
+      background: rgb(255 255 255 / .08);
+      font-size: .72rem; font-weight: 700;
+      color: var(--mute);
+    }
+    .key-mid { flex: 1; min-width: 0; }
+    .key-mid strong { display: block; font-size: .88rem; }
+    .key-mid .meta { margin: .1rem 0 0; font-size: .7rem; }
+    .key-act { display: flex; gap: .3rem; flex: none; }
+    .key-scan-btn {
+      color: rgb(186 230 253) !important;
+      border-color: rgb(var(--sky) / .35) !important;
+    }
     .rooms { display: flex; flex-wrap: wrap; gap: .35rem; margin: 0 0 .85rem; }
     .rooms.need {
       outline: 1px solid rgb(var(--sky) / .55);

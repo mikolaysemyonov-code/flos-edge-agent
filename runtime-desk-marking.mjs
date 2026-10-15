@@ -23,7 +23,7 @@ export function deskMarkingPath() {
 }
 
 function emptyDoc() {
-  return { version: 3, shelves: {}, solutions: [], rooms: [] };
+  return { version: 3, shelves: {}, solutions: [], rooms: [], keyPlan: [] };
 }
 
 function cleanRooms(value) {
@@ -52,6 +52,7 @@ export function readDeskDocument() {
       shelves: dropBindsFromShelves(shelves).shelves,
       solutions,
       rooms: cleanRooms(json?.rooms),
+      keyPlan: Array.isArray(json?.keyPlan) ? json.keyPlan : [],
     };
   } catch {
     return emptyDoc();
@@ -101,7 +102,7 @@ export function clearDeskProject() {
   }
   const clearedSolutions = Array.isArray(doc.solutions) ? doc.solutions.length : 0;
   const clearedRooms = Array.isArray(doc.rooms) ? doc.rooms.length : 0;
-  writeDoc({ shelves: {}, solutions: [], rooms: [] });
+  writeDoc({ shelves: {}, solutions: [], rooms: [], keyPlan: [] });
   return {
     ok: true,
     clearedShelves,
@@ -127,9 +128,10 @@ function writeDoc(doc) {
   ).shelves;
   const solutions = Array.isArray(doc?.solutions) ? doc.solutions : prev.solutions;
   const rooms = Array.isArray(doc?.rooms) ? cleanRooms(doc.rooms) : prev.rooms;
+  const keyPlan = Array.isArray(doc?.keyPlan) ? doc.keyPlan : prev.keyPlan || [];
   fs.writeFileSync(
     file,
-    JSON.stringify({ version: 3, shelves, solutions, rooms }, null, 2) + "\n",
+    JSON.stringify({ version: 3, shelves, solutions, rooms, keyPlan }, null, 2) + "\n",
     "utf8",
   );
 }
