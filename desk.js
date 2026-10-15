@@ -2187,11 +2187,22 @@
       const loads = loadsForCard(card, roomFilter);
       const err = document.createElement("p");
       err.className = "meta orphan";
+      const perLoadLevel = Boolean(card.perLoadLevel);
+      const levelField = (Array.isArray(card.fields) ? card.fields : []).find((f) => f.key === "level");
+      const defLevel = levelField != null && Number.isFinite(Number(levelField.def))
+        ? Number(levelField.def)
+        : 100;
+      const draftLevelOf = (key) => {
+        const t = (draft && draft.targets || []).find((x) => contactKey(x.deviceTopicKey, x.controlId) === key);
+        if (t && Number.isFinite(Number(t.level))) return Number(t.level);
+        if (draft && draft.params && Number.isFinite(Number(draft.params.level))) return Number(draft.params.level);
+        return defLevel;
+      };
       let collectTargets;
       let tgtNode;
       if (card.multi) {
         const picks = document.createElement("div");
-        picks.className = "picks room-picks";
+        picks.className = "picks room-picks" + (perLoadLevel ? " with-lvl" : "");
         if (!loads.length) {
           const empty = document.createElement("p");
           empty.className = "meta orphan";
@@ -2200,6 +2211,12 @@
             : "Нет подходящих нагрузок этого типа — поправьте имена в «Разметить».";
           picks.appendChild(empty);
         } else {
+          if (perLoadLevel) {
+            const hint = document.createElement("p");
+            hint.className = "meta";
+            hint.textContent = "У каждой линии — свой % (диммер) или 0/100 (реле).";
+            picks.appendChild(hint);
+          }
           groupLoadsByRoom(loads).forEach(([room, rows]) => {
             const det = document.createElement("details");
             det.className = "room-acc";
@@ -2211,13 +2228,36 @@
             box.className = "room-acc-body";
             rows.forEach((load) => {
               const lab = document.createElement("label");
+              if (perLoadLevel) lab.className = "pick-lvl";
               const cb = document.createElement("input");
               cb.type = "checkbox";
               cb.value = contactKey(load.deviceTopicKey, load.controlId);
-              lab.append(cb, document.createTextNode(load.label));
+              const name = document.createElement("span");
+              name.className = "pick-name";
+              name.textContent = load.label;
+              lab.append(cb, name);
+              if (perLoadLevel) {
+                const lvl = document.createElement("input");
+                lvl.type = "number";
+                lvl.className = "lvl";
+                lvl.min = "0";
+                lvl.max = "100";
+                lvl.step = "1";
+                lvl.value = String(draftLevelOf(cb.value));
+                lvl.title = "%";
+                lvl.setAttribute("aria-label", "Уровень % · " + load.label);
+                lvl.disabled = true;
+                const syncLvl = () => { lvl.disabled = !cb.checked; };
+                cb.addEventListener("change", syncLvl);
+                lab.appendChild(lvl);
+              }
               if (draft && (draft.targets || []).some((t) => contactKey(t.deviceTopicKey, t.controlId) === cb.value)) {
                 cb.checked = true;
                 det.open = true;
+                if (perLoadLevel) {
+                  const lvl = lab.querySelector("input.lvl");
+                  if (lvl) lvl.disabled = false;
+                }
               }
               box.appendChild(lab);
             });
@@ -2226,7 +2266,14 @@
           });
         }
         tgtNode = picks;
-        collectTargets = () => [...picks.querySelectorAll("input:checked")].map((o) => parseBindValue(o.value)).filter(Boolean);
+        collectTargets = () => [...picks.querySelectorAll("input[type=checkbox]:checked")].map((o) => {
+          const base = parseBindValue(o.value);
+          if (!base) return null;
+          if (!perLoadLevel) return base;
+          const lvl = o.closest("label") && o.closest("label").querySelector("input.lvl");
+          const n = Number(lvl && lvl.value);
+          return { ...base, level: Number.isFinite(n) ? Math.max(0, Math.min(100, n)) : defLevel };
+        }).filter(Boolean);
       } else {
         const tgt = document.createElement("select");
         tgt.className = "bind";
@@ -2240,7 +2287,8 @@
         tgtNode = tgt;
         collectTargets = () => [parseBindValue(tgt.value)].filter(Boolean);
       }
-      const fields = Array.isArray(card.fields) ? card.fields : [];
+      const fields = (Array.isArray(card.fields) ? card.fields : [])
+        .filter((f) => !(perLoadLevel && f.key === "level"));
       const paramBox = document.createElement("div");
       paramBox.className = "sheet-params";
       const paramInputs = {};
@@ -2285,6 +2333,7 @@
           const n = Number(paramInputs[f.key].value);
           out[f.key] = Number.isFinite(n) ? n : Number(f.def);
         });
+        if (perLoadLevel) out.level = defLevel;
         return out;
       };
       const actions = document.createElement("div");

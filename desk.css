@@ -733,6 +733,22 @@
     .picks { display: flex; flex-direction: column; gap: .4rem; margin: .35rem 0 .15rem; }
     .picks label { display: flex; align-items: center; gap: .55rem; font-size: .86rem; }
     .picks input { width: 1rem; height: 1rem; accent-color: rgb(56 189 248); }
+    .picks label.pick-lvl { gap: .4rem; }
+    .picks label.pick-lvl .pick-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .picks label.pick-lvl input.lvl {
+      width: 3.4rem;
+      height: 1.7rem;
+      margin: 0;
+      padding: 0 .3rem;
+      border-radius: .4rem;
+      border: 1px solid rgb(255 255 255 / .12);
+      background: #1c1c1e;
+      color: var(--ink);
+      font-size: .78rem;
+      text-align: right;
+      accent-color: unset;
+    }
+    .picks label.pick-lvl input.lvl:disabled { opacity: .35; }
     #deskSols { margin: 0 0 .85rem; }
     #deskSols:empty { display: none; }
     #deskSols li {

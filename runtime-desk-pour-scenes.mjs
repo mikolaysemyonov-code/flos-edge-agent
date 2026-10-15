@@ -56,15 +56,34 @@ function sceneLevel(sol, fallback) {
   return fallback;
 }
 
+function clampPct(n, fallback) {
+  const v = Number(n);
+  if (Number.isFinite(v)) return Math.max(0, Math.min(100, v));
+  return fallback;
+}
+
+/** 0 → off; 100 → on (реле); иначе % для диммера. */
+function actuatorPayload(pct) {
+  const want = clampPct(pct, 0);
+  return want <= 0 ? 0 : want >= 100 ? 1 : want;
+}
+
+/**
+ * Уровень на линию: target.level → params.level → дефолт сцены.
+ * Кино: люстра 0%, бра 15%, подсветка 40% — без трёх отдельных карточек.
+ */
 function emitLevels(sol, level) {
   const when = triggerWhen(sol.trigger);
-  const loads = (sol.targets || []).map(pathOf).filter(Boolean);
-  if (!when || !loads.length) return "";
+  const targets = (sol.targets || []).filter((t) => pathOf(t));
+  if (!when || !targets.length) return "";
   const id = "desk_sol_" + sol.id + "_scene";
-  const want = sceneLevel(sol, level);
-  const payload = want <= 0 ? 0 : want >= 100 ? 1 : want;
-  const sets = loads
-    .map((p) => `      wbActuatorSet(${esc(p)}, ${payload}, ${esc(id)}, 55);`)
+  const fallback = sceneLevel(sol, level);
+  const sets = targets
+    .map((t) => {
+      const p = pathOf(t);
+      const pct = clampPct(t.level, fallback);
+      return `      wbActuatorSet(${esc(p)}, ${actuatorPayload(pct)}, ${esc(id)}, 55);`;
+    })
     .join("\n");
   return [
     `defineRule(${esc(id)}, {`,

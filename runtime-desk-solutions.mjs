@@ -53,9 +53,10 @@ export const DESK_SOLUTION_CARDS = [
     fields: [{ key: "val", label: "Значение на нагрузку", unit: "", def: 1 }],
   }),
   M("light_all_off", "Свет", "Мастер выключатель", "Долгое нажатие → гасит выбранный свет.", { loadKind: "light" }),
-  M("light_scene_on", "Сцены", "Сцена: включить несколько", "Если нажали → включает выбранные группы.", {
+  M("light_scene_on", "Сцены", "Сцена: включить несколько", "Если нажали → у каждой линии свой %.", {
     loadKind: "light",
-    fields: [{ key: "level", label: "Уровень света", unit: "%", def: 100 }],
+    perLoadLevel: true,
+    fields: [{ key: "level", label: "Уровень по умолчанию", unit: "%", def: 100 }],
   }),
   M("light_motion", "Свет", "Свет по движению", "Если есть движение → свет; ушло — гасит по таймеру.", {
     loadKind: "light",
@@ -271,57 +272,70 @@ export const DESK_SOLUTION_CARDS = [
   M("leak_close_valves", "Охрана", "Протечка — закрыть краны", "Если протечка → закрыть краны. Только линии с именем «кран/клапан».", { loadKind: "valve" }),
   M("lock_button_set", "Охрана", "Замок кнопкой", "Если нажали → команда на выбранные замки.", { loadKind: "lock" }),
   M("siren_motion", "Охрана", "Сирена по движению", "Если движение → выбранные сирены / тревога.", { loadKind: "siren" }),
-  M("scene_away", "Сцены", "Не дома", "Если нажали → гасит выбранный свет.", {
+  M("scene_away", "Сцены", "Не дома", "Если нажали → у каждой линии свой % (обычно 0).", {
     loadKind: "light",
-    fields: [{ key: "level", label: "Уровень света", unit: "%", def: 0 }],
+    perLoadLevel: true,
+    fields: [{ key: "level", label: "Уровень по умолчанию", unit: "%", def: 0 }],
   }),
-  M("scene_vacation", "Сцены", "В отпуске", "Если нажали → гасит выбранный свет.", {
+  M("scene_vacation", "Сцены", "В отпуске", "Если нажали → у каждой линии свой % (обычно 0).", {
     loadKind: "light",
-    fields: [{ key: "level", label: "Уровень света", unit: "%", def: 0 }],
+    perLoadLevel: true,
+    fields: [{ key: "level", label: "Уровень по умолчанию", unit: "%", def: 0 }],
   }),
-  M("scene_home", "Сцены", "Я дома", "Если нажали → включает выбранный свет.", {
+  M("scene_home", "Сцены", "Я дома", "Если нажали → у каждой линии свой %.", {
     loadKind: "light",
-    fields: [{ key: "level", label: "Уровень света", unit: "%", def: 100 }],
+    perLoadLevel: true,
+    fields: [{ key: "level", label: "Уровень по умолчанию", unit: "%", def: 100 }],
   }),
-  M("scene_morning", "Сцены", "Утро", "Если нажали → утренний свет на выбранных линиях.", {
+  M("scene_morning", "Сцены", "Утро", "Если нажали → у каждой линии свой % (дефолт 80).", {
     loadKind: "light",
-    fields: [{ key: "level", label: "Уровень света", unit: "%", def: 80 }],
+    perLoadLevel: true,
+    fields: [{ key: "level", label: "Уровень по умолчанию", unit: "%", def: 80 }],
   }),
-  M("scene_day", "Сцены", "День", "Если нажали → гасит искусственный свет (шторы — отдельной карточкой).", {
+  M("scene_day", "Сцены", "День", "Если нажали → у каждой линии свой % (обычно 0; шторы — отдельно).", {
     loadKind: "light",
-    fields: [{ key: "level", label: "Уровень света", unit: "%", def: 0 }],
+    perLoadLevel: true,
+    fields: [{ key: "level", label: "Уровень по умолчанию", unit: "%", def: 0 }],
   }),
-  M("scene_evening", "Сцены", "Вечер", "Если нажали → вечерний свет на выбранных линиях.", {
+  M("scene_evening", "Сцены", "Вечер", "Если нажали → у каждой линии свой % (дефолт 60).", {
     loadKind: "light",
-    fields: [{ key: "level", label: "Уровень света", unit: "%", def: 60 }],
+    perLoadLevel: true,
+    fields: [{ key: "level", label: "Уровень по умолчанию", unit: "%", def: 60 }],
   }),
-  M("scene_good_night", "Сцены", "Спокойной ночи", "Если нажали → гасит выбранный свет.", {
+  M("scene_good_night", "Сцены", "Спокойной ночи", "Если нажали → у каждой линии свой % (обычно 0).", {
     loadKind: "light",
-    fields: [{ key: "level", label: "Уровень света", unit: "%", def: 0 }],
+    perLoadLevel: true,
+    fields: [{ key: "level", label: "Уровень по умолчанию", unit: "%", def: 0 }],
   }),
-  M("scene_kids_night", "Сцены", "Детский сон", "Если нажали → ночник на выбранных линиях.", {
+  M("scene_kids_night", "Сцены", "Детский сон", "Если нажали → у каждой линии свой % (дефолт 5).", {
     loadKind: "light",
-    fields: [{ key: "level", label: "Уровень света", unit: "%", def: 5 }],
+    perLoadLevel: true,
+    fields: [{ key: "level", label: "Уровень по умолчанию", unit: "%", def: 5 }],
   }),
-  M("scene_cinema", "Сцены", "Кино", "Если нажали → приглушает выбранный свет.", {
+  M("scene_cinema", "Сцены", "Кино", "Если нажали → у каждой линии свой % (люстра 0, бра 15…).", {
     loadKind: "light",
-    fields: [{ key: "level", label: "Уровень света", unit: "%", def: 15 }],
+    perLoadLevel: true,
+    fields: [{ key: "level", label: "Уровень по умолчанию", unit: "%", def: 15 }],
   }),
-  M("scene_dinner", "Сцены", "Ужин", "Если нажали → мягкий свет на выбранных линиях.", {
+  M("scene_dinner", "Сцены", "Ужин", "Если нажали → у каждой линии свой % (дефолт 40).", {
     loadKind: "light",
-    fields: [{ key: "level", label: "Уровень света", unit: "%", def: 40 }],
+    perLoadLevel: true,
+    fields: [{ key: "level", label: "Уровень по умолчанию", unit: "%", def: 40 }],
   }),
-  M("scene_guests", "Сцены", "Гости", "Если нажали → яркий свет на выбранных линиях.", {
+  M("scene_guests", "Сцены", "Гости", "Если нажали → у каждой линии свой %.", {
     loadKind: "light",
-    fields: [{ key: "level", label: "Уровень света", unit: "%", def: 100 }],
+    perLoadLevel: true,
+    fields: [{ key: "level", label: "Уровень по умолчанию", unit: "%", def: 100 }],
   }),
-  M("scene_work", "Сцены", "Работа", "Если нажали → рабочий свет на выбранных линиях.", {
+  M("scene_work", "Сцены", "Работа", "Если нажали → у каждой линии свой %.", {
     loadKind: "light",
-    fields: [{ key: "level", label: "Уровень света", unit: "%", def: 100 }],
+    perLoadLevel: true,
+    fields: [{ key: "level", label: "Уровень по умолчанию", unit: "%", def: 100 }],
   }),
-  M("scene_relax", "Сцены", "Отдых", "Если нажали → приглушает выбранный свет.", {
+  M("scene_relax", "Сцены", "Отдых", "Если нажали → у каждой линии свой % (дефолт 25).", {
     loadKind: "light",
-    fields: [{ key: "level", label: "Уровень света", unit: "%", def: 25 }],
+    perLoadLevel: true,
+    fields: [{ key: "level", label: "Уровень по умолчанию", unit: "%", def: 25 }],
   }),
 ];
 
@@ -330,12 +344,17 @@ export function deskSolutionCatalog() {
   return DESK_SOLUTION_CARDS.filter((c) => c.pour !== false);
 }
 
-function contactOf(raw) {
+function contactOf(raw, { withLevel = false } = {}) {
   const deviceTopicKey = String(raw?.deviceTopicKey ?? "").trim();
   const controlId = String(raw?.controlId ?? "").trim();
   if (!isDeskDeviceKey(deviceTopicKey)) return null;
   if (!controlId || controlId.length > 64) return null;
-  return { deviceTopicKey, controlId };
+  const row = { deviceTopicKey, controlId };
+  if (withLevel) {
+    const n = Number(raw?.level);
+    if (Number.isFinite(n)) row.level = Math.max(0, Math.min(100, Math.round(n)));
+  }
+  return row;
 }
 
 function writeDoc(doc) {
@@ -369,13 +388,19 @@ export function upsertDeskSolution(input) {
     if (!aux) return { ok: false, error: "need_aux" };
   }
   const rawTargets = Array.isArray(input?.targets) ? input.targets : input?.target ? [input.target] : [];
-  const targets = rawTargets.map(contactOf).filter(Boolean);
+  const targets = rawTargets.map((t) => contactOf(t, { withLevel: Boolean(card.perLoadLevel) })).filter(Boolean);
   if (!targets.length) return { ok: false, error: "need_target" };
   if (targets.some((t) => !isPourLoad(t.controlId))) return { ok: false, error: "need_load" };
   const doc = readDeskDocument();
   const id = String(input?.id ?? "").trim() || `sol_${Date.now().toString(36)}`;
   const params = {};
   for (const f of Array.isArray(card.fields) ? card.fields : []) {
+    // Уровень на линии живёт в targets[].level; params.level — только fallback/дефолт.
+    if (card.perLoadLevel && f.key === "level") {
+      const n = Number(input?.params?.[f.key]);
+      params[f.key] = Number.isFinite(n) ? Math.max(0, Math.min(100, n)) : Number(f.def);
+      continue;
+    }
     const raw = input?.params?.[f.key];
     if (f.kind === "select") {
       const opts = Array.isArray(f.options) ? f.options.map((o) => String(o.v)) : [];
