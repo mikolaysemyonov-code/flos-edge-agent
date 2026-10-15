@@ -14,6 +14,7 @@ const CLIMATE = new Set([
   "warm_floor_electric_comfort",
   "warm_floor_water_comfort",
   "ac_cool_comfort",
+  "ac_window_off",
   "thermostat_simple_vd",
   "weather_climate_link",
 ]);
@@ -52,6 +53,71 @@ function gteBand(sid, p) {
   return { on: thr, off: thr - h };
 }
 
+function setLoads(loads, wantExpr, id) {
+  return loads
+    .map((load) =>
+      [
+        "      try {",
+        `        if (wbIsOn(readValue(${esc(load)})) !== !!(${wantExpr})) {`,
+        `          wbActuatorSet(${esc(load)}, ${wantExpr}, ${esc(id)}, 50);`,
+        "        }",
+        "      } catch (_e) {",
+        `        wbActuatorSet(${esc(load)}, ${wantExpr}, ${esc(id)}, 50);`,
+        "      }",
+      ].join("\n"),
+    )
+    .join("\n");
+}
+
+function emitWindowOff(sol) {
+  const windowPath = pathOf(sol.trigger);
+  const loads = (sol.targets || []).map(pathOf).filter(Boolean);
+  if (!windowPath || !loads.length) return "";
+  const id = "desk_sol_" + sol.id + "_winoff";
+  const sets = loads
+    .map((p) => `      if (open) wbActuatorSet(${esc(p)}, 0, ${esc(id)}, 50);`)
+    .join("\n");
+  return [
+    `defineRule(${esc(id)}, {`,
+    `  whenChanged: ${esc(windowPath)},`,
+    "  then: function () {",
+    "    try {",
+    `      var open = wbIsOn(readValue(${esc(windowPath)}));`,
+    sets,
+    "    } catch (e) { if (typeof wbRuleGuardCatch === 'function') wbRuleGuardCatch(" + esc(id) + ", e); }",
+    "  }",
+    "});",
+  ].join("\n");
+}
+
+function emitHumidityMotion(sol) {
+  const humidity = pathOf(sol.trigger);
+  const motion = pathOf(sol.aux);
+  const loads = (sol.targets || []).map(pathOf).filter(Boolean);
+  if (!humidity || !motion || !loads.length) return "";
+  const id = "desk_sol_" + sol.id + "_clim";
+  const p = sol.params || {};
+  const { on, off } = gteBand("vent_humidity", p);
+  const latch = "_desk_clim_" + String(sol.id || "").replace(/[^a-zA-Z0-9_]/g, "_");
+  return [
+    `var ${latch} = false;`,
+    `defineRule(${esc(id)}, {`,
+    `  whenChanged: [${esc(humidity)}, ${esc(motion)}],`,
+    "  then: function () {",
+    "    try {",
+    `      var v = Number(readValue(${esc(humidity)}));`,
+    "      if (isNaN(v)) return;",
+    `      var people = wbIsOn(readValue(${esc(motion)}));`,
+    `      if (v >= ${on} && people) ${latch} = true;`,
+    `      else if (v <= ${off} || !people) ${latch} = false;`,
+    `      var __want = ${latch};`,
+    setLoads(loads, "__want", id),
+    "    } catch (e) { if (typeof wbRuleGuardCatch === 'function') wbRuleGuardCatch(" + esc(id) + ", e); }",
+    "  }",
+    "});",
+  ].join("\n");
+}
+
 export function isDeskClimateSolution(sol) {
   return CLIMATE.has(String(sol?.solutionId || ""));
 }
@@ -59,9 +125,12 @@ export function isDeskClimateSolution(sol) {
 export function emitDeskClimate(sol) {
   const sid = String(sol?.solutionId || "");
   if (!CLIMATE.has(sid)) return "";
+  if (sid === "ac_window_off") return emitWindowOff(sol);
+  if (sid === "vent_humidity_motion") return emitHumidityMotion(sol);
+
   const sensor = pathOf(sol.trigger);
-  const load = pathOf((sol.targets || [])[0]);
-  if (!sensor || !load) return "";
+  const loads = (sol.targets || []).map(pathOf).filter(Boolean);
+  if (!sensor || !loads.length) return "";
   const id = "desk_sol_" + sol.id + "_clim";
   const p = sol.params || {};
   const mode = modeOf(sid);
@@ -103,13 +172,7 @@ export function emitDeskClimate(sol) {
     "      var v = Number(readValue(" + esc(sensor) + "));",
     "      if (isNaN(v)) return;",
     body,
-    "      try {",
-    "        if (wbIsOn(readValue(" + esc(load) + ")) !== !!__want) {",
-    `          wbActuatorSet(${esc(load)}, __want, ${esc(id)}, 50);`,
-    "        }",
-    "      } catch (_e) {",
-    `        wbActuatorSet(${esc(load)}, __want, ${esc(id)}, 50);`,
-    "      }",
+    setLoads(loads, "__want", id),
     "    } catch (e) { if (typeof wbRuleGuardCatch === 'function') wbRuleGuardCatch(" + esc(id) + ", e); }",
     "  }",
     "});",

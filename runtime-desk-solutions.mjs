@@ -27,14 +27,14 @@ export const DESK_L1_LIGHT_IDS = [
   "light_night_path",
   "stair_light_motion",
   "light_reed_on",
-  "master_power_off_restore",
-  "cron_presence_on",
 ];
 
 export const DESK_SOLUTION_CARDS = [
   L("light_button_toggle", "Свет", "Свет кнопкой — переключить", "Если нажали кнопку → свет вкл ↔ выкл."),
   L("light_dim_hold_mcm", "Свет", "Диммирование", "Если удерживаете кнопку → яркость плавно."),
-  L("custom_control_task", "Общее", "Иная задача", "Если кнопка или датчик → любая нагрузка с вашим значением."),
+  L("custom_control_task", "Общее", "Иная задача", "Если нажали → записать значение на нагрузку.", {
+    fields: [{ key: "val", label: "Значение на нагрузку", unit: "", def: 1 }],
+  }),
   M("light_all_off", "Свет", "Мастер выключатель", "Если нажали → гасит выбранный свет."),
   M("light_scene_on", "Сцены", "Сцена: включить несколько", "Если нажали → всегда включает выбранные группы света."),
   L("light_motion", "Свет", "Свет по движению", "Если есть движение → включить свет."),
@@ -42,13 +42,14 @@ export const DESK_SOLUTION_CARDS = [
   M("stair_light_motion", "Свет", "Подсветка лестницы", "Если движение → свет зон лестницы."),
   L("light_reed_on", "Свет", "Свет по двери", "Если дверь открыта → включить свет."),
   L("socket_button_toggle", "Розетки", "Розетка кнопкой", "Если нажали → розетка вкл ↔ выкл."),
-  M("master_power_off_restore", "Свет", "Мастер OFF + восстановление", "Гасит свет и потом возвращает как было."),
-  C("cron_presence_on", "Свет", "Имитация присутствия", "По расписанию включает свет — как будто дома."),
-  C("cron_all_off", "Свет", "Ночью — всё OFF", "По расписанию гасит свет — тихий час."),
-  C("outdoor_dusk_on", "Свет", "Улица: сумерки ON", "Если вечер по расписанию → уличный свет ON."),
-  C("outdoor_dawn_off", "Свет", "Улица: рассвет OFF", "Если утро по расписанию → улица OFF."),
-  C("anti_ice_cron_on", "Общее", "Антилёд: включить", "По расписанию греет кабель / антиобледенение."),
-  C("anti_ice_cron_off", "Общее", "Антилёд: выключить", "По расписанию выключает греющий кабель."),
+  // Расписание / мастер-restore — пока без emit: скрыты с витрины.
+  M("master_power_off_restore", "Свет", "Мастер OFF + восстановление", "Гасит свет и потом возвращает как было.", { pour: false }),
+  C("cron_presence_on", "Свет", "Имитация присутствия", "По расписанию включает свет — как будто дома.", { pour: false }),
+  C("cron_all_off", "Свет", "Ночью — всё OFF", "По расписанию гасит свет — тихий час.", { pour: false }),
+  C("outdoor_dusk_on", "Свет", "Улица: сумерки ON", "Если вечер по расписанию → уличный свет ON.", { pour: false }),
+  C("outdoor_dawn_off", "Свет", "Улица: рассвет OFF", "Если утро по расписанию → улица OFF.", { pour: false }),
+  C("anti_ice_cron_on", "Общее", "Антилёд: включить", "По расписанию греет кабель / антиобледенение.", { pour: false }),
+  C("anti_ice_cron_off", "Общее", "Антилёд: выключить", "По расписанию выключает греющий кабель.", { pour: false }),
   L("ac_cool_comfort", "Климат", "Кондиционер по температуре", "Если в комнате жарче нужного → кондей ON.", {
     fields: [
       { key: "on", label: "Включать выше", unit: "°C", def: 25 },
@@ -62,15 +63,15 @@ export const DESK_SOLUTION_CARDS = [
       { key: "hyst", label: "Превышение для отключения", unit: "+°C", def: 1 },
     ],
   }),
-  C("rollers_evening", "Шторы", "Роллеты: вечер", "По расписанию закрывает роллеты."),
+  C("rollers_evening", "Шторы", "Роллеты: вечер", "По расписанию закрывает роллеты.", { pour: false }),
   L("curtain_button_open", "Шторы", "Шторы: открыть кнопкой", "Если нажали → штора / роллета открывается."),
   L("curtain_button_close", "Шторы", "Шторы: закрыть кнопкой", "Если нажали → штора закрывается."),
   L("curtain_button_stop", "Шторы", "Шторы: стоп кнопкой", "Если нажали → привод останавливается."),
   L("gate_button_open", "Общее", "Ворота: открыть кнопкой", "Если нажали → ворота / калитка открываются."),
   L("gate_button_close", "Общее", "Ворота: закрыть кнопкой", "Если нажали → ворота закрываются."),
   L("gate_button_stop", "Общее", "Ворота: стоп кнопкой", "Если нажали → привод ворот стоп."),
-  C("curtain_dusk_close", "Шторы", "Шторы: вечер — закрыть", "По расписанию закрывает шторы."),
-  C("curtain_dawn_open", "Шторы", "Шторы: утро — открыть", "По расписанию открывает шторы."),
+  C("curtain_dusk_close", "Шторы", "Шторы: вечер — закрыть", "По расписанию закрывает шторы.", { pour: false }),
+  C("curtain_dawn_open", "Шторы", "Шторы: утро — открыть", "По расписанию открывает шторы.", { pour: false }),
   L("vent_humidity", "Климат", "Вытяжка по влажности", "Если влажно → вытяжка ON; когда сухо — OFF.", {
     fields: [
       { key: "on", label: "Включать при влажности выше", unit: "%", def: 70 },
@@ -78,6 +79,8 @@ export const DESK_SOLUTION_CARDS = [
     ],
   }),
   L("vent_humidity_motion", "Климат", "Вытяжка: влажность и движение", "Если влажно и есть люди → вытяжка; никого — OFF.", {
+    needAux: true,
+    auxLabel: "Движение",
     fields: [
       { key: "on", label: "Включать при влажности выше", unit: "%", def: 70 },
       { key: "off", label: "Выключать при влажности ниже", unit: "%", def: 65 },
@@ -89,14 +92,10 @@ export const DESK_SOLUTION_CARDS = [
       { key: "off", label: "Выключать при CO₂ ниже", unit: "ppm", def: 800 },
     ],
   }),
-  L("vent_diy_vav", "Климат", "Приточка DIY / VAV", "Если душно → мотор и заслонки. Калорифер — только после пуска.", {
+  M("vent_diy_vav", "Климат", "Приточка DIY / VAV", "Если душно (CO₂) → все выбранные линии ON; чисто — OFF. Мотор и заслонки — вместе.", {
     fields: [
       { key: "on", label: "Включать при CO₂ выше", unit: "ppm", def: 1000 },
       { key: "off", label: "Выключать при CO₂ ниже", unit: "ppm", def: 800 },
-      { key: "supply", label: "Температура притока", unit: "°C", def: 20 },
-      { key: "delay", label: "Калорифер через", unit: "сек", def: 15 },
-      { key: "spdMin", label: "Скорость мотора мин", unit: "%", def: 20 },
-      { key: "spdMax", label: "Скорость мотора макс", unit: "%", def: 100 },
     ],
   }),
   L("humidifier_low", "Климат", "Увлажнитель в диапазоне", "Если сухо → увлажнитель ON; влажно — OFF.", {
@@ -147,6 +146,11 @@ export const DESK_SOLUTION_CARDS = [
   M("scene_relax", "Сцены", "Отдых", "Если нажали → свет ~25% и шторы закрыть."),
 ];
 
+/** Витрина L1: только то, что реально льётся в wb-rules. */
+export function deskSolutionCatalog() {
+  return DESK_SOLUTION_CARDS.filter((c) => c.pour !== false);
+}
+
 function contactOf(raw) {
   const deviceTopicKey = String(raw?.deviceTopicKey ?? "").trim();
   const controlId = String(raw?.controlId ?? "").trim();
@@ -177,8 +181,14 @@ export function listDeskSolutions() {
 export function upsertDeskSolution(input) {
   const card = DESK_SOLUTION_CARDS.find((c) => c.id === String(input?.solutionId ?? "").trim());
   if (!card) return { ok: false, error: "bad_card" };
+  if (card.pour === false) return { ok: false, error: "not_pourable" };
   const trigger = contactOf(input?.trigger);
   if (card.needTrig !== false && !trigger) return { ok: false, error: "need_trigger" };
+  let aux = null;
+  if (card.needAux) {
+    aux = contactOf(input?.aux);
+    if (!aux) return { ok: false, error: "need_aux" };
+  }
   const rawTargets = Array.isArray(input?.targets) ? input.targets : input?.target ? [input.target] : [];
   const targets = rawTargets.map(contactOf).filter(Boolean);
   if (!targets.length) return { ok: false, error: "need_target" };
@@ -196,6 +206,7 @@ export function upsertDeskSolution(input) {
     solutionId: card.id,
     title: card.title,
     trigger: trigger || null,
+    ...(aux ? { aux } : {}),
     targets,
     ...(Object.keys(params).length ? { params } : {}),
     savedAt: new Date().toISOString(),

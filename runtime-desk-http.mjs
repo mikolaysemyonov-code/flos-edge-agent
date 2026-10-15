@@ -15,7 +15,7 @@ import {
   upsertDeskShelfMark,
 } from "./runtime-desk-marking.mjs";
 import {
-  DESK_SOLUTION_CARDS,
+  deskSolutionCatalog,
   deleteDeskSolution,
   listDeskSolutions,
   upsertDeskSolution,
@@ -276,7 +276,7 @@ export { buildDeskPourPackage, assessDeskCanPour };
 export async function handleRuntimeDeskSolutions(req, res) {
   const method = (req.method ?? "GET").toUpperCase();
   if (method === "GET") {
-    jsonEnd(res, 200, { ok: true, catalog: DESK_SOLUTION_CARDS, solutions: listDeskSolutions() });
+    jsonEnd(res, 200, { ok: true, catalog: deskSolutionCatalog(), solutions: listDeskSolutions() });
     return;
   }
   const chunks = [];

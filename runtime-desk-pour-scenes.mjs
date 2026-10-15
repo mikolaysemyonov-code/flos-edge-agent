@@ -21,7 +21,18 @@ const SCENE_LEVEL = {
   light_scene_on: 100,
 };
 
-const SCENES = new Set([...Object.keys(SCENE_LEVEL), "curtain_button_open", "curtain_button_close", "curtain_button_stop", "leak_close_valves", "siren_motion", "lock_button_set"]);
+const SCENES = new Set([
+  ...Object.keys(SCENE_LEVEL),
+  "curtain_button_open",
+  "curtain_button_close",
+  "curtain_button_stop",
+  "gate_button_open",
+  "gate_button_close",
+  "gate_button_stop",
+  "leak_close_valves",
+  "siren_motion",
+  "lock_button_set",
+]);
 
 function esc(s) {
   return JSON.stringify(String(s ?? ""));
@@ -112,9 +123,9 @@ export function isDeskSceneSolution(sol) {
 export function emitDeskScene(sol) {
   const sid = String(sol?.solutionId || "");
   if (!SCENES.has(sid)) return "";
-  if (sid === "curtain_button_open") return emitCurtain(sol, "open");
-  if (sid === "curtain_button_close") return emitCurtain(sol, "close");
-  if (sid === "curtain_button_stop") return emitCurtain(sol, "stop");
+  if (sid === "curtain_button_open" || sid === "gate_button_open") return emitCurtain(sol, "open");
+  if (sid === "curtain_button_close" || sid === "gate_button_close") return emitCurtain(sol, "close");
+  if (sid === "curtain_button_stop" || sid === "gate_button_stop") return emitCurtain(sol, "stop");
   if (sid === "leak_close_valves" || sid === "siren_motion" || sid === "lock_button_set") {
     return emitSensorOn(sol);
   }

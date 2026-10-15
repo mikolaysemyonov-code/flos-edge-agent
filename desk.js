@@ -26,8 +26,6 @@
       "light_night_path",
       "stair_light_motion",
       "light_reed_on",
-      "master_power_off_restore",
-      "cron_presence_on",
     ];
     let deskRooms = [];
     let markPending = {};
@@ -2011,7 +2009,12 @@
         .test(card.id + " " + card.title);
     }
     function sheetTrigLab(card) {
+      if (card.id === "vent_humidity_motion") return "Влажность";
+      if (card.id === "ac_window_off") return "Окно / геркон";
       return sheetNeedSensor(card) ? "Датчик" : "Кнопка";
+    }
+    function sheetAuxLab(card) {
+      return card.auxLabel || "Доп. датчик";
     }
     function sheetTgtLab(card) {
       if (card.cat === "Шторы") return card.multi ? "Шторы / приводы" : "Штора";
@@ -2024,6 +2027,7 @@
       }
       if (card.cat === "Розетки") return "Розетка";
       if (card.cat === "Сцены") return "Линии";
+      if (/gate_button/.test(card.id)) return "Ворота / привод";
       if (card.cat === "Общее") return card.multi ? "Нагрузки" : "Нагрузка";
       return card.multi ? "Свет / линии" : "Свет";
     }
@@ -2048,12 +2052,15 @@
       const all = loadsForRoom(room);
       if (card.cat === "Шторы") return preferRows(all, isCurtainLoad, true);
       if (card.cat === "Климат") {
-        return preferRows(all, (r) => /кондей|кондиц|тепл|пол|вытяж|вентил|насос|увлажн|калорифер|серво/i.test(r.label || ""), true);
+        return preferRows(all, (r) => /кондей|кондиц|тепл|пол|вытяж|вентил|насос|увлажн|калорифер|серво|приточ|заслон/i.test(r.label || ""), true);
       }
       if (card.cat === "Розетки") return preferRows(all, (r) => /розетк/i.test(r.label || ""), true);
       if (/leak/.test(card.id)) return preferRows(all, (r) => /кран|клапан|перекрыт/i.test(r.label || ""), true);
       if (/siren/.test(card.id)) return preferRows(all, (r) => /сирен|тревог/i.test(r.label || ""), true);
       if (/lock/.test(card.id)) return preferRows(all, (r) => /замок/i.test(r.label || ""), true);
+      if (/gate_button/.test(card.id)) {
+        return preferRows(all, (r) => isDeskDrive(r.controlId) || /ворот|калитк|шлагбаум|привод/i.test(r.label || ""), true);
+      }
       return all;
     }
     function openCardSheet(card, draft) {
@@ -2068,7 +2075,9 @@
       p.className = "meta";
       p.textContent = card.summary;
       const needTrig = card.needTrig !== false;
+      const needAux = card.needAux === true;
       let trig = null;
+      let aux = null;
       const trigLab = document.createElement("span");
       trigLab.className = "fld";
       if (needTrig) {
@@ -2081,7 +2090,9 @@
         if (draft && draft.trigger) {
           trig.value = contactKey(draft.trigger.deviceTopicKey, draft.trigger.controlId);
         } else if (sheetNeedSensor(card)) {
-          const sens = trigs.find((r) => (!roomFilter || nameRoom(r.label) === roomFilter) && isSensorLabel(r.label))
+          const preferHum = /humidity|влажн/i.test(card.id + sheetTrigLab(card));
+          const sens = trigs.find((r) => preferHum && /влажн|humidity/i.test(r.label || ""))
+            || trigs.find((r) => (!roomFilter || nameRoom(r.label) === roomFilter) && isSensorLabel(r.label))
             || trigs.find((r) => isSensorLabel(r.label));
           if (sens) trig.value = contactKey(sens.deviceTopicKey, sens.controlId);
         } else if (roomFilter && trigs[0] && nameRoom(trigs[0].label) === roomFilter) {
@@ -2093,6 +2104,26 @@
         note.className = "meta";
         note.textContent = "По времени на контроллере. Сейчас выберите " + sheetTgtLab(card).toLowerCase() + ".";
         trig = note;
+      }
+      const auxLab = document.createElement("span");
+      auxLab.className = "fld";
+      if (needAux) {
+        auxLab.textContent = sheetAuxLab(card);
+        aux = document.createElement("select");
+        aux.className = "bind";
+        aux.setAttribute("aria-label", auxLab.textContent);
+        const auxRows = preferRows(
+          namedTriggers().filter((r) => String(r.label || "").trim()),
+          (r) => /движен|motion|pir|присут/i.test(r.label || ""),
+          true,
+        );
+        fillSelect(aux, auxRows, "Датчик движения");
+        if (draft && draft.aux) {
+          aux.value = contactKey(draft.aux.deviceTopicKey, draft.aux.controlId);
+        } else {
+          const hit = auxRows.find((r) => /движен|motion|pir/i.test(r.label || ""));
+          if (hit) aux.value = contactKey(hit.deviceTopicKey, hit.controlId);
+        }
       }
       const tgtLab = document.createElement("span");
       tgtLab.className = "fld";
@@ -2179,6 +2210,7 @@
             id: draft && draft.id,
             solutionId: card.id,
             trigger: needTrig ? parseBindValue(trig.value) : null,
+            aux: needAux && aux ? parseBindValue(aux.value) : undefined,
             targets: collectTargets(),
             params: fields.length ? collectParams() : undefined,
           }),
@@ -2186,8 +2218,12 @@
           if (!j.ok) {
             err.textContent = j.error === "need_trigger"
               ? ("Нужен " + sheetTrigLab(card).toLowerCase() + " с шины")
+              : j.error === "need_aux"
+                ? ("Нужен " + sheetAuxLab(card).toLowerCase() + " с шины")
               : j.error === "need_target" || j.error === "need_load"
                 ? ("Нужна " + sheetTgtLab(card).toLowerCase() + " из разметки")
+              : j.error === "not_pourable"
+                ? "Эта карточка пока не льётся — выберите другую"
               : (j.error || "Не сохранил");
             return;
           }
@@ -2209,6 +2245,7 @@
       });
       const clearErr = () => { err.textContent = ""; };
       if (needTrig && trig.tagName === "SELECT") trig.addEventListener("change", clearErr);
+      if (needAux && aux) aux.addEventListener("change", clearErr);
       tgtNode.addEventListener("change", clearErr);
       const cancel = document.createElement("button");
       cancel.type = "button";
@@ -2221,7 +2258,9 @@
       head.append(h, p);
       const body = document.createElement("div");
       body.className = "sheet-body";
-      body.append(trigLab, trig, tgtLab, tgtNode);
+      body.append(trigLab, trig);
+      if (needAux && aux) body.append(auxLab, aux);
+      body.append(tgtLab, tgtNode);
       if (fields.length) body.appendChild(paramBox);
       body.appendChild(err);
       box.append(head, body, actions);

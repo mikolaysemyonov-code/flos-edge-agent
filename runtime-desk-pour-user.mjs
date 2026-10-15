@@ -11,19 +11,7 @@ const SUPPORTED = new Set([
   "light_button_toggle",
   "light_all_off",
   "socket_button_toggle",
-  "light_dim_hold_mcm",
-  "light_motion",
-  "light_reed_on",
-  "light_night_path",
-  "stair_light_motion",
-  "vent_humidity",
-  "vent_co2",
-  "humidifier_low",
-  "warm_floor_comfort",
-  "warm_floor_electric_comfort",
-  "warm_floor_water_comfort",
-  "ac_cool_comfort",
-  "thermostat_simple_vd",
+  "custom_control_task",
 ]);
 
 function esc(s) {
@@ -92,6 +80,25 @@ function emitAllOff(sol) {
   ].join("\n");
 }
 
+function emitCustomSet(sol) {
+  const id = DESK_PREFIX + sol.id + "_set";
+  const when = triggerWhen(sol.trigger);
+  const target = pathOf((sol.targets || [])[0]);
+  if (!when || !target) return "";
+  const val = Number(sol?.params?.val);
+  const payload = Number.isFinite(val) ? val : 1;
+  return [
+    `defineRule(${esc(id)}, {`,
+    `  whenChanged: ${esc(when)},`,
+    "  then: function () {",
+    "    try {",
+    `      wbActuatorSet(${esc(target)}, ${payload}, ${esc(id)}, 55);`,
+    "    } catch (e) { if (typeof wbRuleGuardCatch === 'function') wbRuleGuardCatch(" + esc(id) + ", e); }",
+    "  }",
+    "});",
+  ].join("\n");
+}
+
 export function supportedDeskSolution(sol) {
   const sid = String(sol?.solutionId || "");
   return (
@@ -113,6 +120,7 @@ export function mergeDeskSolutionsIntoUser(userSrc, solutions) {
     else if (isDeskLightSolution(sol)) js = emitDeskLight(sol);
     else if (isDeskSceneSolution(sol)) js = emitDeskScene(sol);
     else if (sid === "light_all_off") js = emitAllOff(sol);
+    else if (sid === "custom_control_task") js = emitCustomSet(sol);
     else js = emitToggle(sol);
     if (js) chunks.push(js);
   }
