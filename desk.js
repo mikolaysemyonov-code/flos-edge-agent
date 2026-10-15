@@ -1050,6 +1050,10 @@
       openPourMod = "";
       renderReady();
     }
+    function pourLiveCh(key, controlId) {
+      const shelf = lastShelvesRows.find((s) => s.deviceTopicKey === key);
+      return (shelf && (shelf.channels || []).find((c) => c.controlId === controlId)) || { controlId: controlId };
+    }
     function pourModuleTile(sku, key, chunk) {
       const n = chunk.length;
       const btn = document.createElement("button");
@@ -1075,19 +1079,23 @@
       const bars = document.createElement("div");
       bars.className = "ch-bars";
       bars.setAttribute("aria-hidden", "true");
-      chunk.forEach(() => {
+      let lit = 0;
+      chunk.forEach((i) => {
+        const on = channelIsOn(pourLiveCh(key, i.controlId));
+        if (on) lit += 1;
         const b = document.createElement("span");
-        b.className = "ch-bar named";
+        b.className = "ch-bar" + (on ? " lit" : i.status === "blocked" ? "" : " named");
         bars.appendChild(b);
       });
+      if (lit) btn.classList.add("amber", "lit");
       const foot = document.createElement("div");
       foot.className = "mod-foot";
       const open = document.createElement("span");
       open.className = "mod-open";
       open.textContent = "Открыть";
       const badge = document.createElement("span");
-      badge.className = "mod-badge";
-      badge.textContent = "Новое";
+      badge.className = "mod-badge" + (lit ? " lit" : "");
+      badge.textContent = lit ? ("Горит " + lit) : "Новое";
       foot.append(open, badge);
       btn.append(top, vt, vs, bars, foot);
       btn.addEventListener("click", () => {
@@ -1131,19 +1139,23 @@
         const bars = document.createElement("div");
         bars.className = "ch-bars";
         bars.setAttribute("aria-hidden", "true");
+        let lit = 0;
         chunk.forEach((i) => {
+          const on = channelIsOn(pourLiveCh(openPourMod, i.controlId));
+          if (on) lit += 1;
           const b = document.createElement("span");
-          b.className = "ch-bar" + (i.status === "blocked" ? "" : " named");
+          b.className = "ch-bar" + (on ? " lit" : i.status === "blocked" ? "" : " named");
           bars.appendChild(b);
         });
+        if (lit) head.classList.add("amber", "lit");
         const pills = document.createElement("div");
         pills.className = "mod-pills";
         const occ = document.createElement("span");
         occ.className = "mod-pill";
         occ.textContent = chunk.length + " новое";
         const bus = document.createElement("span");
-        bus.className = "mod-pill on";
-        bus.textContent = "На шине";
+        bus.className = "mod-pill" + (lit ? " lit" : " on");
+        bus.textContent = lit ? ("Горит " + lit) : "На шине";
         pills.append(occ, bus);
         head.append(top, vt, vs, bars, pills);
         const tip = document.createElement("p");
