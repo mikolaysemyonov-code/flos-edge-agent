@@ -2,7 +2,8 @@
  * Многозонная VAV: зона = P-регулятор CO₂ → заслонка 0–10 В;
  * вентилятор = Max-Selector по спросу зон своей системы (systemId).
  *
- * Fan: если max(зон) ≤ stopBelow (покой) → 0%; иначе max(ymin, maxY).
+ * Fan: maxY > stopBelow → max(ymin, maxY);
+ * иначе ждём restDelaySec в «покое» на ymin, потом 0% (антитактование на границе).
  */
 import { liveDeskDeviceKey } from "./runtime-desk-rules-marks.mjs";
 
@@ -28,13 +29,11 @@ export function vavSystemId(params) {
   return raw.replace(/[^a-z0-9_-]/g, "") || "pu1";
 }
 
-/** % открытия → значение AO Wiren Board (MAO: 0…10000 ≈ 0…10 В). */
 export function vavAoFromPercent(pct) {
   const y = Math.max(0, Math.min(100, Number(pct) || 0));
   return Math.round(y * 100);
 }
 
-/** Линейная интерполяция CO₂ → % заслонки с клипом. */
 export function vavDamperPercent(co2, xmin, xmax, ymin, ymax) {
   const x = Number(co2);
   if (!Number.isFinite(x)) return ymin;
@@ -48,15 +47,28 @@ export function vavDamperPercent(co2, xmin, xmax, ymin, ymax) {
 }
 
 /**
- * Скорость вентилятора: покой (все зоны ≤ stopBelow) → 0;
- * иначе пол ymin и max спрос.
+ * @returns {{ out: number, restSince: number }}
+ * restSince: 0 = не в покое; >0 = момент входа в покой.
  */
-export function vavFanOutput(maxZonePct, ymin, stopBelow) {
+export function vavFanStep(maxZonePct, ymin, stopBelow, restSince, nowMs, restDelayMs) {
   const maxY = Number(maxZonePct) || 0;
   const floor = Math.max(0, Math.min(100, Number(ymin) || 0));
   const rest = Math.max(0, Math.min(100, Number(stopBelow) || 0));
-  if (maxY <= rest) return 0;
-  return Math.max(floor, Math.min(100, maxY));
+  const delay = Math.max(0, Number(restDelayMs) || 0);
+  const now = Number(nowMs) || Date.now();
+  if (maxY > rest) {
+    return { out: Math.max(floor, Math.min(100, maxY)), restSince: 0 };
+  }
+  const since = Number(restSince) > 0 ? Number(restSince) : now;
+  if (delay > 0 && now - since < delay) {
+    return { out: Math.max(floor, maxY), restSince: since };
+  }
+  return { out: 0, restSince: since };
+}
+
+/** @deprecated use vavFanStep — мгновенный стоп без выдержки. */
+export function vavFanOutput(maxZonePct, ymin, stopBelow) {
+  return vavFanStep(maxZonePct, ymin, stopBelow, 0, Date.now(), 0).out;
 }
 
 export function isDeskVavSolution(sol) {
@@ -74,12 +86,16 @@ function emitHelper() {
     "  return y0 + (x - lo) * (y1 - y0) / (hi - lo);",
     "}",
     "function __deskVavAo(pct) { return Math.round(Math.max(0, Math.min(100, Number(pct) || 0)) * 100); }",
-    "function __deskVavFanOut(maxY, ymin, stopBelow) {",
+    "function __deskVavFanStep(maxY, ymin, stopBelow, restSince, now, restDelayMs) {",
     "  maxY = Number(maxY) || 0;",
     "  var floor = Math.max(0, Math.min(100, Number(ymin) || 0));",
     "  var rest = Math.max(0, Math.min(100, Number(stopBelow) || 0));",
-    "  if (maxY <= rest) return 0;",
-    "  return Math.max(floor, Math.min(100, maxY));",
+    "  var delay = Math.max(0, Number(restDelayMs) || 0);",
+    "  now = Number(now) || Date.now();",
+    "  if (maxY > rest) return { out: Math.max(floor, Math.min(100, maxY)), restSince: 0 };",
+    "  var since = restSince > 0 ? restSince : now;",
+    "  if (delay > 0 && now - since < delay) return { out: Math.max(floor, maxY), restSince: since };",
+    "  return { out: 0, restSince: since };",
     "}",
     "if (typeof global !== 'undefined') {",
     "  if (!global.__deskVavDemand) global.__deskVavDemand = {};",
@@ -92,11 +108,13 @@ function emitHelper() {
     "    var maxY = 0, k;",
     "    for (k in dem) { if (dem.hasOwnProperty(k)) { var v = Number(dem[k]); if (!isNaN(v) && v > maxY) maxY = v; } }",
     "    var fans = (typeof global !== 'undefined' && global.__deskVavFans) || [];",
+    "    var now = Date.now();",
     "    for (var i = 0; i < fans.length; i++) {",
     "      var f = fans[i];",
     "      if (!f || !f.path || String(f.sys) !== sys) continue;",
-    "      var out = __deskVavFanOut(maxY, f.ymin, f.stopBelow);",
-    "      try { wbActuatorSet(f.path, __deskVavAo(out), f.id, 50); } catch (_e) {}",
+    "      var step = __deskVavFanStep(maxY, f.ymin, f.stopBelow, f.restSince || 0, now, f.restDelayMs || 0);",
+    "      f.restSince = step.restSince;",
+    "      try { wbActuatorSet(f.path, __deskVavAo(step.out), f.id, 50); } catch (_e) {}",
     "    }",
     "  } catch (_e2) {}",
     "}",
@@ -141,13 +159,17 @@ function emitFanRegister(sol) {
   const sys = vavSystemId(p);
   const ymin = num(p, "ymin", 10);
   const stopBelow = num(p, "stopBelow", ymin);
+  const restDelayMs = Math.max(0, num(p, "restDelay", 180)) * 1000;
   const id = "desk_sol_" + sol.id + "_vavf";
   return [
     `(function () {`,
     "  if (typeof global === 'undefined') return;",
     "  if (!global.__deskVavFans) global.__deskVavFans = [];",
-    `  global.__deskVavFans.push({ path: ${esc(fan)}, ymin: ${ymin}, stopBelow: ${stopBelow}, sys: ${esc(sys)}, id: ${esc(id)} });`,
+    `  global.__deskVavFans.push({ path: ${esc(fan)}, ymin: ${ymin}, stopBelow: ${stopBelow}, restDelayMs: ${restDelayMs}, restSince: 0, sys: ${esc(sys)}, id: ${esc(id)} });`,
     `  __deskVavPushFan(${esc(sys)});`,
+    "  try {",
+    `    setInterval(function () { __deskVavPushFan(${esc(sys)}); }, 30000);`,
+    "  } catch (_e) {}",
     "})();",
   ].join("\n");
 }

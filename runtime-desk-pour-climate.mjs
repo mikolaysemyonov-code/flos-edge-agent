@@ -116,6 +116,10 @@ function emitWindowOff(sol) {
   ].join("\n");
 }
 
+/**
+ * Вытяжка: влажность ИЛИ движение (не AND).
+ * Влажность — гистерезис on/off; движение — hold N сек после ухода.
+ */
 function emitHumidityMotion(sol) {
   const humidity = pathOf(sol.trigger);
   const motion = pathOf(sol.aux);
@@ -124,26 +128,44 @@ function emitHumidityMotion(sol) {
   const id = "desk_sol_" + sol.id + "_clim";
   const p = sol.params || {};
   const { on, off } = gteBand("vent_humidity", p);
-  const latch = "_desk_clim_" + String(sol.id || "").replace(/[^a-zA-Z0-9_]/g, "_");
+  const holdMs = Math.max(0, num(p, "motionHold", 300)) * 1000;
+  const base = "_desk_clim_" + String(sol.id || "").replace(/[^a-zA-Z0-9_]/g, "_");
+  const humLatch = base + "_hum";
+  const motionUntil = base + "_mot";
+  const latch = base;
   const guard = antiClickGuard(latch, num(p, "minOn", 180), num(p, "minOff", 180));
+  const tick = [
+    `function ${base}_tick() {`,
+    "  try {",
+    `    var __want = ${humLatch} || Date.now() < ${motionUntil};`,
+    guard.wrap ? guard.wrap(loads, id) : setLoads(loads, "__want", id),
+    "  } catch (_e) {}",
+    "}",
+  ].join("\n");
   return [
+    `var ${humLatch} = false;`,
+    `var ${motionUntil} = 0;`,
     `var ${latch} = false;`,
     guard.preface || "",
+    tick,
     `defineRule(${esc(id)}, {`,
     `  whenChanged: [${esc(humidity)}, ${esc(motion)}],`,
     "  then: function () {",
     "    try {",
     `      var v = Number(readValue(${esc(humidity)}));`,
-    "      if (isNaN(v)) return;",
-    `      var people = wbIsOn(readValue(${esc(motion)}));`,
-    `      if (v >= ${on} && people) ${latch} = true;`,
-    `      else if (v <= ${off} || !people) ${latch} = false;`,
-    `      var __want = ${latch};`,
-    guard.wrap ? guard.wrap(loads, id) : setLoads(loads, "__want", id),
+    "      if (!isNaN(v)) {",
+    `        if (v >= ${on}) ${humLatch} = true;`,
+    `        else if (v <= ${off}) ${humLatch} = false;`,
+    "      }",
+    `      if (wbIsOn(readValue(${esc(motion)}))) ${motionUntil} = Date.now() + ${holdMs};`,
+    `      ${base}_tick();`,
     "    } catch (e) { if (typeof wbRuleGuardCatch === 'function') wbRuleGuardCatch(" + esc(id) + ", e); }",
     "  }",
     "});",
-  ].filter(Boolean).join("\n");
+    `(function () { try { setInterval(${base}_tick, 15000); } catch (_e) {} })();`,
+  ]
+    .filter(Boolean)
+    .join("\n");
 }
 
 function emitFloorStaleWatch(sol, loads, latch, staleSec) {
@@ -201,11 +223,12 @@ export function emitDeskClimate(sol) {
       `      var __want = ${latch};`,
     ].join("\n");
   } else if (mode === "lte") {
+    // Симметрия: ON при thr−h, OFF при thr+h (желаемая 22 / hyst 1 → вкл ≤21, выкл ≥23).
     const thr = num(p, "thr", 22);
     const h = Math.max(0.1, num(p, "hyst", 1));
     body = [
       `      var thr = ${thr}; var h = ${h};`,
-      `      if (v <= thr) ${latch} = true;`,
+      `      if (v <= thr - h) ${latch} = true;`,
       `      else if (v >= thr + h) ${latch} = false;`,
       `      var __want = ${latch};`,
     ].join("\n");
@@ -218,10 +241,6 @@ export function emitDeskClimate(sol) {
     ].join("\n");
   }
 
-  const staleTouch = staleSec
-    ? [`      ${ts} = Date.now();`, `      if (isNaN(v)) { ${latch} = false; var __want = false;`]
-    : ["      if (isNaN(v)) return;"];
-  // fix stale branch - need proper if/else
   const readBlock = staleSec
     ? [
         `      var v = Number(readValue(${esc(sensor)}));`,

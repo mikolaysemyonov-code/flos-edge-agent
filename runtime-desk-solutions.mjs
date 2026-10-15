@@ -109,7 +109,7 @@ export const DESK_SOLUTION_CARDS = [
   C("outdoor_dawn_off", "Свет", "Улица: рассвет OFF", "Если утро по расписанию → улица OFF.", { pour: false }),
   C("anti_ice_cron_on", "Общее", "Антилёд: включить", "По расписанию греет кабель / антиобледенение.", { pour: false }),
   C("anti_ice_cron_off", "Общее", "Антилёд: выключить", "По расписанию выключает греющий кабель.", { pour: false }),
-  M("ac_cool_comfort", "Климат", "Кондиционер по температуре", "Если в комнате жарче нужного → кондей ON.", {
+  M("ac_cool_comfort", "Климат", "Кондиционер по температуре", "Гистерезис → команда ON/OFF на ИК/Modbus-контроль кондея (не разрыв питания блока).", {
     loadKind: "ac",
     fields: [
       { key: "on", label: "Включать выше", unit: "°C", def: 25 },
@@ -121,11 +121,11 @@ export const DESK_SOLUTION_CARDS = [
   M("ac_window_off", "Климат", "Окно открыто — стоп кондея", "Если окно открыто → кондей OFF. Сам обратно не включает.", {
     loadKind: "ac",
   }),
-  M("thermostat_simple_vd", "Климат", "Термостат на щите", "Если холоднее нужного → греет; теплее — стоп.", {
+  M("thermostat_simple_vd", "Климат", "Термостат на щите", "Желаемая ± гистерезис: вкл при thr−h, выкл при thr+h.", {
     loadKind: "heat",
     fields: [
       { key: "thr", label: "Желаемая температура", unit: "°C", def: 25 },
-      { key: "hyst", label: "Превышение для отключения", unit: "+°C", def: 1 },
+      { key: "hyst", label: "Гистерезис ±", unit: "°C", def: 1 },
       { key: "minOn", label: "Мин. работа", unit: "сек", def: 60 },
       { key: "minOff", label: "Мин. пауза", unit: "сек", def: 60 },
     ],
@@ -148,13 +148,14 @@ export const DESK_SOLUTION_CARDS = [
       { key: "minOff", label: "Мин. пауза", unit: "сек", def: 180 },
     ],
   }),
-  M("vent_humidity_motion", "Климат", "Вытяжка: влажность и движение", "Влажность + люди → вытяжка.", {
+  M("vent_humidity_motion", "Климат", "Вытяжка: влажность и движение", "Влажность ИЛИ движение → вытяжка. После ухода людей — ещё hold по движению; влажность гасит по своему гистерезису.", {
     loadKind: "exhaust",
     needAux: true,
     auxLabel: "Движение",
     fields: [
       { key: "on", label: "Включать при влажности выше", unit: "%", def: 70 },
       { key: "off", label: "Выключать при влажности ниже", unit: "%", def: 65 },
+      { key: "motionHold", label: "После движения держать ещё", unit: "сек", def: 300 },
       { key: "minOn", label: "Мин. работа", unit: "сек", def: 180 },
       { key: "minOff", label: "Мин. пауза", unit: "сек", def: 180 },
     ],
@@ -197,7 +198,7 @@ export const DESK_SOLUTION_CARDS = [
       { key: "ymax", label: "Макс. открытие заслонки", unit: "%", def: 100 },
     ],
   }),
-  L("vent_vav_fan", "Климат", "Вентилятор VAV (Max-Selector)", "Скорость = max(зон этой системы). Покой (все ≤ порога) → 0%; иначе не ниже мин. скорости.", {
+  L("vent_vav_fan", "Климат", "Вентилятор VAV (Max-Selector)", "Скорость = max(зон этой системы). Покой: сначала держим мин. скорость, потом 0% (выдержка — антитактование).", {
     needTrig: false,
     noTrigHint: "Зоны",
     noTrigNote: "Скорость берётся из зон VAV с той же системой. Выберите AO вентилятора этой приточки.",
@@ -215,7 +216,8 @@ export const DESK_SOLUTION_CARDS = [
         ],
       },
       { key: "ymin", label: "Мин. скорость (когда есть спрос)", unit: "%", def: 10 },
-      { key: "stopBelow", label: "Покой: стоп если max зон ≤", unit: "%", def: 10 },
+      { key: "stopBelow", label: "Покой: если max зон ≤", unit: "%", def: 10 },
+      { key: "restDelay", label: "Покой: ждать перед стопом", unit: "сек", def: 180 },
     ],
   }),
   M("humidifier_low", "Климат", "Увлажнитель в диапазоне", "Если сухо → увлажнитель ON; влажно — OFF.", {
@@ -227,31 +229,31 @@ export const DESK_SOLUTION_CARDS = [
       { key: "minOff", label: "Мин. пауза", unit: "сек", def: 180 },
     ],
   }),
-  M("warm_floor_comfort", "Климат", "Тёплый пол: комфорт", "Если пол холоднее нужного → греет; теплее — стоп. Нет данных с датчика > stale → OFF.", {
+  M("warm_floor_comfort", "Климат", "Тёплый пол: комфорт", "Вкл при thr−h, выкл при thr+h. Нет данных > stale → OFF.", {
     loadKind: "floor",
     fields: [
       { key: "thr", label: "Желаемая температура", unit: "°C", def: 22 },
-      { key: "hyst", label: "Превышение для отключения", unit: "+°C", def: 1 },
+      { key: "hyst", label: "Гистерезис ±", unit: "°C", def: 1 },
       { key: "minOn", label: "Мин. работа", unit: "сек", def: 120 },
       { key: "minOff", label: "Мин. пауза", unit: "сек", def: 120 },
       { key: "staleSec", label: "Нет данных — стоп через", unit: "сек", def: 900 },
     ],
   }),
-  M("warm_floor_electric_comfort", "Климат", "Тёплый пол электрический", "Если холоднее нужного → реле ON; теплее — OFF.", {
+  M("warm_floor_electric_comfort", "Климат", "Тёплый пол электрический", "Вкл при thr−h, выкл при thr+h (22±1 → вкл ≤21, выкл ≥23). Нет данных → OFF.", {
     loadKind: "floor",
     fields: [
       { key: "thr", label: "Желаемая температура", unit: "°C", def: 22 },
-      { key: "hyst", label: "Превышение для отключения", unit: "+°C", def: 1 },
+      { key: "hyst", label: "Гистерезис ±", unit: "°C", def: 1 },
       { key: "minOn", label: "Мин. работа", unit: "сек", def: 120 },
       { key: "minOff", label: "Мин. пауза", unit: "сек", def: 120 },
       { key: "staleSec", label: "Нет данных — стоп через", unit: "сек", def: 900 },
     ],
   }),
-  M("warm_floor_water_comfort", "Климат", "Тёплый пол водяной", "Если холоднее нужного → насос / серво ON.", {
+  M("warm_floor_water_comfort", "Климат", "Тёплый пол водяной", "Вкл при thr−h, выкл при thr+h. Нет данных → OFF.", {
     loadKind: "floor",
     fields: [
       { key: "thr", label: "Желаемая температура", unit: "°C", def: 22 },
-      { key: "hyst", label: "Превышение для отключения", unit: "+°C", def: 1 },
+      { key: "hyst", label: "Гистерезис ±", unit: "°C", def: 1 },
       { key: "minOn", label: "Мин. работа", unit: "сек", def: 120 },
       { key: "minOff", label: "Мин. пауза", unit: "сек", def: 120 },
       { key: "staleSec", label: "Нет данных — стоп через", unit: "сек", def: 900 },
