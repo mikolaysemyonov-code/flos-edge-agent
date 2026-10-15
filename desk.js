@@ -22,6 +22,7 @@
     let lineRoomFilter = "";
     let linePlanFocus = false;
     let lineBeacon = null; /* { id, candidates, idx, timer, current } */
+    let lineBeaconFamily = "led"; /* led | relay | all */
     let pairListen = null; /* { timer, baseline, prevClosed, last } */
     let openAssign = "";
     let deskCatalog = [];
@@ -4414,7 +4415,7 @@
           }
         });
     }
-    async function fetchBeaconCandidates(includeNamed) {
+    async function fetchBeaconCandidates(includeNamed, family) {
       try {
         const r = await fetch("/runtime/desk-line-plan", {
           method: "POST",
@@ -4423,6 +4424,7 @@
             candidates: true,
             shelves: lastShelvesRows || [],
             includeNamed: includeNamed === true,
+            family: family || lineBeaconFamily || "all",
           }),
         });
         const j = await r.json();
@@ -4431,15 +4433,25 @@
         return [];
       }
     }
+    function beaconHoldMs(cur) {
+      if (cur && Number.isFinite(Number(cur.holdMs))) return Number(cur.holdMs);
+      if (cur && cur.kind === "led") return 2600;
+      return 900;
+    }
     async function startLineBeacon(item) {
       stopLineBeacon();
       stopKeyScan();
-      const candidates = await fetchBeaconCandidates(false);
+      const candidates = await fetchBeaconCandidates(false, lineBeaconFamily);
       if (!candidates.length) {
         const head = $("previewHead");
         if (head) {
           head.hidden = false;
-          head.textContent = "Нет свободных линий для маяка — разметьте модули или снимите лишние имена.";
+          const famRu = lineBeaconFamily === "led"
+            ? "LED"
+            : lineBeaconFamily === "relay"
+              ? "реле"
+              : "линий";
+          head.textContent = "Нет свободных " + famRu + " для маяка — смените LED/реле или снимите лишние имена.";
         }
         renderMark();
         return;
@@ -4449,6 +4461,10 @@
         const prev = lineBeacon.current;
         if (prev) {
           try { await actuateChannel(prev.deviceTopicKey, prev.controlId, "off"); } catch (_) { /* */ }
+          // LED гаснет тоже не мгновенно — короткая пауза перед следующим.
+          if (prev.kind === "led") {
+            await new Promise((r) => setTimeout(r, 350));
+          }
         }
         if (!lineBeacon || lineBeacon.id !== item.id) return;
         const cur = lineBeacon.candidates[lineBeacon.idx % lineBeacon.candidates.length];
@@ -4457,11 +4473,12 @@
         renderMark();
         try { await actuateChannel(cur.deviceTopicKey, cur.controlId, "on"); } catch (_) { /* */ }
         if (!lineBeacon || lineBeacon.id !== item.id) return;
-        lineBeacon.timer = setTimeout(() => { void tick(); }, 900);
+        lineBeacon.timer = setTimeout(() => { void tick(); }, beaconHoldMs(cur));
       };
       lineBeacon = {
         id: item.id,
         candidates,
+        family: lineBeaconFamily,
         idx: 0,
         timer: 0,
         current: null,
@@ -4522,25 +4539,56 @@
       body.replaceChildren();
       const intro = document.createElement("p");
       intro.className = "meta";
-      intro.textContent = "План линий → «Найти в щите» → стойте в комнате → когда мигнуло нужное — «Это она».";
+      intro.textContent = "План линий → выберите LED или реле → «Найти в щите» → «Это она». LED держим дольше — плавное разжигание.";
       body.appendChild(intro);
+      const fam = document.createElement("div");
+      fam.className = "filters line-beacon-fam";
+      fam.setAttribute("role", "tablist");
+      fam.setAttribute("aria-label", "Тип линий маяка");
+      [
+        { id: "led", t: "LED · плавно" },
+        { id: "relay", t: "Реле · быстро" },
+        { id: "all", t: "Все" },
+      ].forEach((opt) => {
+        const b = document.createElement("button");
+        b.type = "button";
+        b.textContent = opt.t;
+        b.setAttribute("aria-pressed", lineBeaconFamily === opt.id ? "true" : "false");
+        b.addEventListener("click", () => {
+          if (lineBeaconFamily === opt.id) return;
+          lineBeaconFamily = opt.id;
+          if (lineBeacon) {
+            const armed = linePlan.find((k) => k.id === lineBeacon.id);
+            stopLineBeacon();
+            if (armed) void startLineBeacon(armed);
+            else renderMark();
+          } else {
+            renderMark();
+          }
+        });
+        fam.appendChild(b);
+      });
+      body.appendChild(fam);
       const status = document.createElement("p");
       status.className = "meta key-scan-status";
       if (lineBeacon && lineBeacon.current) {
         const row = linePlan.find((k) => k.id === lineBeacon.id);
+        const kindRu = lineBeacon.current.kind === "led" ? "LED" : "реле";
+        const hold = Math.round(beaconHoldMs(lineBeacon.current) / 100) / 10;
         status.textContent = "Маяк «"
           + (row ? row.room + " · " + row.label : "линия")
-          + "» · сейчас "
+          + "» · " + kindRu + " "
           + lineBeacon.current.deviceTopicKey + "/" + lineBeacon.current.controlId
-          + " · "
+          + " · " + hold + "с · "
           + ((lineBeacon.idx - 1) % Math.max(1, lineBeacon.candidates.length) + 1)
           + "/" + lineBeacon.candidates.length;
         status.classList.add("live");
       } else {
         const unbound = linePlan.filter((k) => !k.deviceTopicKey).length;
+        const famRu = lineBeaconFamily === "led" ? "LED" : lineBeaconFamily === "relay" ? "реле" : "все";
         status.textContent = unbound
-          ? ("В плане " + linePlan.length + ", без привязки " + unbound + " — запускайте маяк.")
-          : "Сначала список линий по комнатам, потом обход с маяком.";
+          ? ("В плане " + linePlan.length + ", без привязки " + unbound + " · маяк: " + famRu)
+          : ("Сначала список линий · маяк: " + famRu);
       }
       body.appendChild(status);
       if (lineBeacon) {

@@ -209,13 +209,33 @@ export function clearDeskLinePlan() {
   return { ok: true, linePlan: [] };
 }
 
+/** led | relay — для фильтра маяка и разного времени удержания. */
+export function deskBeaconKind(controlId, deviceTopicKey) {
+  const c = String(controlId || "").trim();
+  const key = String(deviceTopicKey || "").toLowerCase();
+  if (/led|ampled|dali|mdali/i.test(key) || /^Channel\s+\d+$/i.test(c) || /^CCT\d+$/i.test(c) || /^RGB\d+$/i.test(c)) {
+    return "led";
+  }
+  if (/^K\d+$/i.test(c)) return "relay";
+  return "relay";
+}
+
+/** Сколько держать ON, пока инженер смотрит в комнату (LED разгорается дольше). */
+export function deskBeaconHoldMs(kind) {
+  if (kind === "led") return 2600;
+  return 900;
+}
+
 /**
  * Кандидаты маяка из полок: сначала без имени, потом уже именованные (перепривязка).
  * @param {Array<{deviceTopicKey:string,channels?:Array}>} shelves
- * @param {{includeNamed?:boolean}} opts
+ * @param {{includeNamed?:boolean, family?: 'led'|'relay'|'all'}} opts
  */
 export function deskBeaconCandidates(shelves, opts = {}) {
   const includeNamed = opts.includeNamed === true;
+  const family = /^(led|relay)$/i.test(String(opts.family || ""))
+    ? String(opts.family).toLowerCase()
+    : "all";
   const free = [];
   const named = [];
   for (const s of Array.isArray(shelves) ? shelves : []) {
@@ -224,11 +244,15 @@ export function deskBeaconCandidates(shelves, opts = {}) {
     for (const ch of Array.isArray(s.channels) ? s.channels : []) {
       const cid = String(ch?.controlId || "").trim();
       if (!isDeskBeaconLoad(cid, dk)) continue;
+      const kind = deskBeaconKind(cid, dk);
+      if (family !== "all" && kind !== family) continue;
       const name = String(ch?.name || "").trim();
       const row = {
         deviceTopicKey: dk,
         controlId: cid,
         name,
+        kind,
+        holdMs: deskBeaconHoldMs(kind),
         label: name || dk + "/" + cid,
       };
       if (name) named.push(row);

@@ -358,7 +358,10 @@ export async function handleRuntimeDeskLinePlan(req, res) {
   if (body.candidates === true && Array.isArray(body.shelves)) {
     jsonEnd(res, 200, {
       ok: true,
-      candidates: deskBeaconCandidates(body.shelves, { includeNamed: body.includeNamed === true }),
+      candidates: deskBeaconCandidates(body.shelves, {
+        includeNamed: body.includeNamed === true,
+        family: body.family,
+      }),
     });
     return;
   }

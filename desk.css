@@ -553,6 +553,9 @@
       border: 1px solid rgb(var(--sky) / .35);
       background: rgb(var(--sky) / .1);
     }
+    .line-beacon-fam {
+      margin: 0 0 .55rem;
+    }
     .pair-hit {
       padding: 1rem .9rem;
       margin: .35rem 0 .75rem;
