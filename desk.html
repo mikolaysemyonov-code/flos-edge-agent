@@ -56,7 +56,15 @@
     <div id="cardSheet" class="sheet" hidden></div>
 
     <section id="panel-poured" class="panel glass" hidden data-tab="poured">
-      <p class="meta">3 · Модули к заливке → имена, потом сценарии.</p>
+      <p class="meta">3 · Проверка → имена → сценарии. Перед сдачей — диагностика и аудит.</p>
+      <div id="checkDock" class="pour-dock check-dock">
+        <div class="pour-strip">
+          <button id="runHealth" class="ghost" type="button">Диагностика</button>
+          <button id="runAudit" class="ghost pour-primary" type="button">Экспресс-аудит</button>
+        </div>
+        <p id="checkHead" class="meta" hidden></p>
+        <ul id="checkList" class="check-list" hidden></ul>
+      </div>
       <div id="pourDock" class="pour-dock">
         <p id="pourSummary" class="pour-summary" hidden></p>
         <p id="pouredHead" class="pour-disk meta" hidden></p>

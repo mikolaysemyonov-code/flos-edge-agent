@@ -53,6 +53,13 @@ import {
   upsertDeskLinePlanBatch,
   upsertDeskLinePlanItem,
 } from "./runtime-desk-line-beacon.mjs";
+import { assessDeskHealth } from "./runtime-desk-health.mjs";
+import {
+  deskAuditTargets,
+  listDeskAuditRuns,
+  saveDeskAuditRun,
+} from "./runtime-desk-audit.mjs";
+import { listDeskSolutions } from "./runtime-desk-solutions.mjs";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 
@@ -380,6 +387,58 @@ export async function handleRuntimeDeskLinePlan(req, res) {
   }
   const out = upsertDeskLinePlanItem(body);
   jsonEnd(res, out.ok ? 200 : 400, out);
+}
+
+export async function handleRuntimeDeskHealth(req, res) {
+  const method = (req.method ?? "GET").toUpperCase();
+  let shelves = [];
+  if (method === "POST") {
+    const chunks = [];
+    for await (const c of req) chunks.push(c);
+    try {
+      const raw = Buffer.concat(chunks).toString("utf8");
+      if (raw.trim()) {
+        const body = JSON.parse(raw);
+        if (Array.isArray(body.shelves)) shelves = body.shelves;
+      }
+    } catch {
+      jsonEnd(res, 400, { ok: false, error: "invalid_json" });
+      return;
+    }
+  }
+  const health = assessDeskHealth(shelves, {
+    keyPlan: listDeskKeyPlan(),
+    linePlan: listDeskLinePlan(),
+    solutions: listDeskSolutions(),
+  });
+  jsonEnd(res, 200, { ok: true, ...health });
+}
+
+export async function handleRuntimeDeskAudit(req, res) {
+  const method = (req.method ?? "GET").toUpperCase();
+  if (method === "GET") {
+    jsonEnd(res, 200, { ok: true, runs: listDeskAuditRuns() });
+    return;
+  }
+  if (method !== "POST") {
+    jsonEnd(res, 405, { ok: false, error: "method" });
+    return;
+  }
+  const chunks = [];
+  for await (const c of req) chunks.push(c);
+  let body = {};
+  try {
+    const raw = Buffer.concat(chunks).toString("utf8");
+    if (raw.trim()) body = JSON.parse(raw);
+  } catch {
+    jsonEnd(res, 400, { ok: false, error: "invalid_json" });
+    return;
+  }
+  if (body.targets === true && Array.isArray(body.shelves)) {
+    jsonEnd(res, 200, { ok: true, targets: deskAuditTargets(body.shelves) });
+    return;
+  }
+  jsonEnd(res, 200, saveDeskAuditRun(body));
 }
 
 export async function handleRuntimeDeskSolutions(req, res) {

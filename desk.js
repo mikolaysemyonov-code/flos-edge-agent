@@ -4759,26 +4759,56 @@
       const ch = (s.channels || []).find((c) => c.controlId === controlId);
       return ch ? String(ch.name || "").trim() : "";
     }
-    function pairPulseForTrigger(deviceTopicKey, controlId) {
+    function pairPulseForTrigger(deviceTopicKey, controlId, buttonName) {
+      const seen = new Set();
       const loads = [];
+      const add = (dk, cid, src) => {
+        if (!dk || !cid || !isDeskLoad(cid)) return;
+        const k = contactKey(dk, cid);
+        if (seen.has(k)) return;
+        seen.add(k);
+        loads.push({ deviceTopicKey: dk, controlId: cid, src });
+      };
+      // 1) Типовые на столе с этой кнопкой.
       deskSolutions.forEach((sol) => {
         const t = sol && sol.trigger;
         if (!t || t.deviceTopicKey !== deviceTopicKey) return;
         const base = String(t.controlId || "").replace(/\s+Short Press Counter$/i, "").trim();
         if (base !== controlId && t.controlId !== controlId) return;
         (sol.targets || []).forEach((x) => {
-          if (x && x.deviceTopicKey && x.controlId) loads.push(x);
+          if (x) add(x.deviceTopicKey, x.controlId, "tip");
         });
       });
-      loads.slice(0, 8).forEach((x) => {
+      // 2) Все подписанные нагрузки той же комнаты (скан клавиш / маяк) — даже без типовой.
+      const room = nameRoom(buttonName);
+      if (room) {
+        (lastShelvesRows || []).forEach((s) => {
+          (s.channels || []).forEach((ch) => {
+            if (!isDeskLoad(ch.controlId)) return;
+            const nm = String(ch.name || "").trim();
+            if (!nm || nameRoom(nm) !== room) return;
+            add(s.deviceTopicKey, ch.controlId, "room");
+          });
+        });
+        (linePlan || []).forEach((ln) => {
+          if (prettyRoom(ln.room) !== room || !ln.deviceTopicKey || !ln.controlId) return;
+          add(ln.deviceTopicKey, ln.controlId, "plan");
+        });
+      }
+      loads.slice(0, 12).forEach((x) => {
         void actuateChannel(x.deviceTopicKey, x.controlId, "pulse");
       });
-      return loads.length;
+      return {
+        count: Math.min(loads.length, 12),
+        fromTip: loads.filter((x) => x.src === "tip").length,
+        fromRoom: loads.filter((x) => x.src !== "tip").length,
+      };
     }
     function startPairListen() {
       stopPairListen();
       stopKeyScan();
       stopLineBeacon();
+      if (!linePlan.length) void loadLinePlan();
       pairListen = {
         timer: 0,
         baseline: pressSignalMap(lastShelvesRows),
@@ -4819,7 +4849,7 @@
             const sig = now.get(rose);
             const name = namedInputLabel(sig.deviceTopicKey, sig.controlId);
             if (!name) return;
-            const pulsed = pairPulseForTrigger(sig.deviceTopicKey, sig.controlId);
+            const pulsed = pairPulseForTrigger(sig.deviceTopicKey, sig.controlId, name);
             pairListen.last = {
               name,
               deviceTopicKey: sig.deviceTopicKey,
@@ -4839,7 +4869,7 @@
       if (!pairListen) startPairListen();
       const intro = document.createElement("p");
       intro.className = "meta";
-      intro.textContent = "Нажимайте подписанные кнопки в квартире. Стол покажет имя; если на типовых есть связь — линии мигнут.";
+      intro.textContent = "Нажмите кнопку — стол покажет имя и мигнёт все подписанные линии этой комнаты (и типовые, если есть).";
       body.appendChild(intro);
       const status = document.createElement("p");
       status.className = "meta key-scan-status live";
@@ -4853,8 +4883,13 @@
         strong.textContent = L.name;
         const sub = document.createElement("p");
         sub.className = "meta";
+        const p = L.pulsed && typeof L.pulsed === "object" ? L.pulsed : { count: Number(L.pulsed) || 0 };
         sub.textContent = L.deviceTopicKey + "/" + L.controlId
-          + (L.pulsed ? (" · импульс линий: " + L.pulsed) : " · типовых на эту кнопку нет — только имя");
+          + (p.count
+            ? (" · импульс " + p.count
+              + (p.fromRoom ? (" · комната " + p.fromRoom) : "")
+              + (p.fromTip ? (" · типовые " + p.fromTip) : ""))
+            : " · нет линий комнаты с именем — разметьте свет маяком");
         hit.append(strong, sub);
       } else {
         const wait = document.createElement("p");
@@ -5264,6 +5299,128 @@
           });
       });
     }
+    function paintCheckList(items, headText, tone) {
+      const head = $("checkHead");
+      const list = $("checkList");
+      if (!head || !list) return;
+      head.hidden = false;
+      head.style.color = tone === "bad" ? "rgb(var(--bad))" : "";
+      head.textContent = headText || "";
+      list.hidden = false;
+      list.replaceChildren();
+      (items || []).forEach((it) => {
+        const li = document.createElement("li");
+        li.className = it.level === "bad" ? "bad" : it.level === "ok" ? "ok" : "warn";
+        li.textContent = (it.level === "bad" ? "● " : it.level === "ok" ? "✓ " : "· ")
+          + (it.text || it.name || "");
+        list.appendChild(li);
+      });
+    }
+    async function runDeskHealth() {
+      const btn = $("runHealth");
+      if (btn) btn.disabled = true;
+      try {
+        await loadLast();
+        const r = await fetch("/runtime/desk-health", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ shelves: lastShelvesRows || [] }),
+        });
+        const j = await r.json();
+        const s = j.summary || {};
+        const head = (j.ok ? "Диагностика ок" : "Есть проблемы")
+          + " · модулей " + (s.modules || 0)
+          + " · имён " + (s.named || 0)
+          + (s.unboundLoads ? (" · без имени " + s.unboundLoads) : "")
+          + (s.bad ? (" · ошибок " + s.bad) : "")
+          + (s.warn ? (" · замечаний " + s.warn) : "");
+        const issues = (j.issues || []).length
+          ? j.issues
+          : [{ level: "ok", text: "Дыр не видно — можно заливать и аудитить." }];
+        paintCheckList(issues, head, j.ok ? "" : "bad");
+      } catch (e) {
+        paintCheckList([], String(e.message || e), "bad");
+      } finally {
+        if (btn) btn.disabled = false;
+      }
+    }
+    async function runExpressAudit() {
+      const btn = $("runAudit");
+      if (!btn || btn.disabled) return;
+      if (!window.confirm(
+        "Экспресс-аудит: короткий импульс по всем подписанным линиям света/реле.\nСтойте в зоне видимости. Продолжить?",
+      )) {
+        return;
+      }
+      btn.disabled = true;
+      const label = btn.textContent;
+      try {
+        await loadLast();
+        const tr = await fetch("/runtime/desk-audit", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ targets: true, shelves: lastShelvesRows || [] }),
+        });
+        const tj = await tr.json();
+        const targets = Array.isArray(tj.targets) ? tj.targets : [];
+        if (!targets.length) {
+          paintCheckList(
+            [{ level: "warn", text: "Нет подписанных линий — сначала разметка / маяк." }],
+            "Аудит: нечего проверять",
+            "bad",
+          );
+          return;
+        }
+        const rows = [];
+        for (let i = 0; i < targets.length; i += 1) {
+          const t = targets[i];
+          btn.textContent = "Аудит " + (i + 1) + "/" + targets.length;
+          paintCheckList(
+            rows.map((r) => ({
+              level: r.ok ? "ok" : "bad",
+              text: (r.name || r.controlId) + (r.ok ? "" : " — " + (r.error || "нет ответа")),
+            })).concat([{ level: "warn", text: "→ " + t.name + "…" }]),
+            "Аудит " + (i + 1) + "/" + targets.length,
+            "",
+          );
+          const res = await actuateChannel(t.deviceTopicKey, t.controlId, "pulse");
+          rows.push({
+            deviceTopicKey: t.deviceTopicKey,
+            controlId: t.controlId,
+            name: t.name,
+            kind: t.kind,
+            ok: Boolean(res && res.ok),
+            error: res && res.ok ? undefined : (res && res.error) || "mqtt",
+          });
+          if (t.kind === "led") await new Promise((r) => setTimeout(r, 400));
+        }
+        const saved = await fetch("/runtime/desk-audit", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ label: "Экспресс-аудит", rows }),
+        }).then((r) => r.json());
+        const okN = rows.filter((r) => r.ok).length;
+        paintCheckList(
+          rows.map((r) => ({
+            level: r.ok ? "ok" : "bad",
+            text: (r.name || r.controlId) + (r.ok ? "" : " — " + (r.error || "fail")),
+          })),
+          (saved && saved.run && saved.run.ok ? "Аудит сдан" : "Аудит с ошибками")
+            + " · " + okN + "/" + rows.length
+            + (saved && saved.run && saved.run.at
+              ? " · " + String(saved.run.at).slice(0, 19).replace("T", " ")
+              : ""),
+          okN === rows.length ? "" : "bad",
+        );
+      } catch (e) {
+        paintCheckList([], String(e.message || e), "bad");
+      } finally {
+        btn.textContent = label;
+        btn.disabled = false;
+      }
+    }
+    if ($("runHealth")) $("runHealth").addEventListener("click", () => { void runDeskHealth(); });
+    if ($("runAudit")) $("runAudit").addEventListener("click", () => { void runExpressAudit(); });
     if ($("pourNames")) {
       $("pourNames").addEventListener("click", () => {
         if (!canPourNamesDesk) return;
