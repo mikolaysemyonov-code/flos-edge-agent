@@ -19,6 +19,7 @@ COPY runtime-desk-pour-user.mjs /app/runtime-desk-pour-user.mjs
 COPY runtime-desk-pour-climate.mjs /app/runtime-desk-pour-climate.mjs
 COPY runtime-desk-pour-light.mjs /app/runtime-desk-pour-light.mjs
 COPY runtime-desk-pour-scenes.mjs /app/runtime-desk-pour-scenes.mjs
+COPY runtime-desk-pour-cron.mjs /app/runtime-desk-pour-cron.mjs
 COPY runtime-desk-actuate.mjs /app/runtime-desk-actuate.mjs
 COPY runtime-desk-pour-vav.mjs /app/runtime-desk-pour-vav.mjs
 COPY runtime-desk-field-cert.mjs /app/runtime-desk-field-cert.mjs

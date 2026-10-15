@@ -2158,7 +2158,9 @@
         trigLab.textContent = "Расписание";
         const note = document.createElement("p");
         note.className = "meta";
-        note.textContent = "По времени на контроллере. Сейчас выберите " + sheetTgtLab(card).toLowerCase() + ".";
+        note.textContent = "Срабатывает по часам контроллера (cron). Выберите "
+          + sheetTgtLab(card).toLowerCase()
+          + " и время ниже.";
         trig = note;
       }
       const auxLab = document.createElement("span");

@@ -3,6 +3,7 @@
  */
 import { liveDeskDeviceKey } from "./runtime-desk-rules-marks.mjs";
 import { emitDeskClimate, isDeskClimateSolution } from "./runtime-desk-pour-climate.mjs";
+import { emitDeskCron, isDeskCronSolution } from "./runtime-desk-pour-cron.mjs";
 import { emitDeskLight, isDeskLightSolution } from "./runtime-desk-pour-light.mjs";
 import { emitDeskScene, isDeskSceneSolution } from "./runtime-desk-pour-scenes.mjs";
 import { emitDeskVavBlock, isDeskVavSolution } from "./runtime-desk-pour-vav.mjs";
@@ -120,6 +121,7 @@ export function supportedDeskSolution(sol) {
   return (
     SUPPORTED.has(sid) ||
     isDeskClimateSolution(sol) ||
+    isDeskCronSolution(sol) ||
     isDeskLightSolution(sol) ||
     isDeskSceneSolution(sol) ||
     isDeskVavSolution(sol)
@@ -137,6 +139,7 @@ export function mergeDeskSolutionsIntoUser(userSrc, solutions) {
     const sid = String(sol.solutionId || "");
     let js = "";
     if (isDeskClimateSolution(sol)) js = emitDeskClimate(sol);
+    else if (isDeskCronSolution(sol)) js = emitDeskCron(sol);
     else if (isDeskLightSolution(sol)) js = emitDeskLight(sol);
     else if (isDeskSceneSolution(sol)) js = emitDeskScene(sol);
     else if (sid === "light_all_off") js = emitAllOff(sol);
