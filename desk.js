@@ -120,32 +120,78 @@
         renderMark();
       }
     }
-    function startInputListen(ms) {
-      listenUntil = Date.now() + (ms || 12000);
+    function channelLiveSig(rows, deviceTopicKey) {
+      const s = (rows || []).find((r) => r && r.deviceTopicKey === deviceTopicKey);
+      if (!s) return "";
+      return (s.channels || [])
+        .map((c) => String(c.controlId) + "=" + String(c.lastValue))
+        .join("|");
+    }
+    function stopLiveWatch() {
       if (listenTimer) clearInterval(listenTimer);
+      listenTimer = 0;
+      listenUntil = 0;
+    }
+    /** Пока открыт модуль — чаще читаем зеркало MQTT (мгновенно, без scanMs 8с). */
+    function startLiveWatch(ms) {
+      listenUntil = Date.now() + (ms || 120000);
+      if (listenTimer) clearInterval(listenTimer);
+      let lastSig = channelLiveSig(lastShelvesRows, openMod);
+      let inFlight = false;
       const tick = () => {
-        if (Date.now() > listenUntil) {
-          clearInterval(listenTimer);
-          listenTimer = 0;
+        if (!openMod || Date.now() > listenUntil) {
+          stopLiveWatch();
           renderMark();
           return;
         }
+        if (inFlight) return;
+        inFlight = true;
         fetch("/runtime/mqtt-scan", {
           method: "POST",
           headers: { "content-type": "application/json" },
-          body: JSON.stringify({ durationMs: 900 }),
+          body: JSON.stringify({ instant: true }),
         })
           .then((r) => r.json())
           .then((j) => {
-            if (j && j.ok && Array.isArray(j.shelves)) {
-              lastShelvesRows = j.shelves;
+            if (!j || !j.ok || !Array.isArray(j.shelves) || !j.shelves.length) return;
+            const prev = lastShelvesRows || [];
+            const byKey = new Map(j.shelves.map((s) => [s.deviceTopicKey, s]));
+            lastShelvesRows = prev.map((s) => {
+              const n = byKey.get(s.deviceTopicKey);
+              if (!n) return s;
+              const vals = new Map(
+                (n.channels || []).map((c) => [c.controlId, c.lastValue]),
+              );
+              return {
+                ...s,
+                channels: (s.channels || []).map((c) =>
+                  vals.has(c.controlId)
+                    ? { ...c, lastValue: vals.get(c.controlId) }
+                    : c,
+                ),
+              };
+            });
+            for (const n of j.shelves) {
+              if (!prev.some((s) => s.deviceTopicKey === n.deviceTopicKey)) {
+                lastShelvesRows.push(n);
+              }
+            }
+            const nextSig = channelLiveSig(lastShelvesRows, openMod);
+            if (nextSig !== lastSig) {
+              lastSig = nextSig;
               renderMark();
             }
           })
-          .catch(() => {});
+          .catch(() => {})
+          .finally(() => {
+            inFlight = false;
+          });
       };
       tick();
-      listenTimer = setInterval(tick, 1100);
+      listenTimer = setInterval(tick, 350);
+    }
+    function startInputListen(ms) {
+      startLiveWatch(ms || 14000);
       renderMark();
     }
     function makeAppleSwitch(opts) {
@@ -3159,11 +3205,7 @@
       back.addEventListener("click", () => {
         openAssign = "";
         listenAutoMod = "";
-        if (listenTimer) {
-          clearInterval(listenTimer);
-          listenTimer = 0;
-          listenUntil = 0;
-        }
+        stopLiveWatch();
         closeModule();
       });
       const head = document.createElement("div");
@@ -3171,10 +3213,9 @@
       paintModuleFace(head, s, { drill: true });
       const chs = document.createElement("ul");
       chs.className = "channels drill-list";
-      const inputs = visibleChannels(s).filter((ch) => isDeskInput(ch.controlId, s.deviceTopicKey));
-      if (inputs.length && listenAutoMod !== s.deviceTopicKey) {
+      if (listenAutoMod !== s.deviceTopicKey) {
         listenAutoMod = s.deviceTopicKey;
-        setTimeout(() => startInputListen(14000), 0);
+        setTimeout(() => startLiveWatch(180000), 0);
       }
       visibleChannels(s).forEach((ch) => chs.appendChild(drillChannelRow(s, ch)));
       box.append(back, head, chs);

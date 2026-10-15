@@ -31,7 +31,7 @@ import {
 } from "./wb-rules-journal-incidents.mjs";
 
 /** Одна строка в heartbeat и snapshot — иначе UI врёт версией. */
-const EDGE_AGENT_VERSION = "edge-pilot-v2.lan-desk-174";
+const EDGE_AGENT_VERSION = "edge-pilot-v2.lan-desk-175";
 
 /** Prefer `FLOS_*` (FL OS); fall back to legacy `REACTOR_*` for existing deployments. */
 function env(primary, legacy) {
@@ -3182,12 +3182,20 @@ async function main() {
     mqttMirror: mqttMirrorHealth(),
   }));
   setRuntimeMqttScanHandler(async (body) => {
-    const instant = body?.instant === true;
+    // instant / allowUnsettledMirror — снимок зеркала без ожидания settle (live desk).
+    const durationHint = Number(body?.durationMs);
+    const instant =
+      body?.instant === true ||
+      body?.allowUnsettledMirror === true ||
+      (Number.isFinite(durationHint) && durationHint > 0 && durationHint <= 1500);
+    const scanMs = instant
+      ? 0
+      : Number(body?.scanMs) || Number(body?.durationMs) || 8000;
     const ack = await runMqttTopicScanCommand({
       markShield: true,
       preferMirror: true,
       allowUnsettledMirror: instant,
-      scanMs: instant ? 0 : Number(body?.scanMs) || 8000,
+      scanMs,
     });
     const scan = ack?.details?.mqttTopicScan;
     if (!Array.isArray(scan?.entries)) {
