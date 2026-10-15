@@ -1932,18 +1932,21 @@
     }
     function fillSelect(sel, rows, placeholder) {
       sel.replaceChildren();
-      if (placeholder) {
+      const list = rows || [];
       const z = document.createElement("option");
       z.value = "";
-      z.textContent = placeholder;
+      z.textContent = list.length
+        ? (placeholder || "Выбрать")
+        : "Нет подходящих имён — разметьте в «Разметить»";
       sel.appendChild(z);
-      }
-      rows.forEach((r) => {
+      list.forEach((r) => {
         const o = document.createElement("option");
         o.value = contactKey(r.deviceTopicKey, r.controlId);
         o.textContent = r.label;
         sel.appendChild(o);
       });
+      if (!list.length) sel.disabled = true;
+      else sel.disabled = false;
     }
     function parseBindValue(v) {
       const i = String(v).indexOf("::");
@@ -2034,7 +2037,7 @@
     /** onlyHits: если есть подходящие — не подмешивать чужие линии (свет в шторах и т.п.). */
     function preferRows(rows, hitFn, onlyHits) {
       const hit = rows.filter(hitFn);
-      if (!hit.length) return rows;
+      if (!hit.length) return onlyHits ? [] : rows;
       return onlyHits ? hit : hit.concat(rows.filter((r) => !hitFn(r)));
     }
     function isSensorLabel(label) {
@@ -2138,8 +2141,10 @@
         picks.className = "picks";
         if (!loads.length) {
           const empty = document.createElement("p");
-          empty.className = "meta";
-          empty.textContent = "Сначала имя в «Разметить».";
+          empty.className = "meta orphan";
+          empty.textContent = /leak/.test(card.id)
+            ? "Нет линий с именем «кран/клапан» — разметьте краны, не свет."
+            : "Сначала дайте имя подходящим каналам в «Разметить».";
           picks.appendChild(empty);
         }
         loads.forEach((load) => {

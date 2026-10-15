@@ -50,13 +50,21 @@ function triggerWhen(trig) {
   return p;
 }
 
+function sceneLevel(sol, fallback) {
+  const n = Number(sol?.params?.level);
+  if (Number.isFinite(n)) return Math.max(0, Math.min(100, n));
+  return fallback;
+}
+
 function emitLevels(sol, level) {
   const when = triggerWhen(sol.trigger);
   const loads = (sol.targets || []).map(pathOf).filter(Boolean);
   if (!when || !loads.length) return "";
   const id = "desk_sol_" + sol.id + "_scene";
+  const want = sceneLevel(sol, level);
+  const payload = want <= 0 ? 0 : want >= 100 ? 1 : want;
   const sets = loads
-    .map((p) => `      wbActuatorSet(${esc(p)}, ${level}, ${esc(id)}, 55);`)
+    .map((p) => `      wbActuatorSet(${esc(p)}, ${payload}, ${esc(id)}, 55);`)
     .join("\n");
   return [
     `defineRule(${esc(id)}, {`,

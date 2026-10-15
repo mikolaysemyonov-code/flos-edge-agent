@@ -46,14 +46,18 @@ function stripDeskRules(src) {
 function emitToggle(sol) {
   const id = DESK_PREFIX + sol.id + "_toggle";
   const when = triggerWhen(sol.trigger);
-  const target = pathOf((sol.targets || [])[0]);
-  if (!when || !target) return "";
+  const loads = (sol.targets || []).map(pathOf).filter(Boolean);
+  if (!when || !loads.length) return "";
+  const sets = loads
+    .map((p) => `      wbActuatorSet(${esc(p)}, next, ${esc(id)}, 50);`)
+    .join("\n");
   return [
     `defineRule(${esc(id)}, {`,
     `  whenChanged: ${esc(when)},`,
     "  then: function () {",
     "    try {",
-    `      wbActuatorToggle(${esc(target)}, ${esc(id)}, 50);`,
+    `      var next = !wbIsOn(readValue(${esc(loads[0])}));`,
+    sets,
     "    } catch (e) { if (typeof wbRuleGuardCatch === 'function') wbRuleGuardCatch(" + esc(id) + ", e); }",
     "  }",
     "});",
@@ -83,16 +87,19 @@ function emitAllOff(sol) {
 function emitCustomSet(sol) {
   const id = DESK_PREFIX + sol.id + "_set";
   const when = triggerWhen(sol.trigger);
-  const target = pathOf((sol.targets || [])[0]);
-  if (!when || !target) return "";
+  const loads = (sol.targets || []).map(pathOf).filter(Boolean);
+  if (!when || !loads.length) return "";
   const val = Number(sol?.params?.val);
   const payload = Number.isFinite(val) ? val : 1;
+  const sets = loads
+    .map((p) => `      wbActuatorSet(${esc(p)}, ${payload}, ${esc(id)}, 55);`)
+    .join("\n");
   return [
     `defineRule(${esc(id)}, {`,
     `  whenChanged: ${esc(when)},`,
     "  then: function () {",
     "    try {",
-    `      wbActuatorSet(${esc(target)}, ${payload}, ${esc(id)}, 55);`,
+    sets,
     "    } catch (e) { if (typeof wbRuleGuardCatch === 'function') wbRuleGuardCatch(" + esc(id) + ", e); }",
     "  }",
     "});",
