@@ -633,11 +633,58 @@
     }
     .drill-mid .ttl { font-size: .88rem; font-weight: 600; }
     .drill-mid .ttl.mute { color: var(--mute); font-weight: 500; }
-    .drill-act { display: flex; flex-wrap: wrap; gap: .3rem; justify-content: flex-end; }
+    .drill-act { display: flex; flex-wrap: wrap; gap: .3rem; justify-content: flex-end; align-items: center; }
     .drill-act .bind {
       border-color: rgb(var(--sky) / .4) !important;
       color: rgb(186 230 253) !important;
     }
+    .drill-act .listen {
+      border-color: rgb(251 191 36 / .35) !important;
+      color: rgb(254 243 199) !important;
+      font-size: .72rem;
+      padding: .28rem .55rem;
+    }
+    .drill-act .listen.active {
+      background: rgb(251 191 36 / .16);
+    }
+    .drill-main.probe {
+      grid-template-columns: auto auto 1fr auto;
+      align-items: center;
+    }
+    .drill-ch.input .hint.closed {
+      color: rgb(251 191 36);
+      font-weight: 600;
+    }
+    /* Apple-style switch — тёмный стол, зелёный «вкл» / янтарь для live-входа */
+    .apple-sw {
+      appearance: none; border: 0; padding: 0; margin: 0;
+      width: 3.05rem; height: 1.85rem; border-radius: 999px;
+      background: rgb(255 255 255 / .14);
+      box-shadow: inset 0 0 0 1px rgb(255 255 255 / .08);
+      position: relative; cursor: pointer;
+      transition: background .22s ease, box-shadow .22s ease, opacity .15s ease;
+      flex: none;
+    }
+    .apple-sw .apple-knob {
+      position: absolute; top: .16rem; left: .16rem;
+      width: 1.52rem; height: 1.52rem; border-radius: 999px;
+      background: #fff;
+      box-shadow: 0 1px 3px rgb(0 0 0 / .35), 0 4px 10px rgb(0 0 0 / .18);
+      transition: transform .22s cubic-bezier(.2,.9,.2,1);
+    }
+    .apple-sw.on {
+      background: #34c759;
+      box-shadow: inset 0 0 0 1px rgb(52 199 89 / .35);
+    }
+    .apple-sw.on .apple-knob { transform: translateX(1.2rem); }
+    .apple-sw.live.on {
+      background: rgb(251 191 36);
+      box-shadow: inset 0 0 0 1px rgb(251 191 36 / .4);
+    }
+    .apple-sw.busy { opacity: .55; cursor: wait; }
+    .apple-sw:disabled { cursor: default; }
+    .apple-sw:not(:disabled):active .apple-knob { transform: scale(.96); }
+    .apple-sw.on:not(:disabled):active .apple-knob { transform: translateX(1.2rem) scale(.96); }
     .drill-fields { margin: .55rem 0 0 1.6rem; }
     #cardMask {
       position: fixed; inset: 0; z-index: 24; border: 0; padding: 0; margin: 0;

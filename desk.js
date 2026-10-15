@@ -44,6 +44,10 @@
     let openSceneId = "";
     let openContact = "";
     let wantButtonFocus = false;
+    let probeBusy = {};
+    let listenUntil = 0;
+    let listenTimer = 0;
+    let listenAutoMod = "";
     const LED_TYPES = [
       "Световая линия",
       "Подсветка зеркала", "Подсветка ниши", "Подсветка полки",
@@ -70,6 +74,103 @@
     }
     function isDeskLoad(id) {
       return /^(Channel \d+|K\d+)$/i.test(id) || isDeskDrive(id);
+    }
+    function isDeskInput(id, deviceTopicKey) {
+      const c = String(id || "").trim();
+      const key = String(deviceTopicKey || "").toLowerCase();
+      if (/^Input\s+/i.test(c)) return true;
+      if (/^EXT\d+_IN/i.test(c) || /^[A-D]\d+_IN/i.test(c)) return true;
+      if (/mcm|wd14|mdi|gpio/i.test(key) && (/^IN/i.test(c) || /_IN/i.test(c)) && !/^K\d+$/i.test(c)) {
+        return true;
+      }
+      return false;
+    }
+    function patchChannelValue(deviceTopicKey, controlId, lastValue) {
+      lastShelvesRows = (lastShelvesRows || []).map((s) => {
+        if (!s || s.deviceTopicKey !== deviceTopicKey) return s;
+        return {
+          ...s,
+          channels: (s.channels || []).map((c) =>
+            c && c.controlId === controlId ? { ...c, lastValue: lastValue } : c,
+          ),
+        };
+      });
+    }
+    async function actuateChannel(deviceTopicKey, controlId, desired) {
+      const key = contactKey(deviceTopicKey, controlId);
+      if (probeBusy[key]) return { ok: false, error: "busy" };
+      probeBusy[key] = true;
+      renderMark();
+      try {
+        const r = await fetch("/runtime/desk-actuate", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ deviceTopicKey: deviceTopicKey, controlId: controlId, desired: desired }),
+        });
+        const j = await r.json().catch(() => ({}));
+        if (j && j.ok) {
+          if (desired === "on") patchChannelValue(deviceTopicKey, controlId, j.value || "1");
+          else if (desired === "off") patchChannelValue(deviceTopicKey, controlId, "0");
+        }
+        return j || { ok: false };
+      } catch (_) {
+        return { ok: false, error: "net" };
+      } finally {
+        delete probeBusy[key];
+        renderMark();
+      }
+    }
+    function startInputListen(ms) {
+      listenUntil = Date.now() + (ms || 12000);
+      if (listenTimer) clearInterval(listenTimer);
+      const tick = () => {
+        if (Date.now() > listenUntil) {
+          clearInterval(listenTimer);
+          listenTimer = 0;
+          renderMark();
+          return;
+        }
+        fetch("/runtime/mqtt-scan", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ durationMs: 900 }),
+        })
+          .then((r) => r.json())
+          .then((j) => {
+            if (j && j.ok && Array.isArray(j.shelves)) {
+              lastShelvesRows = j.shelves;
+              renderMark();
+            }
+          })
+          .catch(() => {});
+      };
+      tick();
+      listenTimer = setInterval(tick, 1100);
+      renderMark();
+    }
+    function makeAppleSwitch(opts) {
+      const on = Boolean(opts && opts.on);
+      const busy = Boolean(opts && opts.busy);
+      const live = Boolean(opts && opts.live);
+      const disabled = Boolean(opts && opts.disabled) || busy;
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "apple-sw" + (on ? " on" : "") + (busy ? " busy" : "") + (live ? " live" : "");
+      btn.setAttribute("role", "switch");
+      btn.setAttribute("aria-checked", on ? "true" : "false");
+      btn.disabled = disabled;
+      btn.title = opts && opts.title ? opts.title : (on ? "Вкл" : "Выкл");
+      const knob = document.createElement("span");
+      knob.className = "apple-knob";
+      btn.appendChild(knob);
+      if (typeof (opts && opts.onToggle) === "function" && !disabled) {
+        btn.addEventListener("click", (ev) => {
+          ev.preventDefault();
+          ev.stopPropagation();
+          opts.onToggle(!on);
+        });
+      }
+      return btn;
     }
     function prettyControlId(id) {
       const m = /^(?:Curtain|Actuator)\s+(\d+)\s+(Open|Close)$/i.exec(String(id || "").trim());
@@ -2917,15 +3018,20 @@
         type: pending.type || saved.type,
       };
       const assigning = openAssign === key;
+      const input = isDeskInput(ch.controlId, s.deviceTopicKey);
+      const load = !input && isDeskLoad(ch.controlId);
       const on = channelIsOn(ch);
       if (on) row.classList.add("lit");
       if (bound) row.classList.add("bound");
       if (assigning) row.classList.add("assign");
+      if (input) row.classList.add("input");
       const main = document.createElement("div");
-      main.className = "drill-main";
+      main.className = "drill-main probe";
       const led = document.createElement("span");
       led.className = "ch-led " + (on ? "lit" : bound ? "ok" : "free");
-      led.title = on ? "горит" : bound ? "привязан и выкл" : "на шине, свободен";
+      led.title = input
+        ? (on ? "замкнуто" : "разомкнуто")
+        : on ? "горит" : bound ? "привязан и выкл" : "на шине, свободен";
       const knob = document.createElement("span");
       knob.className = "knob";
       knob.textContent = prettyControlId(ch.controlId);
@@ -2937,9 +3043,19 @@
       ttl.textContent = bound ? prettyContactName(original) : "Свободен";
       const sub = document.createElement("span");
       sub.className = "hint";
-      sub.textContent = bound
-        ? (current.room || "комната")
-        : "Комната не выбрана";
+      if (input) {
+        const listening = Date.now() < listenUntil;
+        sub.textContent = on
+          ? "Замкнуто"
+          : listening
+            ? "Слушаю замыкание…"
+            : (bound ? (current.room || "комната") : "Нажмите выключатель");
+        if (on) sub.classList.add("closed");
+      } else {
+        sub.textContent = bound
+          ? (current.room || "комната")
+          : "Комната не выбрана";
+      }
       mid.append(ttl, sub);
       mid.addEventListener("click", () => {
         openAssign = assigning ? "" : key;
@@ -2947,6 +3063,33 @@
       });
       const act = document.createElement("div");
       act.className = "drill-act";
+      if (load) {
+        act.appendChild(makeAppleSwitch({
+          on: on,
+          busy: Boolean(probeBusy[key]),
+          title: on ? "Выключить канал" : "Включить канал",
+          onToggle: (wantOn) => {
+            void actuateChannel(s.deviceTopicKey, ch.controlId, wantOn ? "on" : "off");
+          },
+        }));
+      } else if (input) {
+        act.appendChild(makeAppleSwitch({
+          on: on,
+          live: true,
+          disabled: true,
+          title: on ? "Замкнуто" : "Разомкнуто — нажмите выключатель",
+        }));
+        const listen = document.createElement("button");
+        listen.type = "button";
+        listen.className = "ghost listen" + (Date.now() < listenUntil ? " active" : "");
+        listen.textContent = Date.now() < listenUntil ? "…" : "Слушать";
+        listen.addEventListener("click", (ev) => {
+          ev.preventDefault();
+          ev.stopPropagation();
+          startInputListen(14000);
+        });
+        act.appendChild(listen);
+      }
       const bind = document.createElement("button");
       bind.type = "button";
       bind.className = "ghost bind";
@@ -3015,6 +3158,12 @@
       back.innerHTML = "<svg viewBox='0 0 24 24'><path d='M15 18l-6-6 6-6'/></svg><span>Все модули</span>";
       back.addEventListener("click", () => {
         openAssign = "";
+        listenAutoMod = "";
+        if (listenTimer) {
+          clearInterval(listenTimer);
+          listenTimer = 0;
+          listenUntil = 0;
+        }
         closeModule();
       });
       const head = document.createElement("div");
@@ -3022,6 +3171,11 @@
       paintModuleFace(head, s, { drill: true });
       const chs = document.createElement("ul");
       chs.className = "channels drill-list";
+      const inputs = visibleChannels(s).filter((ch) => isDeskInput(ch.controlId, s.deviceTopicKey));
+      if (inputs.length && listenAutoMod !== s.deviceTopicKey) {
+        listenAutoMod = s.deviceTopicKey;
+        setTimeout(() => startInputListen(14000), 0);
+      }
       visibleChannels(s).forEach((ch) => chs.appendChild(drillChannelRow(s, ch)));
       box.append(back, head, chs);
     }

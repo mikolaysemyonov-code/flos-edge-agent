@@ -25,6 +25,7 @@ import { hideFormLogicOsGhostsNow } from "./runtime-desk-pour-mqtt.mjs";
 import {
   buildDeskPourPackage,
   assessDeskCanPour,
+  handleRuntimeDeskActuate,
   handleRuntimeDeskMarking,
   handleRuntimeDeskPourPreview,
   handleRuntimeDeskPoured,
@@ -730,6 +731,17 @@ export function runtimeHttpPathHandler(req, res) {
   if ((method === "GET" || method === "PUT" || method === "POST") && urlPath === "/runtime/desk-marking") {
     void handleRuntimeDeskMarking(req, res).catch((err) => {
       console.error("[runtime-control-plane] desk-marking:", err?.message ?? err);
+      if (!res.headersSent) {
+        res.statusCode = 500;
+        res.setHeader("content-type", "application/json; charset=utf-8");
+        res.end(JSON.stringify({ ok: false, error: "INTERNAL" }));
+      }
+    });
+    return true;
+  }
+  if ((method === "GET" || method === "POST") && urlPath === "/runtime/desk-actuate") {
+    void handleRuntimeDeskActuate(req, res).catch((err) => {
+      console.error("[runtime-control-plane] desk-actuate:", err?.message ?? err);
       if (!res.headersSent) {
         res.statusCode = 500;
         res.setHeader("content-type", "application/json; charset=utf-8");

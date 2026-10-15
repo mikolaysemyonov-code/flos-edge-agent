@@ -31,6 +31,11 @@ import {
 } from "./runtime-desk-rules-marks.mjs";
 import { formatDeskShelfLabel, groupDeskShelves, rememberDeskShelves } from "./runtime-desk-shelves.mjs";
 import { assessDeskCanPour, buildDeskPourPackage } from "./runtime-desk-pour.mjs";
+import {
+  actuateDeskChannel,
+  deskInputClosed,
+  isDeskInputControl,
+} from "./runtime-desk-actuate.mjs";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 
@@ -316,4 +321,72 @@ export function handleRuntimeFieldCert(req, res, live = {}) {
     shelves: last.shelves || [],
   });
   jsonEnd(res, 200, out);
+}
+
+/**
+ * POST /runtime/desk-actuate — прозвонка нагрузки (on/off/pulse).
+ * GET  /runtime/desk-actuate?deviceTopicKey=&controlId= — live входа (замкнуто?).
+ */
+export async function handleRuntimeDeskActuate(req, res) {
+  const method = (req.method ?? "GET").toUpperCase();
+  const url = new URL(req.url || "/runtime/desk-actuate", "http://local");
+  if (method === "GET") {
+    const deviceTopicKey = String(url.searchParams.get("deviceTopicKey") || "").trim();
+    const controlId = String(url.searchParams.get("controlId") || "").trim();
+    if (!deviceTopicKey || !controlId) {
+      jsonEnd(res, 400, { ok: false, error: "need_contact" });
+      return;
+    }
+    const shelves = readLastDeskShelves().shelves || [];
+    const shelf = shelves.find((s) => s && s.deviceTopicKey === deviceTopicKey);
+    const ch = (shelf?.channels || []).find((c) => c && c.controlId === controlId);
+    const lastValue = ch && Object.prototype.hasOwnProperty.call(ch, "lastValue") ? ch.lastValue : null;
+    const input = isDeskInputControl(controlId, deviceTopicKey);
+    jsonEnd(res, 200, {
+      ok: true,
+      deviceTopicKey,
+      controlId,
+      input,
+      lastValue,
+      closed: input ? deskInputClosed(lastValue) : null,
+      on: !input && deskInputClosed(lastValue),
+    });
+    return;
+  }
+  if (method !== "POST") {
+    jsonEnd(res, 405, { ok: false, error: "method" });
+    return;
+  }
+  const chunks = [];
+  for await (const c of req) chunks.push(c);
+  let body = {};
+  try {
+    const raw = Buffer.concat(chunks).toString("utf8");
+    if (raw.trim()) body = JSON.parse(raw);
+  } catch {
+    jsonEnd(res, 400, { ok: false, error: "invalid_json" });
+    return;
+  }
+  const out = await actuateDeskChannel(body);
+  if (out.ok && body.deviceTopicKey && body.controlId) {
+    const desired = String(body.desired || out.desired || "").toLowerCase();
+    if (desired === "on" || desired === "off") {
+      const shelves = readLastDeskShelves().shelves || [];
+      const next = shelves.map((s) => {
+        if (!s || s.deviceTopicKey !== body.deviceTopicKey) return s;
+        return {
+          ...s,
+          channels: (s.channels || []).map((c) => {
+            if (!c || c.controlId !== body.controlId) return c;
+            return {
+              ...c,
+              lastValue: desired === "on" ? (out.value ?? "1") : "0",
+            };
+          }),
+        };
+      });
+      writeLastDeskShelves(next, readLastDeskShelves().brokerLabel);
+    }
+  }
+  jsonEnd(res, out.ok ? 200 : 409, out);
 }
