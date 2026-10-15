@@ -485,6 +485,11 @@
       border-color: rgb(251 146 60 / .35) !important;
       background: rgb(251 146 60 / .08) !important;
     }
+    .mark-wipe {
+      color: rgb(252 165 165 / .98) !important;
+      border-color: rgb(248 113 113 / .4) !important;
+      background: rgb(248 113 113 / .1) !important;
+    }
     .rooms { display: flex; flex-wrap: wrap; gap: .35rem; margin: 0 0 .85rem; }
     .rooms.need {
       outline: 1px solid rgb(var(--sky) / .55);

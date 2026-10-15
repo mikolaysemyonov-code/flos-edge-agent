@@ -4184,7 +4184,7 @@
       $("clearMarks").addEventListener("click", () => {
         if (
           !window.confirm(
-            "Снять всю разметку со стола?\nИмена и карточки исчезнут. Типовые и журнал останутся. Щит не трогаем.",
+            "Снять всю разметку со стола?\nИмена исчезнут. Типовые и комнаты останутся. Щит не трогаем.",
           )
         ) {
           return;
@@ -4208,6 +4208,49 @@
                 : "Не снял разметку";
             }
             return loadLast().then(() => loadPreview());
+          })
+          .catch(() => {
+            btn.disabled = false;
+          });
+      });
+    }
+    if ($("clearProject")) {
+      $("clearProject").addEventListener("click", () => {
+        if (
+          !window.confirm(
+            "Очистить проект полностью?\n\nСотрётся:\n• вся разметка (имена)\n• все типовые на столе\n• список комнат\n\nНе трогаем шину и уже залитые правила на щите — их нужно перезалить отдельно.",
+          )
+        ) {
+          return;
+        }
+        if (!window.confirm("Точно очистить? Это нельзя отменить.")) return;
+        const btn = $("clearProject");
+        btn.disabled = true;
+        fetch("/runtime/desk-marking", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ clear: "project" }),
+        })
+          .then((r) => r.json())
+          .then((j) => {
+            btn.disabled = false;
+            markPending = {};
+            deskSolutions = [];
+            const head = $("previewHead");
+            if (head) {
+              head.style.color = "";
+              head.textContent = j && j.ok
+                ? ("Проект очищен"
+                  + (j.clearedShelves ? " · имён " + j.clearedShelves : "")
+                  + (j.clearedSolutions ? " · типовых " + j.clearedSolutions : "")
+                  + ". Размечайте заново.")
+                : "Не очистил проект";
+            }
+            return Promise.all([loadLast(), loadSolutions(), loadPreview()]).then(() => {
+              renderDeskSolutions();
+              renderMark();
+              setTab("mark");
+            });
           })
           .catch(() => {
             btn.disabled = false;

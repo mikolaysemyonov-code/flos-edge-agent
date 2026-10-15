@@ -88,6 +88,29 @@ export function clearDeskShelvesMarking() {
   return { ok: true, cleared, rooms: doc.rooms, solutions: doc.solutions };
 }
 
+/**
+ * Полный сброс стола: разметка + типовые + комнаты.
+ * Шина MQTT и уже залитые wb-rules на контроллере не трогаем.
+ */
+export function clearDeskProject() {
+  const doc = readDeskDocument();
+  let clearedShelves = 0;
+  for (const shelf of Object.values(doc.shelves || {})) {
+    const ch = shelf?.channels && typeof shelf.channels === "object" ? shelf.channels : {};
+    clearedShelves += Object.keys(ch).length;
+  }
+  const clearedSolutions = Array.isArray(doc.solutions) ? doc.solutions.length : 0;
+  const clearedRooms = Array.isArray(doc.rooms) ? doc.rooms.length : 0;
+  writeDoc({ shelves: {}, solutions: [], rooms: [] });
+  return {
+    ok: true,
+    clearedShelves,
+    clearedSolutions,
+    clearedRooms,
+    cleared: clearedShelves + clearedSolutions + clearedRooms,
+  };
+}
+
 function cleanName(value) {
   const s = String(value ?? "").trim().replace(/\s+/g, " ");
   if (!s || s.length > MAX_NAME) return "";
