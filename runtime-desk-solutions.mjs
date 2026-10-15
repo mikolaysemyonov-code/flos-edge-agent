@@ -23,6 +23,7 @@ export const DESK_L1_LIGHT_IDS = [
   "light_button_toggle",
   "light_dim_hold_mcm",
   "light_all_off",
+  "master_power_off_restore",
   "light_motion",
   "light_night_path",
   "stair_light_motion",
@@ -53,6 +54,9 @@ export const DESK_SOLUTION_CARDS = [
     fields: [{ key: "val", label: "Значение на нагрузку", unit: "", def: 1 }],
   }),
   M("light_all_off", "Свет", "Мастер выключатель", "Долгое нажатие → жёсткий OFF на выбранных линиях (не toggle).", {
+    loadKind: "light",
+  }),
+  M("master_power_off_restore", "Свет", "Мастер OFF + восстановление", "Короткое: снимок уровней и OFF. Ещё раз — вернуть как было.", {
     loadKind: "light",
   }),
   M("light_scene_on", "Сцены", "Сцена: включить несколько", "Галка = задать %; без галки = не трогаем линию.", {
@@ -104,8 +108,6 @@ export const DESK_SOLUTION_CARDS = [
       },
     ],
   }),
-  // Мастер-restore пока без emit (нужен снимок уровней).
-  M("master_power_off_restore", "Свет", "Мастер OFF + восстановление", "Гасит свет и потом возвращает как было.", { pour: false }),
   C("cron_presence_on", "Свет", "Имитация присутствия", "В указанное время включает свет (как будто дома). Время — часы контроллера.", {
     loadKind: "light",
     fields: [
@@ -416,6 +418,7 @@ function contactOf(raw, { withLevel = false } = {}) {
 function writeDoc(doc) {
   const file = deskMarkingPath();
   fs.mkdirSync(path.dirname(file), { recursive: true });
+  const prev = readDeskDocument();
   fs.writeFileSync(
     file,
     JSON.stringify({
@@ -423,6 +426,7 @@ function writeDoc(doc) {
       shelves: doc.shelves || {},
       solutions: doc.solutions || [],
       rooms: Array.isArray(doc.rooms) ? doc.rooms : [],
+      keyPlan: Array.isArray(doc.keyPlan) ? doc.keyPlan : prev.keyPlan || [],
     }, null, 2) + "\n",
     "utf8",
   );

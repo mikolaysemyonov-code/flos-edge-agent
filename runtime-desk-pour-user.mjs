@@ -12,6 +12,7 @@ const DESK_PREFIX = "desk_sol_";
 const SUPPORTED = new Set([
   "light_button_toggle",
   "light_all_off",
+  "master_power_off_restore",
   "socket_button_toggle",
   "custom_control_task",
 ]);
@@ -40,7 +41,9 @@ function longWhen(trig) {
 }
 
 function stripDeskRules(src) {
-  const text = String(src || "");
+  let text = String(src || "");
+  text = text.replace(/^\/\/\s*desk_sol[^\n]*\n?/gm, "");
+  text = text.replace(/^var _desk_[^\n]*\n?/gm, "");
   const re = /defineRule\s*\(\s*['"]desk_sol_[^'"]+['"][\s\S]*?(?=defineRule\s*\(|$)/g;
   return text.replace(re, "").replace(/\n{3,}/g, "\n\n").trim();
 }
@@ -88,6 +91,43 @@ function emitAllOff(sol) {
     "  then: function () {",
     "    try {",
     sets,
+    "    } catch (e) { if (typeof wbRuleGuardCatch === 'function') wbRuleGuardCatch(" + esc(id) + ", e); }",
+    "  }",
+    "});",
+  ].join("\n");
+}
+
+/** Short: snapshot levels → OFF; next short: restore. */
+function emitMasterOffRestore(sol) {
+  const id = DESK_PREFIX + sol.id + "_offrestore";
+  const when = triggerWhen(sol.trigger);
+  const loads = (sol.targets || []).map(pathOf).filter(Boolean);
+  if (!when || !loads.length) return "";
+  const flag = "_desk_offrest_" + String(sol.id || "").replace(/[^a-zA-Z0-9_]/g, "_");
+  const snap = flag + "_snap";
+  const save = loads.map((p) => `        ${snap}[${esc(p)}] = readValue(${esc(p)});`).join("\n");
+  const off = loads.map((p) => `        wbActuatorSet(${esc(p)}, 0, ${esc(id)}, 55);`).join("\n");
+  const restore = loads
+    .map(
+      (p) =>
+        `        wbActuatorSet(${esc(p)}, ${snap}[${esc(p)}] != null ? ${snap}[${esc(p)}] : 0, ${esc(id)}, 55);`,
+    )
+    .join("\n");
+  return [
+    `var ${flag} = false;`,
+    `var ${snap} = {};`,
+    `defineRule(${esc(id)}, {`,
+    `  whenChanged: ${esc(when)},`,
+    "  then: function () {",
+    "    try {",
+    `      if (!${flag}) {`,
+    save,
+    off,
+    `        ${flag} = true;`,
+    "      } else {",
+    restore,
+    `        ${flag} = false;`,
+    "      }",
     "    } catch (e) { if (typeof wbRuleGuardCatch === 'function') wbRuleGuardCatch(" + esc(id) + ", e); }",
     "  }",
     "});",
@@ -143,6 +183,7 @@ export function mergeDeskSolutionsIntoUser(userSrc, solutions) {
     else if (isDeskLightSolution(sol)) js = emitDeskLight(sol);
     else if (isDeskSceneSolution(sol)) js = emitDeskScene(sol);
     else if (sid === "light_all_off") js = emitAllOff(sol);
+    else if (sid === "master_power_off_restore") js = emitMasterOffRestore(sol);
     else if (sid === "custom_control_task") js = emitCustomSet(sol);
     else js = emitToggle(sol);
     if (js) chunks.push(js);

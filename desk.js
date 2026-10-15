@@ -4533,12 +4533,15 @@
       $("clearProject").addEventListener("click", () => {
         if (
           !window.confirm(
-            "Очистить проект полностью?\n\nСотрётся:\n• вся разметка (имена)\n• все типовые на столе\n• список комнат\n\nНе трогаем шину и уже залитые правила на щите — их нужно перезалить отдельно.",
+            "Очистить проект полностью?\n\nСотрётся:\n• вся разметка (имена)\n• план клавиш\n• все типовые на столе\n• список комнат\n\nШину MQTT не трогаем.",
           )
         ) {
           return;
         }
         if (!window.confirm("Точно очистить? Это нельзя отменить.")) return;
+        const wipeShield = window.confirm(
+          "Также снять со щита сценарии desk_sol (типовые с этого стола)?\n\nОК — зальём пустые правила (хвосты уйдут).\nОтмена — только стол, правила на щите останутся.",
+        );
         const btn = $("clearProject");
         btn.disabled = true;
         fetch("/runtime/desk-marking", {
@@ -4548,26 +4551,46 @@
         })
           .then((r) => r.json())
           .then((j) => {
-            btn.disabled = false;
             markPending = {};
             deskSolutions = [];
-            const head = $("previewHead");
-            if (head) {
-              head.style.color = "";
-              head.textContent = j && j.ok
-                ? ("Проект очищен"
-                  + (j.clearedShelves ? " · имён " + j.clearedShelves : "")
-                  + (j.clearedSolutions ? " · типовых " + j.clearedSolutions : "")
-                  + ". Размечайте заново.")
-                : "Не очистил проект";
-            }
             keyPlan = [];
             stopKeyScan();
-            return Promise.all([loadLast(), loadSolutions(), loadPreview(), loadKeyPlan()]).then(() => {
+            const head = $("previewHead");
+            const baseMsg = j && j.ok
+              ? ("Проект очищен"
+                + (j.clearedShelves ? " · имён " + j.clearedShelves : "")
+                + (j.clearedSolutions ? " · типовых " + j.clearedSolutions : "")
+                + ". Размечайте заново.")
+              : "Не очистил проект";
+            if (head) {
+              head.style.color = "";
+              head.textContent = baseMsg;
+            }
+            const after = () => Promise.all([loadLast(), loadSolutions(), loadPreview(), loadKeyPlan()]).then(() => {
               renderDeskSolutions();
               renderMark();
               setTab("mark");
+              btn.disabled = false;
             });
+            if (!(j && j.ok && wipeShield)) return after();
+            return fetch("/runtime/desk-pour", {
+              method: "POST",
+              headers: { "content-type": "application/json" },
+              body: JSON.stringify({ scope: "rules" }),
+            })
+              .then((r) => r.json())
+              .then((pour) => {
+                if (head) {
+                  head.textContent = baseMsg
+                    + (pour && pour.ok
+                      ? " · desk_sol с щита сняты"
+                      : pour && pour.reason
+                        ? " · щит: " + String(pour.reason)
+                        : " · щит без изменений");
+                }
+                return after();
+              })
+              .catch(() => after());
           })
           .catch(() => {
             btn.disabled = false;
