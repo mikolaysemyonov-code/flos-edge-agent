@@ -222,7 +222,8 @@ export function deskBeaconKind(controlId, deviceTopicKey) {
 
 /** Сколько держать ON, пока инженер смотрит в комнату (LED разгорается дольше). */
 export function deskBeaconHoldMs(kind) {
-  if (kind === "led") return 2600;
+  // LED с плавным разжиганием: держим дольше, чтобы глаз успел поймать зону.
+  if (kind === "led") return 3200;
   return 900;
 }
 

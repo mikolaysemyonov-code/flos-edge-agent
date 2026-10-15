@@ -103,13 +103,18 @@ export function clearDeskProject() {
   }
   const clearedSolutions = Array.isArray(doc.solutions) ? doc.solutions.length : 0;
   const clearedRooms = Array.isArray(doc.rooms) ? doc.rooms.length : 0;
+  const clearedKeyPlan = Array.isArray(doc.keyPlan) ? doc.keyPlan.length : 0;
+  const clearedLinePlan = Array.isArray(doc.linePlan) ? doc.linePlan.length : 0;
   writeDoc({ shelves: {}, solutions: [], rooms: [], keyPlan: [], linePlan: [] });
   return {
     ok: true,
     clearedShelves,
     clearedSolutions,
     clearedRooms,
-    cleared: clearedShelves + clearedSolutions + clearedRooms,
+    clearedKeyPlan,
+    clearedLinePlan,
+    cleared:
+      clearedShelves + clearedSolutions + clearedRooms + clearedKeyPlan + clearedLinePlan,
   };
 }
 

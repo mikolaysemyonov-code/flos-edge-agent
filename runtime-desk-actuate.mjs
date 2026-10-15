@@ -35,10 +35,11 @@ export function deskActuatePayloads(deviceTopicKey, controlId) {
   const key = String(deviceTopicKey || "").toLowerCase();
   const cid = String(controlId || "");
   if (/dali|mdali|mao/i.test(key) || /actual_level|brightness/i.test(cid)) {
-    return { on: "255", off: "0", pulseMs: 1200, kind: "level" };
+    return { on: "255", off: "0", pulseMs: 2200, kind: "level" };
   }
+  // WB-LED часто с плавным Auto-Change — короткий pulse не успевает разгореться.
   if (/led|ampled/i.test(key) || /^Channel\s+\d+/i.test(cid) || /^CCT/i.test(cid) || /^RGB/i.test(cid)) {
-    return { on: "1", off: "0", pulseMs: 1200, kind: "led_switch" };
+    return { on: "1", off: "0", pulseMs: 2200, kind: "led_switch" };
   }
   return { on: "1", off: "0", pulseMs: 800, kind: "relay" };
 }

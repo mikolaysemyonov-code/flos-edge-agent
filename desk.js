@@ -446,6 +446,12 @@
         renderDeskSolutions();
         renderVitrine();
       }
+      if (tab === "poured") {
+        renderPoured();
+        loadPreview();
+        // Тихая диагностика при входе на «Залить» — без блокировки UI.
+        void runDeskHealthQuiet();
+      }
       if (location.hash.replace("#", "") !== tab) history.replaceState(null, "", "#" + tab);
     }
     function previewStatusRu(s) {
@@ -4435,7 +4441,7 @@
     }
     function beaconHoldMs(cur) {
       if (cur && Number.isFinite(Number(cur.holdMs))) return Number(cur.holdMs);
-      if (cur && cur.kind === "led") return 2600;
+      if (cur && cur.kind === "led") return 3200;
       return 900;
     }
     async function startLineBeacon(item) {
@@ -5260,6 +5266,8 @@
               ? ("Проект очищен"
                 + (j.clearedShelves ? " · имён " + j.clearedShelves : "")
                 + (j.clearedSolutions ? " · типовых " + j.clearedSolutions : "")
+                + (j.clearedKeyPlan ? " · клавиш " + j.clearedKeyPlan : "")
+                + (j.clearedLinePlan ? " · линий " + j.clearedLinePlan : "")
                 + ". Размечайте заново.")
               : "Не очистил проект";
             if (head) {
@@ -5316,19 +5324,57 @@
         list.appendChild(li);
       });
     }
+    function fieldReadyBits(summary, issues) {
+      const s = summary || {};
+      const list = Array.isArray(issues) ? issues : [];
+      const openKeys = list.some((i) => i.code === "key_plan_open");
+      const openLines = list.some((i) => i.code === "line_plan_open");
+      const bad = Number(s.bad) || 0;
+      return {
+        ready: bad === 0 && !openKeys && !openLines,
+        openKeys,
+        openLines,
+        bad,
+      };
+    }
+    async function fetchDeskHealth() {
+      const r = await fetch("/runtime/desk-health", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ shelves: lastShelvesRows || [] }),
+      });
+      return r.json();
+    }
+    async function runDeskHealthQuiet() {
+      try {
+        if (!(lastShelvesRows || []).length) await loadLast();
+        await Promise.all([loadKeyPlan(), loadLinePlan(), loadSolutions()]);
+        const j = await fetchDeskHealth();
+        const s = j.summary || {};
+        const ready = fieldReadyBits(s, j.issues);
+        const head = (ready.ready ? "К полю: разметка закрыта" : "Перед полем закройте хвосты")
+          + " · имён " + (s.named || 0)
+          + " · типовых " + (s.solutions || 0)
+          + (s.bad ? (" · ошибок " + s.bad) : "")
+          + (s.warn ? (" · замечаний " + s.warn) : "");
+        const issues = (j.issues || []).length
+          ? j.issues
+          : [{ level: "ok", text: "Можно: диагностика → аудит → имена → сценарии." }];
+        paintCheckList(issues, head, ready.ready ? "" : "bad");
+      } catch (_) {
+        /* тихий режим — не шумим */
+      }
+    }
     async function runDeskHealth() {
       const btn = $("runHealth");
       if (btn) btn.disabled = true;
       try {
         await loadLast();
-        const r = await fetch("/runtime/desk-health", {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({ shelves: lastShelvesRows || [] }),
-        });
-        const j = await r.json();
+        await Promise.all([loadKeyPlan(), loadLinePlan(), loadSolutions()]);
+        const j = await fetchDeskHealth();
         const s = j.summary || {};
-        const head = (j.ok ? "Диагностика ок" : "Есть проблемы")
+        const ready = fieldReadyBits(s, j.issues);
+        const head = (ready.ready ? "Диагностика ок · к полю" : "Есть проблемы")
           + " · модулей " + (s.modules || 0)
           + " · имён " + (s.named || 0)
           + (s.unboundLoads ? (" · без имени " + s.unboundLoads) : "")
@@ -5337,7 +5383,7 @@
         const issues = (j.issues || []).length
           ? j.issues
           : [{ level: "ok", text: "Дыр не видно — можно заливать и аудитить." }];
-        paintCheckList(issues, head, j.ok ? "" : "bad");
+        paintCheckList(issues, head, ready.ready ? "" : "bad");
       } catch (e) {
         paintCheckList([], String(e.message || e), "bad");
       } finally {
