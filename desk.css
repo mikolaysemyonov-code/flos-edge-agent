@@ -714,6 +714,17 @@
       border-color: rgb(var(--sky) / .45);
       box-shadow: 0 0 0 1px rgb(var(--sky) / .2);
     }
+    .tag-field.is-empty {
+      cursor: default;
+      border-color: rgb(248 113 113 / .4);
+      background: rgb(248 113 113 / .07);
+    }
+    .tag-empty-msg {
+      color: rgb(252 165 165);
+      font-size: .8rem;
+      line-height: 1.35;
+      padding: .1rem .15rem;
+    }
     .tag-chips { display: contents; }
     .tag-chip {
       display: inline-flex; align-items: center; gap: .28rem;

@@ -1984,9 +1984,17 @@
       const addBtn = document.createElement("button");
       addBtn.type = "button";
       addBtn.className = "tag-add";
-      addBtn.textContent = rows.length ? placeholder : emptyText;
+      addBtn.textContent = placeholder;
       addBtn.disabled = !rows.length;
       field.append(chips, addBtn);
+      if (!rows.length) {
+        field.classList.add("is-empty");
+        addBtn.hidden = true;
+        const emptyMsg = document.createElement("span");
+        emptyMsg.className = "tag-empty-msg";
+        emptyMsg.textContent = emptyText;
+        field.appendChild(emptyMsg);
+      }
       const panel = document.createElement("div");
       panel.className = "tag-dd";
       panel.hidden = true;
@@ -2026,10 +2034,13 @@
       }
       function paintChips() {
         chips.replaceChildren();
+        if (!rows.length) return;
         if (!selected.size) {
-          addBtn.textContent = rows.length ? placeholder : emptyText;
+          addBtn.hidden = false;
+          addBtn.textContent = placeholder;
           return;
         }
+        addBtn.hidden = false;
         addBtn.textContent = multi ? "+ ещё" : "сменить";
         const rooms = groupLoadsByRoom(rows);
         const painted = new Set();
@@ -2356,6 +2367,20 @@
       if (card.cat === "Общее") return card.multi ? "Нагрузки" : "Нагрузка";
       return card.multi ? "Свет / линии" : "Свет";
     }
+    /** Винительный для «Выберите …» */
+    function sheetPickAccusative(lab) {
+      const s = String(lab || "").trim().toLowerCase();
+      if (s === "кнопка") return "кнопку";
+      if (s === "сирена") return "сирену";
+      if (s === "розетка") return "розетку";
+      if (s === "штора") return "штору";
+      if (s === "нагрузка") return "нагрузку";
+      if (s === "заслонка 0–10 в") return "заслонку 0–10 В";
+      return s;
+    }
+    function sheetPickPlaceholder(lab) {
+      return "Выберите " + sheetPickAccusative(lab) + "…";
+    }
     /** onlyHits: если есть подходящие — не подмешивать чужие линии (свет в шторах и т.п.). */
     function preferRows(rows, hitFn, onlyHits) {
       const hit = rows.filter(hitFn);
@@ -2411,10 +2436,14 @@
         return preferRows(all, (r) => /co\s*₂|co2|душно|углекисл/i.test(r.label || "") || isSensorLabel(r.label), true);
       }
       if (sheetIsMotion(card)) {
-        return preferRows(all, (r) => /движен|motion|pir|присут/i.test(r.label || ""), true);
+        return preferRows(all, (r) =>
+          /движен|motion|pir|присут|occup/i.test(r.label || "")
+          || /motion|occup|pir/i.test(r.controlId || ""), true);
       }
       if (sheetIsReed(card)) {
-        return preferRows(all, (r) => /двер|геркон|reed|окн/i.test(r.label || ""), true);
+        return preferRows(all, (r) =>
+          /двер|геркон|reed|окн/i.test(r.label || "")
+          || /reed|contact|input/i.test(r.controlId || ""), true);
       }
       if (!sheetNeedSensor(card)) return all;
       return preferRows(all, (r) => isSensorLabel(r.label), true);
@@ -2488,7 +2517,7 @@
         trigPicker = makeTagPicker({
           rows: trigs,
           multi: false,
-          placeholder: "Выберите " + sheetTrigLab(card).toLowerCase() + "…",
+          placeholder: sheetPickPlaceholder(sheetTrigLab(card)),
           emptyText: "Нет подходящих имён — разметьте в «Разметить».",
           draftKeys: draftTrigKeys,
           onChange: bump,
@@ -2530,7 +2559,7 @@
         auxPicker = makeTagPicker({
           rows: auxRows,
           multi: false,
-          placeholder: "Выберите " + sheetAuxLab(card).toLowerCase() + "…",
+          placeholder: sheetPickPlaceholder(sheetAuxLab(card)),
           emptyText: "Нет датчиков движения — разметьте в «Разметить».",
           draftKeys: draftAuxKeys,
           onChange: bump,
@@ -2564,7 +2593,7 @@
         defLevel,
         placeholder: perLoadLevel
           ? "Комнаты / линии в сцену…"
-          : ("Выберите " + sheetTgtLab(card).toLowerCase() + "…"),
+          : sheetPickPlaceholder(sheetTgtLab(card)),
         emptyText: /leak|valve/.test(card.id + (card.loadKind || ""))
           ? "Нет линий с именем «кран/клапан» — разметьте краны, не свет."
           : "Нет подходящих нагрузок этого типа — поправьте имена в «Разметить».",
