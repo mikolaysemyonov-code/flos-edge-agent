@@ -553,6 +553,24 @@
       border: 1px solid rgb(var(--sky) / .35);
       background: rgb(var(--sky) / .1);
     }
+    .pair-hit {
+      padding: 1rem .9rem;
+      margin: .35rem 0 .75rem;
+      border-radius: .85rem;
+      text-align: center;
+    }
+    .pair-hit strong {
+      display: block;
+      font-size: 1.25rem;
+      color: rgb(167 243 208);
+      margin: 0 0 .35rem;
+    }
+    .pair-named {
+      margin: 0 0 .75rem;
+      padding: 0 0 0 1.1rem;
+      color: var(--mute);
+      font-size: .8rem;
+    }
     .key-list { margin: 0; padding: 0 0 0 0; list-style: none; }
     .key-row {
       display: flex; align-items: center; gap: .5rem;

@@ -22,6 +22,7 @@
     let lineRoomFilter = "";
     let linePlanFocus = false;
     let lineBeacon = null; /* { id, candidates, idx, timer, current } */
+    let pairListen = null; /* { timer, baseline, prevClosed, last } */
     let openAssign = "";
     let deskCatalog = [];
     let deskSolutions = [];
@@ -390,7 +391,7 @@
       renderMark();
     }
     function normalizeTab(tab) {
-      if (tab === "light" || tab === "buttons" || tab === "relays" || tab === "all" || tab === "keys" || tab === "lines") {
+      if (tab === "light" || tab === "buttons" || tab === "relays" || tab === "all" || tab === "keys" || tab === "lines" || tab === "pair") {
         markPath = "modules";
         modFamily = tab === "buttons"
           ? "buttons"
@@ -402,7 +403,9 @@
                 ? "keys"
                 : tab === "lines"
                   ? "lines"
-                  : "light";
+                  : tab === "pair"
+                    ? "pair"
+                    : "light";
         return "mark";
       }
       return tab;
@@ -4698,6 +4701,159 @@
         body.appendChild(det);
       });
     }
+    function stopPairListen() {
+      if (pairListen && pairListen.timer) clearInterval(pairListen.timer);
+      pairListen = null;
+    }
+    function namedInputLabel(deviceTopicKey, controlId) {
+      const s = (lastShelvesRows || []).find((x) => x.deviceTopicKey === deviceTopicKey);
+      if (!s) return "";
+      const ch = (s.channels || []).find((c) => c.controlId === controlId);
+      return ch ? String(ch.name || "").trim() : "";
+    }
+    function pairPulseForTrigger(deviceTopicKey, controlId) {
+      const loads = [];
+      deskSolutions.forEach((sol) => {
+        const t = sol && sol.trigger;
+        if (!t || t.deviceTopicKey !== deviceTopicKey) return;
+        const base = String(t.controlId || "").replace(/\s+Short Press Counter$/i, "").trim();
+        if (base !== controlId && t.controlId !== controlId) return;
+        (sol.targets || []).forEach((x) => {
+          if (x && x.deviceTopicKey && x.controlId) loads.push(x);
+        });
+      });
+      loads.slice(0, 8).forEach((x) => {
+        void actuateChannel(x.deviceTopicKey, x.controlId, "pulse");
+      });
+      return loads.length;
+    }
+    function startPairListen() {
+      stopPairListen();
+      stopKeyScan();
+      stopLineBeacon();
+      pairListen = {
+        timer: 0,
+        baseline: pressSignalMap(lastShelvesRows),
+        prevClosed: new Map(),
+        last: null,
+      };
+      pressSignalMap(lastShelvesRows).forEach((sig, k) => {
+        if (sig.kind === "level") pairListen.prevClosed.set(k, Boolean(sig.closed));
+      });
+      const tick = () => {
+        if (!pairListen) return;
+        fetch("/runtime/mqtt-scan", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ instant: true }),
+        })
+          .then((r) => r.json())
+          .then((j) => {
+            if (!pairListen || !j || !j.ok || !Array.isArray(j.shelves)) return;
+            lastShelvesRows = rememberMergeShelves(lastShelvesRows, j.shelves);
+            const now = pressSignalMap(lastShelvesRows);
+            let rose = "";
+            now.forEach((sig, k) => {
+              const base = pairListen.baseline.get(k);
+              if (sig.kind === "counter") {
+                const prev = base && base.kind === "counter" ? base.v : sig.v;
+                if (sig.v > prev) {
+                  rose = k;
+                  pairListen.baseline.set(k, sig);
+                }
+              } else if (sig.kind === "level") {
+                const was = pairListen.prevClosed.get(k);
+                pairListen.prevClosed.set(k, Boolean(sig.closed));
+                if (sig.closed && was === false) rose = k;
+              }
+            });
+            if (!rose) return;
+            const sig = now.get(rose);
+            const name = namedInputLabel(sig.deviceTopicKey, sig.controlId);
+            if (!name) return;
+            const pulsed = pairPulseForTrigger(sig.deviceTopicKey, sig.controlId);
+            pairListen.last = {
+              name,
+              deviceTopicKey: sig.deviceTopicKey,
+              controlId: sig.controlId,
+              pulsed,
+              at: Date.now(),
+            };
+            renderMark();
+          })
+          .catch(() => {});
+      };
+      pairListen.timer = setInterval(tick, 280);
+      tick();
+    }
+    function renderPairVerifyPanel(body) {
+      body.replaceChildren();
+      if (!pairListen) startPairListen();
+      const intro = document.createElement("p");
+      intro.className = "meta";
+      intro.textContent = "Нажимайте подписанные кнопки в квартире. Стол покажет имя; если на типовых есть связь — линии мигнут.";
+      body.appendChild(intro);
+      const status = document.createElement("p");
+      status.className = "meta key-scan-status live";
+      status.textContent = "Слушаю Short Press на размеченных входах…";
+      body.appendChild(status);
+      const hit = document.createElement("div");
+      hit.className = "pair-hit glass";
+      if (pairListen && pairListen.last) {
+        const L = pairListen.last;
+        const strong = document.createElement("strong");
+        strong.textContent = L.name;
+        const sub = document.createElement("p");
+        sub.className = "meta";
+        sub.textContent = L.deviceTopicKey + "/" + L.controlId
+          + (L.pulsed ? (" · импульс линий: " + L.pulsed) : " · типовых на эту кнопку нет — только имя");
+        hit.append(strong, sub);
+      } else {
+        const wait = document.createElement("p");
+        wait.className = "meta";
+        wait.textContent = "Жду нажатие…";
+        hit.appendChild(wait);
+      }
+      body.appendChild(hit);
+      const named = [];
+      (lastShelvesRows || []).forEach((s) => {
+        visibleChannels(s).forEach((ch) => {
+          if (!isDeskInput(ch.controlId, s.deviceTopicKey)) return;
+          const name = String(ch.name || "").trim();
+          if (!name) return;
+          named.push({ deviceTopicKey: s.deviceTopicKey, controlId: ch.controlId, name });
+        });
+      });
+      const list = document.createElement("ul");
+      list.className = "pair-named";
+      if (!named.length) {
+        const empty = document.createElement("p");
+        empty.className = "meta orphan";
+        empty.textContent = "Нет подписанных кнопок — сначала «Клавиши · скан».";
+        body.appendChild(empty);
+      } else {
+        const h = document.createElement("p");
+        h.className = "meta";
+        h.textContent = "Размеченные кнопки (" + named.length + "):";
+        body.appendChild(h);
+        named.sort((a, b) => a.name.localeCompare(b.name, "ru")).forEach((r) => {
+          const li = document.createElement("li");
+          li.textContent = r.name + " · " + r.deviceTopicKey + "/" + r.controlId;
+          list.appendChild(li);
+        });
+        body.appendChild(list);
+      }
+      const stop = document.createElement("button");
+      stop.type = "button";
+      stop.className = "ghost";
+      stop.textContent = "Остановить прозвон";
+      stop.addEventListener("click", () => {
+        stopPairListen();
+        modFamily = "all";
+        renderMark();
+      });
+      body.appendChild(stop);
+    }
     function renderMark() {
       lastShelvesRows = lastShelvesRows || [];
       const split = splitShelves(lastShelvesRows);
@@ -4717,7 +4873,9 @@
           ? "1 · Клавиши: план комнаты → скан 3× нажатий → канал на шине."
           : modFamily === "lines"
             ? "1 · Линии: план комнаты → маяк по щиту → «Это она»."
-            : "1 · Модуль → канал: комната и тип. Или «Клавиши» / «Линии» — план и скан.";
+            : modFamily === "pair"
+              ? "1 · Прозвон: нажмите физ. кнопку — увидите имя и импульс связанных линий."
+              : "1 · Модуль → канал: комната и тип. Или «Клавиши» / «Линии» / «Прозвон».";
       }
       const body = $("mark-body");
       if (!body) return;
@@ -4728,6 +4886,10 @@
       }
       if (modFamily === "lines") {
         renderLineBeaconPanel(body);
+        return;
+      }
+      if (modFamily === "pair") {
+        renderPairVerifyPanel(body);
         return;
       }
       const famRows = modFamily === "all"
@@ -4931,16 +5093,20 @@
     });
     document.querySelectorAll("#modFamily [data-fam]").forEach((btn) => {
       btn.addEventListener("click", () => {
-        modFamily = /^(all|light|buttons|relays|keys|lines)$/.test(btn.dataset.fam) ? btn.dataset.fam : "all";
+        modFamily = /^(all|light|buttons|relays|keys|lines|pair)$/.test(btn.dataset.fam) ? btn.dataset.fam : "all";
         openMod = "";
         openAssign = "";
         markPending = {};
         markPath = "modules";
         if (modFamily !== "keys") stopKeyScan();
         if (modFamily !== "lines") stopLineBeacon();
+        if (modFamily !== "pair") stopPairListen();
         if (modFamily === "keys") loadKeyPlan().then(() => renderMark());
         else if (modFamily === "lines") loadLinePlan().then(() => renderMark());
-        else renderMark();
+        else if (modFamily === "pair") {
+          stopPairListen();
+          renderMark();
+        } else renderMark();
       });
     });
     if ($("clearMarks")) {
@@ -5005,6 +5171,7 @@
             linePlan = [];
             stopKeyScan();
             stopLineBeacon();
+            stopPairListen();
             const head = $("previewHead");
             const baseMsg = j && j.ok
               ? ("Проект очищен"
@@ -5068,7 +5235,7 @@
       });
     }
     const fromHash = location.hash.replace("#", "");
-    if (/^(mark|cards|poured|light|buttons|relays|keys|lines)$/.test(fromHash)) setTab(fromHash);
+    if (/^(mark|cards|poured|light|buttons|relays|keys|lines|pair)$/.test(fromHash)) setTab(fromHash);
     else setTab("mark");
     loadHealth();
     loadPoured();
