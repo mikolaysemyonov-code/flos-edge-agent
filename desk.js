@@ -2008,13 +2008,20 @@
       $("cardMask").hidden = true;
     }
     function sheetNeedSensor(card) {
-      return /humidity|co2|temp|thermostat|warm_floor|weather|vent_|ac_|humidifier|motion|reed|leak|двер|движен|протеч|окн/i
+      return /humidity|co2|temp|thermostat|warm_floor|weather|vent_|ac_|humidifier|motion|reed|night_path|stair_light|leak|двер|движен|протеч|окн/i
         .test(card.id + " " + card.title);
+    }
+    function sheetIsMotion(card) {
+      return /light_motion|light_night_path|stair_light_motion/.test(card.id);
+    }
+    function sheetIsReed(card) {
+      return card.id === "light_reed_on" || card.id === "ac_window_off";
     }
     function sheetTrigLab(card) {
       if (card.id === "vent_humidity_motion") return "Влажность";
       if (card.id === "vent_vav_zone" || card.id === "vent_co2" || card.id === "vent_diy_vav") return "CO₂";
-      if (card.id === "ac_window_off") return "Окно / геркон";
+      if (sheetIsReed(card)) return "Дверь / геркон";
+      if (sheetIsMotion(card)) return "Датчик движения";
       return sheetNeedSensor(card) ? "Датчик" : "Кнопка";
     }
     function sheetAuxLab(card) {
@@ -2091,8 +2098,19 @@
       if (card.id === "vent_vav_zone" || /co2/i.test(card.id)) {
         return preferRows(all, (r) => /co\s*₂|co2|душно|углекисл/i.test(r.label || "") || isSensorLabel(r.label), true);
       }
+      if (sheetIsMotion(card)) {
+        return preferRows(all, (r) => /движен|motion|pir|присут/i.test(r.label || ""), true);
+      }
+      if (sheetIsReed(card)) {
+        return preferRows(all, (r) => /двер|геркон|reed|окн/i.test(r.label || ""), true);
+      }
       if (!sheetNeedSensor(card)) return all;
       return preferRows(all, (r) => isSensorLabel(r.label), true);
+    }
+    function isLikelyDimmerLoad(r) {
+      const blob = [r.deviceTopicKey, r.controlId, r.label].join(" ");
+      if (/wb-mr|\/K\d+\b|реле/i.test(blob) && !/wb-led|Channel|CCT|димм/i.test(blob)) return false;
+      return /wb-led|Channel|CCT|Brightness|димм|RGB/i.test(blob);
     }
     function loadsForCard(card, room) {
       const all = loadsForRoom(room);
@@ -2216,13 +2234,18 @@
           if (perLoadLevel) {
             const hint = document.createElement("p");
             hint.className = "meta";
-            hint.textContent = "У каждой линии — свой % (диммер) или 0/100 (реле).";
+            hint.textContent = "Галка = участвует в сцене. Без галки = не трогаем (оставить как есть). 0% / Выкл = погасить.";
             picks.appendChild(hint);
           }
-          groupLoadsByRoom(loads).forEach(([room, rows]) => {
+          const rooms = groupLoadsByRoom(loads);
+          rooms.forEach(([room, rows], roomIdx) => {
             const det = document.createElement("details");
             det.className = "room-acc";
-            det.open = Boolean(roomFilter) && room === roomFilter;
+            const draftHit = draft && rows.some((load) =>
+              (draft.targets || []).some((t) => contactKey(t.deviceTopicKey, t.controlId) === contactKey(load.deviceTopicKey, load.controlId)));
+            det.open = draftHit
+              || (Boolean(roomFilter) && room === roomFilter)
+              || (perLoadLevel && roomIdx === 0);
             const sum = document.createElement("summary");
             sum.textContent = room + " · " + rows.length;
             det.appendChild(sum);
@@ -2239,26 +2262,50 @@
               name.textContent = load.label;
               lab.append(cb, name);
               if (perLoadLevel) {
-                const lvl = document.createElement("input");
-                lvl.type = "number";
-                lvl.className = "lvl";
-                lvl.min = "0";
-                lvl.max = "100";
-                lvl.step = "1";
-                lvl.value = String(draftLevelOf(cb.value));
-                lvl.title = "%";
-                lvl.setAttribute("aria-label", "Уровень % · " + load.label);
+                const dim = isLikelyDimmerLoad(load);
+                let lvl;
+                if (dim) {
+                  lvl = document.createElement("input");
+                  lvl.type = "number";
+                  lvl.className = "lvl";
+                  lvl.min = "0";
+                  lvl.max = "100";
+                  lvl.step = "1";
+                  lvl.value = String(draftLevelOf(cb.value));
+                  lvl.title = "% · 0 = гасить";
+                  lvl.setAttribute("aria-label", "Уровень % · " + load.label);
+                } else {
+                  lvl = document.createElement("select");
+                  lvl.className = "lvl lvl-sw";
+                  [["0", "Выкл"], ["100", "Вкл"]].forEach(([v, t]) => {
+                    const opt = document.createElement("option");
+                    opt.value = v;
+                    opt.textContent = t;
+                    lvl.appendChild(opt);
+                  });
+                  const cur = draftLevelOf(cb.value);
+                  lvl.value = cur >= 50 ? "100" : "0";
+                  lvl.title = "Реле: вкл или выкл";
+                  lvl.setAttribute("aria-label", "Реле · " + load.label);
+                }
                 lvl.disabled = true;
-                const syncLvl = () => { lvl.disabled = !cb.checked; };
+                const syncLvl = () => {
+                  lvl.disabled = !cb.checked;
+                  lab.classList.toggle("ignored", !cb.checked);
+                };
                 cb.addEventListener("change", syncLvl);
                 lab.appendChild(lvl);
+                lab.classList.add("ignored");
               }
               if (draft && (draft.targets || []).some((t) => contactKey(t.deviceTopicKey, t.controlId) === cb.value)) {
                 cb.checked = true;
                 det.open = true;
                 if (perLoadLevel) {
-                  const lvl = lab.querySelector("input.lvl");
-                  if (lvl) lvl.disabled = false;
+                  const lvl = lab.querySelector(".lvl");
+                  if (lvl) {
+                    lvl.disabled = false;
+                    lab.classList.remove("ignored");
+                  }
                 }
               }
               box.appendChild(lab);
@@ -2272,7 +2319,7 @@
           const base = parseBindValue(o.value);
           if (!base) return null;
           if (!perLoadLevel) return base;
-          const lvl = o.closest("label") && o.closest("label").querySelector("input.lvl");
+          const lvl = o.closest("label") && o.closest("label").querySelector(".lvl");
           const n = Number(lvl && lvl.value);
           return { ...base, level: Number.isFinite(n) ? Math.max(0, Math.min(100, n)) : defLevel };
         }).filter(Boolean);

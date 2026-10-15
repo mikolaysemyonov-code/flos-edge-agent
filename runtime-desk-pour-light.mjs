@@ -105,6 +105,10 @@ function emitOnWhenActive(sol, defaults) {
   ].join("\n");
 }
 
+/**
+ * Long = вверх, Shortlong = вниз (счётчики MCM), release (Input → 0) = стоп Auto-Change.
+ * Перед рампой выравниваем яркость всех линий по первой — иначе разъедутся.
+ */
 function emitDimHold(sol) {
   const base = inputBase(sol.trigger);
   const long = press(sol.trigger, "Long");
@@ -114,14 +118,23 @@ function emitDimHold(sol) {
   const autos = loads.map(autoChangeOf).filter(Boolean);
   if (!autos.length) return "";
   const id = "desk_sol_" + sol.id;
-  const write = (val) =>
+  const first = loads[0];
+  const syncFromFirst = [
+    `      try {`,
+    `        var __cur = Number(readValue(${esc(first)}));`,
+    `        if (isNaN(__cur)) __cur = 0;`,
+    ...loads.slice(1).map((p) => `        wbActuatorSet(${esc(p)}, __cur, ${esc(id)}, 50);`),
+    `      } catch (_e) {}`,
+  ].join("\n");
+  const writeAc = (val) =>
     autos.map((p) => `      wbActuatorSet(${esc(p)}, ${val}, ${esc(id)}, 50);`).join("\n");
   return [
     `defineRule(${esc(id + "_dim_up")}, {`,
     `  whenChanged: ${esc(long)},`,
     "  then: function () {",
     "    try {",
-    write(AC_INC),
+    syncFromFirst,
+    writeAc(AC_INC),
     "    } catch (e) { if (typeof wbRuleGuardCatch === 'function') wbRuleGuardCatch(" + esc(id + "_dim_up") + ", e); }",
     "  }",
     "});",
@@ -130,7 +143,8 @@ function emitDimHold(sol) {
     `  whenChanged: ${esc(shortlong)},`,
     "  then: function () {",
     "    try {",
-    write(AC_DEC),
+    syncFromFirst,
+    writeAc(AC_DEC),
     "    } catch (e) { if (typeof wbRuleGuardCatch === 'function') wbRuleGuardCatch(" + esc(id + "_dim_dn") + ", e); }",
     "  }",
     "});",
@@ -140,7 +154,7 @@ function emitDimHold(sol) {
     "  then: function () {",
     "    try {",
     `      if (wbIsOn(readValue(${esc(base)}))) return;`,
-    write(AC_STOP),
+    writeAc(AC_STOP),
     "    } catch (e) { if (typeof wbRuleGuardCatch === 'function') wbRuleGuardCatch(" + esc(id + "_dim_stop") + ", e); }",
     "  }",
     "});",

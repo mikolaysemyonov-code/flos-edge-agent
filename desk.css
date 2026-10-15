@@ -734,9 +734,10 @@
     .picks label { display: flex; align-items: center; gap: .55rem; font-size: .86rem; }
     .picks input { width: 1rem; height: 1rem; accent-color: rgb(56 189 248); }
     .picks label.pick-lvl { gap: .4rem; }
+    .picks label.pick-lvl.ignored .pick-name { color: var(--mute); }
     .picks label.pick-lvl .pick-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-    .picks label.pick-lvl input.lvl {
-      width: 3.4rem;
+    .picks label.pick-lvl .lvl {
+      width: 3.6rem;
       height: 1.7rem;
       margin: 0;
       padding: 0 .3rem;
@@ -748,7 +749,12 @@
       text-align: right;
       accent-color: unset;
     }
-    .picks label.pick-lvl input.lvl:disabled { opacity: .35; }
+    .picks label.pick-lvl select.lvl {
+      width: 4.2rem;
+      text-align: left;
+      appearance: none;
+    }
+    .picks label.pick-lvl .lvl:disabled { opacity: .35; }
     #deskSols { margin: 0 0 .85rem; }
     #deskSols:empty { display: none; }
     #deskSols li {
