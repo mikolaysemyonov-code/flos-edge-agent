@@ -562,12 +562,54 @@
       color: rgb(186 230 253) !important;
       border-color: rgb(var(--sky) / .35) !important;
     }
+    .line-beacon-pad {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: .55rem;
+      margin: 0 0 .75rem;
+    }
+    .line-beacon-circle {
+      width: 7.6rem;
+      height: 7.6rem;
+      border-radius: 999px;
+      border: 2px solid rgb(var(--sky) / .55);
+      background: rgb(var(--sky) / .12);
+      color: rgb(186 230 253);
+      font: inherit;
+      font-size: 1.05rem;
+      font-weight: 750;
+      cursor: pointer;
+      display: grid;
+      place-items: center;
+      text-align: center;
+      line-height: 1.15;
+      padding: .55rem;
+      -webkit-tap-highlight-color: transparent;
+    }
+    .line-beacon-circle.on {
+      background: rgb(var(--sky) / .28);
+      border-color: rgb(186 230 253);
+      box-shadow: 0 0 0 7px rgb(var(--sky) / .14);
+    }
+    .line-beacon-circle:disabled {
+      opacity: .55;
+      cursor: wait;
+    }
+    .line-beacon-circle .n {
+      display: block;
+      font-size: .7rem;
+      font-weight: 600;
+      opacity: .78;
+      margin-top: .25rem;
+    }
     .line-beacon-bar {
-      margin: 0 0 .65rem;
-      padding: .55rem .65rem;
+      margin: 0;
+      padding: .45rem .55rem;
       border-radius: .85rem;
       border: 1px solid rgb(var(--sky) / .35);
       background: rgb(var(--sky) / .1);
+      justify-content: center;
     }
     .line-beacon-fam {
       margin: 0 0 .55rem;

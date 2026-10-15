@@ -220,9 +220,10 @@ export function deskBeaconKind(controlId, deviceTopicKey) {
   return "relay";
 }
 
-/** Сколько держать ON, пока инженер смотрит в комнату (LED разгорается дольше). */
+/**
+ * Подсказка длительности для pulse/аудита (маяк на столе — ручной шаг, без авто-таймера).
+ */
 export function deskBeaconHoldMs(kind) {
-  // LED с плавным разжиганием: держим дольше, чтобы глаз успел поймать зону.
   if (kind === "led") return 3200;
   return 900;
 }

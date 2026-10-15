@@ -21,7 +21,7 @@
     let linePlan = [];
     let lineRoomFilter = "";
     let linePlanFocus = false;
-    let lineBeacon = null; /* { id, candidates, idx, timer, current } */
+    let lineBeacon = null; /* { id, candidates, idx, current, busy } — шаг по нажатию */
     let lineBeaconFamily = "led"; /* led | relay | all */
     let pairListen = null; /* { timer, baseline, prevClosed, last } */
     let openAssign = "";
@@ -321,15 +321,6 @@
       if (mirror.connected && n > 0) return "Шина ок · " + n + " топиков";
       if (mirror.connected) return "Шина: ждёт топики";
       return "Шина: нет MQTT";
-    }
-    function cloudRu(state) {
-      if (state === "restored" || state === "online" || state === "enrolled_awaiting_heartbeat") {
-        return "Облако ок";
-      }
-      if (state === "enrolling") return "Облако: подключаюсь";
-      if (state === "enroll_failed" || state === "enroll_transient") return "Облако: нет связи";
-      if (!state) return "Облако: —";
-      return "Облако: " + state;
     }
     function humanPourError(raw) {
       const s = String(raw || "").trim();
@@ -2932,12 +2923,13 @@
           if (sub) { sub.hidden = true; sub.textContent = ""; }
           return;
         }
-        box.className = "glass status " + (busOk ? "ok" : cloudOk ? "warn" : "bad");
-        main.textContent = busRu(mirror) + " · " + cloudRu(cloudState) + " · " + ver;
+        // Локальный пуск через docker: облако не влияет на статус «ок».
+        box.className = "glass status " + (busOk ? "ok" : "bad");
+        main.textContent = busRu(mirror) + " · " + ver;
         if (sub) {
           const bits = [];
           if (!busOk) bits.push("Проверьте mosquitto на щите");
-          if (!cloudOk) bits.push("Облако не обязательно для локальной заливки");
+          else if (!cloudOk) bits.push("Локальный режим · облако не нужно");
           sub.textContent = bits.join(" · ");
           sub.hidden = !bits.length;
         }
@@ -4381,7 +4373,6 @@
       });
     }
     function stopLineBeacon() {
-      if (lineBeacon && lineBeacon.timer) clearTimeout(lineBeacon.timer);
       const cur = lineBeacon && lineBeacon.current;
       lineBeacon = null;
       if (cur && cur.deviceTopicKey && cur.controlId) {
@@ -4439,10 +4430,30 @@
         return [];
       }
     }
-    function beaconHoldMs(cur) {
-      if (cur && Number.isFinite(Number(cur.holdMs))) return Number(cur.holdMs);
-      if (cur && cur.kind === "led") return 3200;
-      return 900;
+    async function stepLineBeacon() {
+      if (!lineBeacon || lineBeacon.busy || !(lineBeacon.candidates || []).length) return;
+      const armedId = lineBeacon.id;
+      lineBeacon.busy = true;
+      renderMark();
+      try {
+        const prev = lineBeacon.current;
+        if (prev) {
+          try { await actuateChannel(prev.deviceTopicKey, prev.controlId, "off"); } catch (_) { /* */ }
+          // LED гаснет не мгновенно — короткая пауза, чтобы глаз поймал смену.
+          if (prev.kind === "led") {
+            await new Promise((r) => setTimeout(r, 350));
+          }
+        }
+        if (!lineBeacon || lineBeacon.id !== armedId) return;
+        const cur = lineBeacon.candidates[lineBeacon.idx % lineBeacon.candidates.length];
+        lineBeacon.current = cur;
+        lineBeacon.idx += 1;
+        renderMark();
+        try { await actuateChannel(cur.deviceTopicKey, cur.controlId, "on"); } catch (_) { /* */ }
+      } finally {
+        if (lineBeacon && lineBeacon.id === armedId) lineBeacon.busy = false;
+        renderMark();
+      }
     }
     async function startLineBeacon(item) {
       stopLineBeacon();
@@ -4462,43 +4473,18 @@
         renderMark();
         return;
       }
-      const tick = async () => {
-        if (!lineBeacon || lineBeacon.id !== item.id) return;
-        const prev = lineBeacon.current;
-        if (prev) {
-          try { await actuateChannel(prev.deviceTopicKey, prev.controlId, "off"); } catch (_) { /* */ }
-          // LED гаснет тоже не мгновенно — короткая пауза перед следующим.
-          if (prev.kind === "led") {
-            await new Promise((r) => setTimeout(r, 350));
-          }
-        }
-        if (!lineBeacon || lineBeacon.id !== item.id) return;
-        const cur = lineBeacon.candidates[lineBeacon.idx % lineBeacon.candidates.length];
-        lineBeacon.current = cur;
-        lineBeacon.idx += 1;
-        renderMark();
-        try { await actuateChannel(cur.deviceTopicKey, cur.controlId, "on"); } catch (_) { /* */ }
-        if (!lineBeacon || lineBeacon.id !== item.id) return;
-        lineBeacon.timer = setTimeout(() => { void tick(); }, beaconHoldMs(cur));
-      };
       lineBeacon = {
         id: item.id,
         candidates,
         family: lineBeaconFamily,
         idx: 0,
-        timer: 0,
         current: null,
-        advance: () => {
-          if (!lineBeacon || lineBeacon.id !== item.id) return;
-          if (lineBeacon.timer) clearTimeout(lineBeacon.timer);
-          void tick();
-        },
+        busy: false,
       };
       renderMark();
-      void tick();
     }
     function confirmLineBeacon() {
-      if (!lineBeacon || !lineBeacon.current) return;
+      if (!lineBeacon || !lineBeacon.current || lineBeacon.busy) return;
       const armedId = lineBeacon.id;
       const cur = lineBeacon.current;
       stopLineBeacon();
@@ -4545,7 +4531,7 @@
       body.replaceChildren();
       const intro = document.createElement("p");
       intro.className = "meta";
-      intro.textContent = "План линий → выберите LED или реле → «Найти в щите» → «Это она». LED держим дольше — плавное разжигание.";
+      intro.textContent = "План линий → «Найти в щите» → кружок шагает канал (K1→K2→…) → «Это она», когда увидели свою.";
       body.appendChild(intro);
       const fam = document.createElement("div");
       fam.className = "filters line-beacon-fam";
@@ -4580,14 +4566,19 @@
       if (lineBeacon && lineBeacon.current) {
         const row = linePlan.find((k) => k.id === lineBeacon.id);
         const kindRu = lineBeacon.current.kind === "led" ? "LED" : "реле";
-        const hold = Math.round(beaconHoldMs(lineBeacon.current) / 100) / 10;
-        status.textContent = "Маяк «"
+        const n = ((lineBeacon.idx - 1) % Math.max(1, lineBeacon.candidates.length)) + 1;
+        status.textContent = "Горит «"
           + (row ? row.room + " · " + row.label : "линия")
           + "» · " + kindRu + " "
           + lineBeacon.current.deviceTopicKey + "/" + lineBeacon.current.controlId
-          + " · " + hold + "с · "
-          + ((lineBeacon.idx - 1) % Math.max(1, lineBeacon.candidates.length) + 1)
-          + "/" + lineBeacon.candidates.length;
+          + " · " + n + "/" + lineBeacon.candidates.length
+          + " · ещё нажатие → следующий";
+        status.classList.add("live");
+      } else if (lineBeacon) {
+        const row = linePlan.find((k) => k.id === lineBeacon.id);
+        status.textContent = "Маяк «"
+          + (row ? row.room + " · " + row.label : "линия")
+          + "» · нажмите кружок — включится 1/" + lineBeacon.candidates.length;
         status.classList.add("live");
       } else {
         const unbound = linePlan.filter((k) => !k.deviceTopicKey).length;
@@ -4598,27 +4589,44 @@
       }
       body.appendChild(status);
       if (lineBeacon) {
+        const pad = document.createElement("div");
+        pad.className = "line-beacon-pad";
+        const circle = document.createElement("button");
+        circle.type = "button";
+        circle.className = "line-beacon-circle" + (lineBeacon.current ? " on" : "");
+        circle.disabled = Boolean(lineBeacon.busy);
+        const total = Math.max(1, lineBeacon.candidates.length);
+        if (lineBeacon.current) {
+          const n = ((lineBeacon.idx - 1) % total) + 1;
+          circle.innerHTML = "<span></span><span class=\"n\"></span>";
+          circle.querySelector("span").textContent = lineBeacon.current.controlId;
+          circle.querySelector(".n").textContent = n + " / " + total + " · далее";
+        } else {
+          circle.innerHTML = "<span></span><span class=\"n\"></span>";
+          circle.querySelector("span").textContent = "▶";
+          circle.querySelector(".n").textContent = "вкл 1 / " + total;
+        }
+        circle.title = lineBeacon.current
+          ? "Выключить текущий и включить следующий"
+          : "Включить первый канал";
+        circle.addEventListener("click", () => { void stepLineBeacon(); });
+        pad.appendChild(circle);
         const bar = document.createElement("div");
         bar.className = "key-plan-actions line-beacon-bar";
         const hit = document.createElement("button");
         hit.type = "button";
         hit.className = "ghost key-add-all";
         hit.textContent = "Это она!";
+        hit.disabled = !lineBeacon.current || Boolean(lineBeacon.busy);
         hit.addEventListener("click", () => confirmLineBeacon());
-        const skip = document.createElement("button");
-        skip.type = "button";
-        skip.className = "ghost";
-        skip.textContent = "Не та →";
-        skip.addEventListener("click", () => {
-          if (lineBeacon && typeof lineBeacon.advance === "function") lineBeacon.advance();
-        });
         const stop = document.createElement("button");
         stop.type = "button";
         stop.className = "ghost";
-        stop.textContent = "Стоп маяк";
+        stop.textContent = "Стоп";
         stop.addEventListener("click", () => { stopLineBeacon(); renderMark(); });
-        bar.append(hit, skip, stop);
-        body.appendChild(bar);
+        bar.append(hit, stop);
+        pad.appendChild(bar);
+        body.appendChild(pad);
       }
       const addBox = document.createElement("div");
       addBox.className = "key-plan-add glass";
@@ -4714,12 +4722,19 @@
           const act = document.createElement("div");
           act.className = "key-act";
           if (lineBeacon && lineBeacon.id === k.id) {
+            const next = document.createElement("button");
+            next.type = "button";
+            next.className = "ghost key-scan-btn";
+            next.textContent = lineBeacon.current ? "Далее →" : "Вкл →";
+            next.disabled = Boolean(lineBeacon.busy);
+            next.addEventListener("click", () => { void stepLineBeacon(); });
             const hit = document.createElement("button");
             hit.type = "button";
             hit.className = "ghost key-scan-btn";
             hit.textContent = "Это она";
+            hit.disabled = !lineBeacon.current || Boolean(lineBeacon.busy);
             hit.addEventListener("click", () => confirmLineBeacon());
-            act.appendChild(hit);
+            act.append(next, hit);
           } else {
             const find = document.createElement("button");
             find.type = "button";
