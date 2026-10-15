@@ -492,14 +492,28 @@
     }
     .key-plan-add {
       display: grid;
-      grid-template-columns: 1fr 1fr auto;
-      gap: .4rem;
+      grid-template-columns: 1fr;
+      gap: .45rem;
       padding: .65rem .7rem;
       margin: .35rem 0 .75rem;
       border-radius: .85rem;
     }
-    @media (max-width: 640px) {
-      .key-plan-add { grid-template-columns: 1fr; }
+    .key-plan-add .key-labels {
+      min-height: 5.5rem;
+      resize: vertical;
+      font: inherit;
+      line-height: 1.4;
+    }
+    .key-plan-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: .4rem;
+      align-items: center;
+    }
+    .key-add-all {
+      color: rgb(186 230 253) !important;
+      border-color: rgb(var(--sky) / .4) !important;
+      font-weight: 650 !important;
     }
     .key-scan-status.live {
       color: rgb(186 230 253);
@@ -514,11 +528,24 @@
     }
     .key-room > summary {
       cursor: pointer; list-style: none;
+      display: flex; align-items: center; justify-content: space-between; gap: .5rem;
       font-size: .82rem; font-weight: 650;
       color: rgb(186 230 253);
       padding: .4rem 0;
     }
     .key-room > summary::-webkit-details-marker { display: none; }
+    .key-room-title { flex: 1; min-width: 0; }
+    .key-room-plus {
+      flex: none;
+      width: 1.85rem; height: 1.85rem;
+      padding: 0 !important;
+      border-radius: 999px !important;
+      font-size: 1.1rem !important;
+      font-weight: 700 !important;
+      line-height: 1 !important;
+      color: rgb(186 230 253) !important;
+      border-color: rgb(var(--sky) / .35) !important;
+    }
     .key-list { margin: 0; padding: 0 0 0 0; list-style: none; }
     .key-row {
       display: flex; align-items: center; gap: .5rem;

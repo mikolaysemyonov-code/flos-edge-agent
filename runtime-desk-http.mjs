@@ -42,6 +42,7 @@ import {
   deleteDeskKeyPlanItem,
   listDeskKeyPlan,
   replaceDeskKeyPlan,
+  upsertDeskKeyPlanBatch,
   upsertDeskKeyPlanItem,
 } from "./runtime-desk-key-scan.mjs";
 
@@ -315,6 +316,11 @@ export async function handleRuntimeDeskKeyPlan(req, res) {
   }
   if (method !== "PUT" && method !== "POST") {
     jsonEnd(res, 405, { ok: false, error: "method" });
+    return;
+  }
+  if (Array.isArray(body.labels) || typeof body.labelsText === "string") {
+    const out = upsertDeskKeyPlanBatch(body);
+    jsonEnd(res, out.ok ? 200 : 400, out);
     return;
   }
   const out = upsertDeskKeyPlanItem(body);

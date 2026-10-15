@@ -17,6 +17,7 @@
     let keyScan = null; /* { id, need, count, hitKey, baseline, prevClosed } */
     let keyScanTimer = 0;
     let keyRoomFilter = "";
+    let keyPlanFocus = false; /* после «+» вернуть фокус в поле подписей */
     let openAssign = "";
     let deskCatalog = [];
     let deskSolutions = [];
@@ -4168,11 +4169,35 @@
       });
       return [...byKey.values()];
     }
+    function nextKeyLabelForRoom(room) {
+      const n = keyPlan.filter((k) => k.room === room).length + 1;
+      return "клавиша " + n;
+    }
+    function postKeyPlanLabels(room, labelsText, done) {
+      const roomName = String(room || "").trim();
+      const text = String(labelsText || "").trim();
+      if (!roomName || !text) return;
+      fetch("/runtime/desk-key-plan", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ room: roomName, labelsText: text }),
+      })
+        .then((r) => r.json())
+        .then((j) => {
+          if (j && j.ok) {
+            keyPlan = j.keyPlan || [];
+            keyRoomFilter = roomName;
+            keyPlanFocus = true;
+            if (typeof done === "function") done(j);
+            renderMark();
+          }
+        });
+    }
     function renderKeyScanPanel(body) {
       body.replaceChildren();
       const intro = document.createElement("p");
       intro.className = "meta";
-      intro.textContent = "План комнаты → «Сканировать» → нажмите клавишу 3 раза. Канал MCM8/WD14 подпишется сам.";
+      intro.textContent = "Сначала весь план комнат (по строке на клавишу) → потом обход: «Сканировать» ×3. Канал MCM8/WD14 сам.";
       body.appendChild(intro);
       const status = document.createElement("p");
       status.className = "meta key-scan-status";
@@ -4185,7 +4210,10 @@
           + (keyScan.hitKey ? " · " + keyScan.hitKey.replace("::", "/") : "");
         status.classList.add("live");
       } else {
-        status.textContent = "Готово к скану. Выберите клавишу ниже.";
+        const unbound = keyPlan.filter((k) => !k.deviceTopicKey).length;
+        status.textContent = unbound
+          ? ("В плане " + keyPlan.length + ", без привязки " + unbound + " — можно сканировать.")
+          : "Готово к плану. Комната → список клавиш → «+ Добавить».";
       }
       body.appendChild(status);
       const addBox = document.createElement("div");
@@ -4194,39 +4222,59 @@
       roomInp.className = "bind";
       roomInp.placeholder = "Комната (Спальня)";
       roomInp.value = keyRoomFilter || "";
-      const labInp = document.createElement("input");
-      labInp.className = "bind";
-      labInp.placeholder = "Подпись клавиши (вход основное)";
+      roomInp.setAttribute("aria-label", "Комната");
+      const labInp = document.createElement("textarea");
+      labInp.className = "bind key-labels";
+      labInp.rows = 4;
+      labInp.placeholder = "Клавиши — по одной на строку\nклавиша 1 основное\nклавиша 2 бра у кровати\nсценарная у кровати";
+      labInp.setAttribute("aria-label", "Подписи клавиш");
+      const addRow = document.createElement("div");
+      addRow.className = "key-plan-actions";
       const addBtn = document.createElement("button");
       addBtn.type = "button";
-      addBtn.className = "ghost";
-      addBtn.textContent = "Добавить в план";
-      addBtn.addEventListener("click", () => {
+      addBtn.className = "ghost key-add-all";
+      addBtn.textContent = "+ Добавить все";
+      const plusOne = document.createElement("button");
+      plusOne.type = "button";
+      plusOne.className = "ghost";
+      plusOne.title = "Одна следующая клавиша в этой комнате";
+      plusOne.textContent = "+1";
+      const submit = () => {
+        postKeyPlanLabels(roomInp.value, labInp.value, () => {
+          labInp.value = "";
+        });
+      };
+      addBtn.addEventListener("click", submit);
+      plusOne.addEventListener("click", () => {
         const room = String(roomInp.value || "").trim();
-        const label = String(labInp.value || "").trim();
-        if (!room || !label) return;
-        fetch("/runtime/desk-key-plan", {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({ room, label }),
-        })
-          .then((r) => r.json())
-          .then((j) => {
-            if (j && j.ok) {
-              keyPlan = j.keyPlan || [];
-              keyRoomFilter = room;
-              labInp.value = "";
-              renderMark();
-            }
-          });
+        if (!room) {
+          roomInp.focus();
+          return;
+        }
+        postKeyPlanLabels(room, nextKeyLabelForRoom(room), () => {
+          labInp.value = "";
+        });
       });
-      addBox.append(roomInp, labInp, addBtn);
+      labInp.addEventListener("keydown", (e) => {
+        if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
+          e.preventDefault();
+          submit();
+        }
+      });
+      addRow.append(addBtn, plusOne);
+      addBox.append(roomInp, labInp, addRow);
       body.appendChild(addBox);
+      if (keyPlanFocus) {
+        keyPlanFocus = false;
+        setTimeout(() => {
+          labInp.focus();
+        }, 30);
+      }
       const rooms = [...new Set(keyPlan.map((k) => k.room))].sort((a, b) => a.localeCompare(b, "ru"));
       if (!rooms.length) {
         const empty = document.createElement("p");
         empty.className = "meta orphan";
-        empty.textContent = "План пуст — добавьте комнату и подписи клавиш.";
+        empty.textContent = "План пуст — впишите комнату и все клавиши списком, затем «+ Добавить все».";
         body.appendChild(empty);
         return;
       }
@@ -4237,7 +4285,21 @@
         const sum = document.createElement("summary");
         const keys = keyPlan.filter((k) => k.room === room);
         const bound = keys.filter((k) => k.deviceTopicKey).length;
-        sum.textContent = room + " · " + bound + "/" + keys.length;
+        const head = document.createElement("span");
+        head.className = "key-room-title";
+        head.textContent = room + " · " + bound + "/" + keys.length;
+        const roomPlus = document.createElement("button");
+        roomPlus.type = "button";
+        roomPlus.className = "ghost key-room-plus";
+        roomPlus.textContent = "+";
+        roomPlus.title = "Ещё клавиша в «" + room + "»";
+        roomPlus.addEventListener("click", (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          keyRoomFilter = room;
+          postKeyPlanLabels(room, nextKeyLabelForRoom(room));
+        });
+        sum.append(head, roomPlus);
         det.appendChild(sum);
         const list = document.createElement("ol");
         list.className = "key-list";

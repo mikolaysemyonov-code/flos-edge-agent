@@ -125,6 +125,35 @@ export function upsertDeskKeyPlanItem(input) {
   return { ok: true, key: next, keyPlan: listDeskKeyPlan() };
 }
 
+/** Несколько подписей в одну комнату за раз (план до обхода сканом). */
+export function upsertDeskKeyPlanBatch(input) {
+  const room = cleanRoom(input?.room);
+  if (!room) return { ok: false, error: "need_room_label" };
+  const raw = Array.isArray(input?.labels)
+    ? input.labels
+    : String(input?.labelsText || input?.label || "")
+        .split(/\r?\n/)
+        .map((s) => s.trim());
+  const labels = [];
+  const seen = new Set();
+  for (const item of raw) {
+    const label = cleanLabel(item);
+    if (!label) continue;
+    const k = label.toLowerCase();
+    if (seen.has(k)) continue;
+    seen.add(k);
+    labels.push(label);
+    if (labels.length >= 40) break;
+  }
+  if (!labels.length) return { ok: false, error: "need_room_label" };
+  let last = { ok: false, error: "need_room_label" };
+  for (const label of labels) {
+    last = upsertDeskKeyPlanItem({ room, label });
+    if (!last.ok) return last;
+  }
+  return { ok: true, added: labels.length, keyPlan: listDeskKeyPlan() };
+}
+
 export function deleteDeskKeyPlanItem(id) {
   const want = String(id || "").trim();
   if (!want) return { ok: false, error: "need_id" };
