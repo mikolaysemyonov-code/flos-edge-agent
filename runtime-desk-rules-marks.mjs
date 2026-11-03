@@ -32,14 +32,10 @@ export function parseCellTitles(source) {
   return titles;
 }
 
-/** Live MQTT id: desk/rules often write wb-mr6c-v3_* / wb-mr6c_*. */
+/** Id, который опубликовала шина. Скан и заливка пишут его как есть. */
 export function liveDeskDeviceKey(raw) {
-  let s = String(raw ?? "").trim().toLowerCase();
-  if (/^wb-mr6c_\d/.test(s)) s = `wb-mr6cu_${s.slice("wb-mr6c_".length)}`;
-  if (/^wb-mr6c-v3_/.test(s)) s = `wb-mr6cv3_${s.slice("wb-mr6c-v3_".length)}`;
-  if (s.startsWith("wb-mrm2_") && !s.startsWith("wb-mrm2-mini_")) {
-    s = `wb-mrm2-mini_${s.slice("wb-mrm2_".length)}`;
-  }
+  const s = String(raw ?? "").trim();
+  if (!s) return "";
   return canonicalDeskShelfKey(s);
 }
 
@@ -391,6 +387,22 @@ export function pouredHintsForContact(rules, deviceTopicKey, controlId) {
   return titles;
 }
 
+/** Сценарии не отрезаем именами каналов: в списке сначала места под правила, остаток — разметка. */
+export const MAX_POURED_RULES = 480;
+
+export function capPouredRules(collapsed) {
+  const rows = Array.isArray(collapsed) ? collapsed : [];
+  const users = rows.filter((r) => r.kind === "user");
+  const marks = rows.filter((r) => r.kind !== "user");
+  const userShown = users.slice(0, MAX_POURED_RULES);
+  const markShown = marks.slice(0, Math.max(0, MAX_POURED_RULES - userShown.length));
+  return {
+    rules: [...markShown, ...userShown],
+    ruleCount: rows.length,
+    rulesOmitted: rows.length - markShown.length - userShown.length,
+  };
+}
+
 export function readPouredDeskSnapshot() {
   const files = listShardFiles();
   const rules = [];
@@ -409,10 +421,12 @@ export function readPouredDeskSnapshot() {
   } catch {
     revisionId = "";
   }
+  const capped = capPouredRules(collapsed);
   return {
     revisionId,
     files: files.map((f) => ({ filename: f.filename, bytes: Buffer.byteLength(f.content, "utf8") })),
-    rules: collapsed.slice(0, 80),
-    ruleCount: collapsed.length,
+    rules: capped.rules,
+    ruleCount: capped.ruleCount,
+    rulesOmitted: capped.rulesOmitted,
   };
 }

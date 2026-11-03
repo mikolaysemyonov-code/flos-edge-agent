@@ -33,18 +33,24 @@ function deviceKeyFromEntry(entry) {
   return m ? m[1] : "";
 }
 
-/** wb-led_176_2 и wb-dali_62_bus_1_0 → канон полки на DIN. */
+/** DALI-шины одного модуля схлопываются. Суффикс _2 — второй модуль, его id не режем. */
 export function parseDeskDeviceKey(raw) {
   const k = String(raw ?? "").trim();
   if (!k) return null;
-  if (/^wb-gpio$/i.test(k)) return { canonical: "wb-gpio", type: "gpio", slave: 0 };
+  if (/^wb-gpio$/i.test(k)) return { canonical: "wb-gpio", type: "gpio", slave: 0, copy: 0 };
   const dali = /^(wb-(?:mdali(?:-3)?|dali))_(\d+)/i.exec(k);
   if (dali) {
-    return { canonical: `${dali[1].toLowerCase()}_${dali[2]}`, type: "dali", slave: Number(dali[2]) };
+    return { canonical: `${dali[1].toLowerCase()}_${dali[2]}`, type: "dali", slave: Number(dali[2]), copy: 0 };
   }
-  const m = /^wb-([a-z0-9-]+)_(\d+)(?:_\d+)?$/i.exec(k);
+  const m = /^wb-([a-z0-9-]+)_(\d+)(?:_(\d+))?$/i.exec(k);
   if (!m) return null;
-  return { canonical: `wb-${m[1].toLowerCase()}_${m[2]}`, type: m[1].toLowerCase(), slave: Number(m[2]) };
+  const copy = m[3] ? Number(m[3]) : 0;
+  return {
+    canonical: `wb-${m[1].toLowerCase()}_${m[2]}${copy ? "_" + copy : ""}`,
+    type: m[1].toLowerCase(),
+    slave: Number(m[2]),
+    copy,
+  };
 }
 
 export function canonicalDeskShelfKey(deviceTopicKey) {
@@ -56,7 +62,8 @@ export function formatDeskShelfLabel(deviceTopicKey) {
   if (!p) return null;
   if (p.type === "gpio") return "GPIO";
   const sku = SKU[p.type] ?? `WB-${p.type.toUpperCase()}`;
-  return `${sku} №${p.slave}`;
+  const base = `${sku} №${p.slave}`;
+  return p.copy ? `${base} · ${p.copy}` : base;
 }
 
 function controlIdOf(entry) {
@@ -216,18 +223,91 @@ export function groupDeskShelves(entries) {
     });
 }
 
-/** Обрезанный скан (подмножество) не выкидывает уже виденные полки. */
+/**
+ * Сырой или частичный снимок дополняет уже виденные полки и каналы.
+ * Не заменяет щит урезанным ответом.
+ */
+export function unionDeskShelves(prev, next) {
+  const by = new Map();
+  for (const s of Array.isArray(prev) ? prev : []) {
+    if (!s?.deviceTopicKey) continue;
+    by.set(s.deviceTopicKey, {
+      ...s,
+      channels: (Array.isArray(s.channels) ? s.channels : []).map((c) => ({ ...c })),
+    });
+  }
+  for (const n of Array.isArray(next) ? next : []) {
+    if (!n?.deviceTopicKey) continue;
+    const old = by.get(n.deviceTopicKey);
+    if (!old) {
+      by.set(n.deviceTopicKey, n);
+      continue;
+    }
+    const channels = old.channels.slice();
+    const idx = new Map(channels.map((c, i) => [c.controlId, i]));
+    for (const c of Array.isArray(n.channels) ? n.channels : []) {
+      if (!c?.controlId) continue;
+      const i = idx.get(c.controlId);
+      if (i == null) {
+        channels.push({ ...c });
+        continue;
+      }
+      const row = { ...channels[i], ...c };
+      if (!Object.prototype.hasOwnProperty.call(c, "lastValue") && Object.prototype.hasOwnProperty.call(channels[i], "lastValue")) {
+        row.lastValue = channels[i].lastValue;
+      }
+      channels[i] = row;
+    }
+    by.set(n.deviceTopicKey, { ...old, ...n, channelCount: channels.length, channels });
+  }
+  return [...by.values()];
+}
+
+/** Модули с /devices/…/meta/error = 1. Молчащий адрес важнее непривязанной клавиши. */
+export function countOfflineDevices(entries) {
+  let n = 0;
+  for (const e of entries || []) {
+    if (e?.controlId !== "__device_meta_error") continue;
+    const v = e.lastValue;
+    if (v === 1 || v === true || v === "1" || v === "true") n += 1;
+  }
+  return n;
+}
+
+/** Сколько модулей и каналов прошлого снимка нет в новом. */
+export function deskScanGap(prev, next) {
+  const prevArr = Array.isArray(prev) ? prev : [];
+  const nextArr = Array.isArray(next) ? next : [];
+  const nextBy = new Map();
+  for (const s of nextArr) {
+    if (s?.deviceTopicKey) nextBy.set(s.deviceTopicKey, s);
+  }
+  let modulesMissing = 0;
+  let channelsMissing = 0;
+  for (const s of prevArr) {
+    if (!s?.deviceTopicKey) continue;
+    const n = nextBy.get(s.deviceTopicKey);
+    if (!n) {
+      modulesMissing += 1;
+      continue;
+    }
+    const have = new Set((Array.isArray(n.channels) ? n.channels : []).map((c) => c?.controlId).filter(Boolean));
+    for (const c of Array.isArray(s.channels) ? s.channels : []) {
+      if (c?.controlId && !have.has(c.controlId)) channelsMissing += 1;
+    }
+  }
+  return { modulesMissing, channelsMissing, short: modulesMissing > 0 || channelsMissing > 0 };
+}
+
+/**
+ * Пока в новом снимке нет каждого модуля и канала прошлого полного, щит не подменяется.
+ * Новый модуль добавляется. Полная замена — только когда прошлые адреса и каналы на месте.
+ */
 export function rememberDeskShelves(prev, next) {
   const prevArr = Array.isArray(prev) ? prev : [];
   const nextArr = Array.isArray(next) ? next : [];
   if (!nextArr.length) return prevArr;
   if (!prevArr.length) return nextArr;
-  const prevKeys = new Set(prevArr.map((s) => s.deviceTopicKey));
-  const nextKeys = new Set(nextArr.map((s) => s.deviceTopicKey));
-  let missing = 0;
-  for (const k of prevKeys) if (!nextKeys.has(k)) missing += 1;
-  let extra = 0;
-  for (const k of nextKeys) if (!prevKeys.has(k)) extra += 1;
-  if (!(missing > 0 && extra === 0 && nextKeys.size < prevKeys.size)) return nextArr;
-  return nextArr.concat(prevArr.filter((s) => !nextKeys.has(s.deviceTopicKey)));
+  if (deskScanGap(prevArr, nextArr).short) return unionDeskShelves(prevArr, nextArr);
+  return nextArr;
 }

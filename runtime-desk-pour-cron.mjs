@@ -2,6 +2,7 @@
  * Расписание со стола → defineRule({ cron: "m h * * *" }).
  * Время контроллера (Wirenboard); сумерки/рассвет — фиксированные часы, не астрономия.
  */
+import { wbActuatorSetLines } from "./runtime-desk-pour-light.mjs";
 import { liveDeskDeviceKey } from "./runtime-desk-rules-marks.mjs";
 
 const CRON_ON = new Set([
@@ -57,17 +58,12 @@ function defaultsFor(sid) {
   return { hh: 12, mm: 0, level: 100 };
 }
 
-function payloadOf(pct) {
-  const want = Math.max(0, Math.min(100, Number(pct) || 0));
-  return want <= 0 ? 0 : want >= 100 ? 1 : want;
-}
-
-function emitSet(sol, cron, payload) {
+function emitSet(sol, cron, pct) {
   const loads = (sol.targets || []).map(pathOf).filter(Boolean);
   if (!cron || !loads.length) return "";
   const id = "desk_sol_" + sol.id + "_cron";
   const sets = loads
-    .map((p) => `      wbActuatorSet(${esc(p)}, ${payload}, ${esc(id)}, 55);`)
+    .flatMap((p) => wbActuatorSetLines(p, pct, id, 55).map((line) => "      " + line))
     .join("\n");
   return [
     `defineRule(${esc(id)}, {`,
@@ -116,5 +112,5 @@ export function emitDeskCron(sol) {
   if (CRON_CURTAIN_OPEN.has(sid)) return emitCurtainCron(sol, cron, "open");
   if (CRON_OFF.has(sid)) return emitSet(sol, cron, 0);
   const level = num(sol.params, "level", d.level ?? 100);
-  return emitSet(sol, cron, payloadOf(level));
+  return emitSet(sol, cron, level);
 }

@@ -107,11 +107,11 @@ export function filesSavedAt(files) {
   return t ? new Date(t).toISOString() : "";
 }
 
-/** fnv1a32:f36878e3 → f36878e3 */
+/** sha256:<64> или старый fnv1a32:<8> → первые 8 hex. */
 export function shortRevisionId(revisionId) {
   const s = String(revisionId || "").trim();
   if (!s) return "";
-  const m = /^(?:fnv1a32:)?([a-f0-9]{6,})$/i.exec(s);
+  const m = /^(?:fnv1a32:|sha256:)?([a-f0-9]{6,})$/i.exec(s);
   if (m) return m[1].slice(0, 8).toLowerCase();
   return s.length > 14 ? s.slice(-8) : s;
 }

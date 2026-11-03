@@ -1,6 +1,8 @@
 /**
  * Сцены / шторы / охрана со стола → defineRule (кнопка → уровни на линиях).
  */
+import { deskButtonCounter } from "./runtime-desk-marking.mjs";
+import { wbActuatorSetLines } from "./runtime-desk-pour-light.mjs";
 import { liveDeskDeviceKey } from "./runtime-desk-rules-marks.mjs";
 
 /** Уровень света 0…100; реле трактует как on/off. */
@@ -9,6 +11,7 @@ const SCENE_LEVEL = {
   scene_vacation: 0,
   scene_good_night: 0,
   scene_day: 0,
+  scene_come_home: 100,
   scene_home: 100,
   scene_morning: 80,
   scene_evening: 60,
@@ -44,10 +47,10 @@ function pathOf(c) {
 }
 
 function triggerWhen(trig) {
-  const p = pathOf(trig);
-  if (!p) return "";
-  if (/\/Input \d+$/i.test(p)) return p + " Short Press Counter";
-  return p;
+  const dev = liveDeskDeviceKey(trig?.deviceTopicKey);
+  const cid = deskButtonCounter(trig?.controlId, "Short");
+  if (!dev || !cid) return "";
+  return dev + "/" + cid;
 }
 
 function sceneLevel(sol, fallback) {
@@ -62,12 +65,6 @@ function clampPct(n, fallback) {
   return fallback;
 }
 
-/** 0 → off; 100 → on (реле); иначе % для диммера. */
-function actuatorPayload(pct) {
-  const want = clampPct(pct, 0);
-  return want <= 0 ? 0 : want >= 100 ? 1 : want;
-}
-
 /**
  * Уровень на линию: target.level → params.level → дефолт сцены.
  * Кино: люстра 0%, бра 15%, подсветка 40% — без трёх отдельных карточек.
@@ -79,10 +76,10 @@ function emitLevels(sol, level) {
   const id = "desk_sol_" + sol.id + "_scene";
   const fallback = sceneLevel(sol, level);
   const sets = targets
-    .map((t) => {
+    .flatMap((t) => {
       const p = pathOf(t);
       const pct = clampPct(t.level, fallback);
-      return `      wbActuatorSet(${esc(p)}, ${actuatorPayload(pct)}, ${esc(id)}, 55);`;
+      return wbActuatorSetLines(p, pct, id, 55).map((line) => "      " + line);
     })
     .join("\n");
   return [

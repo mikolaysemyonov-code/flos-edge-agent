@@ -22,6 +22,10 @@ import {
   staleGhostIds,
 } from "./runtime-desk-pour-stale.mjs";
 import { hideFormLogicOsGhostsNow } from "./runtime-desk-pour-mqtt.mjs";
+import { preserveDeskRules } from "./runtime-desk-pour-user.mjs";
+import { buildDeskPassportXlsx } from "./runtime-desk-passport.mjs";
+import { readDeskDocument, replaceDeskDocument } from "./runtime-desk-marking.mjs";
+import { findContinuousOutputClash, findScheduleOutputClash } from "./runtime-desk-solutions.mjs";
 import {
   buildDeskPourPackage,
   assessDeskCanPour,
@@ -36,6 +40,7 @@ import {
   handleRuntimeDeskSolutions,
   handleRuntimeFieldCert,
   handleRuntimeMqttScan,
+  readLastDeskShelves,
   serveCommissionDesk,
   serveCommissionDeskFile,
 } from "./runtime-desk-http.mjs";
@@ -271,6 +276,69 @@ function writeReleaseHash(revisionId) {
   }
 }
 
+function hostShell(cmd, timeoutMs) {
+  const attempts = [
+    `nsenter --target 1 --mount --uts --ipc --net --pid -- ${cmd}`,
+    cmd,
+  ];
+  for (const attempt of attempts) {
+    try {
+      return execSync(attempt, {
+        encoding: "utf8",
+        timeout: timeoutMs,
+        stdio: ["ignore", "pipe", "ignore"],
+      });
+    } catch (err) {
+      const stdout = err && typeof err === "object" && "stdout" in err ? String(err.stdout || "") : "";
+      if (stdout.trim()) return stdout;
+    }
+  }
+  return "";
+}
+
+/**
+ * После рестарта wb-rules: active и без SyntaxError в хвосте журнала.
+ * Рестарт сбрасывает таймеры и удержания — это отдельная строка ответа.
+ */
+export function proveWbRulesEngine(opts = {}) {
+  const restarted = opts.restarted === true;
+  if (!restarted) {
+    return { accepted: false, active: false, syntaxError: false, timersReset: false, reason: "not_restarted" };
+  }
+  const run = typeof opts.run === "function" ? opts.run : hostShell;
+  const pause = typeof opts.sleep === "function" ? opts.sleep : (ms) => {
+    try {
+      execSync(`sleep ${Math.max(0.05, Number(ms) / 1000)}`, { stdio: "ignore" });
+    } catch {
+      /* no sleep */
+    }
+  };
+  const deadline = Date.now() + (Number(opts.timeoutMs) > 0 ? Number(opts.timeoutMs) : 8_000);
+  let active = false;
+  while (Date.now() < deadline) {
+    const out = String(run("systemctl is-active wb-rules || systemctl is-active wb-rules@default || true", 2_000) || "");
+    if (out.split("\n").some((line) => line.trim() === "active")) {
+      active = true;
+      break;
+    }
+    pause(300);
+  }
+  const journal = String(
+    run(
+      "journalctl -u wb-rules --since '90 seconds ago' -n 40 --no-pager -o cat || journalctl -u wb-rules@default --since '90 seconds ago' -n 40 --no-pager -o cat || true",
+      2_000,
+    ) || "",
+  );
+  const syntaxError = /SyntaxError/.test(journal);
+  return {
+    accepted: active && !syntaxError,
+    active,
+    syntaxError,
+    timersReset: true,
+    reason: !active ? "engine_not_active" : syntaxError ? "engine_syntax" : "accepted",
+  };
+}
+
 export function restartWbRules() {
   // pid:host + privileged: systemctl на host; иначе nsenter в PID 1 (Wiren Board).
   const cmds = [
@@ -303,9 +371,21 @@ function validateShardFilename(filename) {
   }
 }
 
+function keepDeskRulesOnWrite(target, content) {
+  const base = path.basename(target);
+  if (!/^40_rules.*\.js$/i.test(base)) return content;
+  let prev = "";
+  try {
+    prev = fs.readFileSync(target, "utf8");
+  } catch {
+    prev = "";
+  }
+  return preserveDeskRules(prev, content);
+}
+
 export function applyMonolithScript(script, revisionId) {
   const target = wbRulesDeployPath();
-  atomicWriteFile(target, script);
+  atomicWriteFile(target, keepDeskRulesOnWrite(target, script));
   writeReleaseHash(revisionId);
   const restarted = restartWbRules();
   return { deployPath: target, ackCount: 1, deployMode: "monolith", restarted: restarted != null };
@@ -313,6 +393,7 @@ export function applyMonolithScript(script, revisionId) {
 
 export function applyShardBundle(shards, loadOrder, revisionId, options = {}) {
   const preserveOtherShards = options?.preserveOtherShards === true;
+  const preserveDeskRuleBlocks = options?.preserveDeskRules === true;
   const deployDir = wbRulesDeployDir();
   const byName = new Map(shards.map((s) => [s.filename, s.content]));
   const order =
@@ -322,10 +403,12 @@ export function applyShardBundle(shards, loadOrder, revisionId, options = {}) {
     const content = byName.get(filename);
     if (content == null) continue;
     validateShardFilename(filename);
-    if (Buffer.byteLength(content, "utf8") > MAX_SCRIPT_BYTES) {
+    const target = path.join(deployDir, filename);
+    const body = preserveDeskRuleBlocks ? keepDeskRulesOnWrite(target, content) : content;
+    if (Buffer.byteLength(body, "utf8") > MAX_SCRIPT_BYTES) {
       throw new Error(`Shard ${filename} exceeds size limit`);
     }
-    atomicWriteFile(path.join(deployDir, filename), content);
+    atomicWriteFile(target, body);
     ackCount += 1;
   }
   if (ackCount === 0) throw new Error("No shards written");
@@ -488,7 +571,10 @@ export async function handleRuntimeApply(req, res) {
   try {
     backupCurrentStateBeforeApply();
     const result = useShards
-      ? applyShardBundle(shards, loadOrder, revisionId, { preserveOtherShards })
+      ? applyShardBundle(shards, loadOrder, revisionId, {
+          preserveOtherShards,
+          preserveDeskRules: true,
+        })
       : applyMonolithScript(script, revisionId);
     console.log(
       `[runtime-control-plane] applied revision=${revisionId} mode=${result.deployMode} acks=${result.ackCount}`,
@@ -540,20 +626,91 @@ export function handleRuntimeReleases(_req, res) {
   });
 }
 
+function sha256Text(text) {
+  return crypto.createHash("sha256").update(String(text ?? ""), "utf8").digest("hex");
+}
+
+function proveShardsOnDisk(shards) {
+  const files = [];
+  for (const s of shards || []) {
+    let onDisk = null;
+    try {
+      onDisk = fs.readFileSync(path.join(wbRulesDeployDir(), s.filename), "utf8");
+    } catch {
+      onDisk = null;
+    }
+    const sha256 = onDisk == null ? null : sha256Text(onDisk);
+    files.push({
+      filename: s.filename,
+      sha256,
+      match: sha256 != null && sha256 === sha256Text(s.content),
+    });
+  }
+  return { ok: files.length > 0 && files.every((f) => f.match), files };
+}
+
+function ruleDiskRows(content, ids) {
+  const text = String(content || "");
+  return (ids || []).map((id) => {
+    const re = new RegExp(`// desk_sol_owner:${id}\\n([\\s\\S]*?)// desk_sol_end:${id}`);
+    const m = re.exec(text);
+    const onDisk = Boolean(m) || text.includes(`desk_sol_${id}`);
+    return {
+      id,
+      onDisk,
+      bodySha256: m ? sha256Text(m[1]) : null,
+    };
+  });
+}
+
 export async function handleRuntimeDeskPour(req, res) {
   const { buildDeskMqttRepairPlan, normalizePourScope } = await import("./runtime-desk-pour.mjs");
+  const MAX_SOLUTION_IDS = 480;
   let scope = "all";
+  let solutionIds = [];
+  let body;
+  try {
+    body = await readJsonBody(req, 256_000);
+  } catch (err) {
+    const code = err instanceof Error && err.message === "BODY_TOO_LARGE" ? "body_too_large" : "bad_json";
+    jsonWrite(res, 400, { ok: false, error: code });
+    return;
+  }
   try {
     const url = new URL(req.url || "/runtime/desk-pour", "http://local");
-    if (url.searchParams.get("scope")) scope = normalizePourScope(url.searchParams.get("scope"));
-    else {
-      const body = await readJsonBody(req, 4096).catch(() => ({}));
-      if (body && body.scope) scope = normalizePourScope(body.scope);
+    const rawScope = url.searchParams.get("scope") || (body && body.scope);
+    if (rawScope) scope = normalizePourScope(rawScope);
+    if (body && Array.isArray(body.solutionIds)) {
+      const all = body.solutionIds.map((id) => String(id || "").trim()).filter(Boolean);
+      if (all.length > MAX_SOLUTION_IDS) {
+        jsonWrite(res, 400, {
+          ok: false,
+          error: "solution_ids_over_cap",
+          cap: MAX_SOLUTION_IDS,
+          sent: all.length,
+        });
+        return;
+      }
+      solutionIds = all;
     }
   } catch {
-    scope = "all";
+    jsonWrite(res, 400, { ok: false, error: "bad_json" });
+    return;
   }
-  let pkg = buildDeskPourPackage(scope);
+  if (solutionIds.length) scope = "rules";
+  let pkg = buildDeskPourPackage(scope, { solutionIds });
+  if (pkg.error === "output_busy" || pkg.error === "output_schedule" || pkg.error === "marking_unreadable") {
+    jsonWrite(res, 409, {
+      ok: false,
+      canPour: false,
+      scope,
+      error: pkg.error,
+      reason: pkg.reason,
+      deviceTopicKey: pkg.deviceTopicKey,
+      controlId: pkg.controlId,
+    });
+    return;
+  }
   let usedMqttOnly = false;
   // MQTT-hide только для names/all — иначе «Залить сценарии» не должно чинить ядро взамен.
   if ((!pkg.ok || !pkg.canPour || !pkg.shards?.length) && scope !== "rules") {
@@ -617,23 +774,55 @@ export async function handleRuntimeDeskPour(req, res) {
       "";
     const activeIds = pkg.activeIds?.length ? pkg.activeIds : extractFormLogicOsCellIds(coreNow);
     const mqttHide = await hideFormLogicOsGhostsNow(activeIds, pkg.removedIds || []);
+    const disk = proveShardsOnDisk(pkg.shards);
+    const userFile = disk.files.find((f) => f.filename === "40_rules_user.js");
+    let userText = "";
+    if (userFile) {
+      try {
+        userText = fs.readFileSync(path.join(wbRulesDeployDir(), "40_rules_user.js"), "utf8");
+      } catch {
+        userText = "";
+      }
+    }
     console.log(
-      `[runtime-control-plane] desk-pour revision=${pkg.revisionId} acks=${result.ackCount} mqtt=${mqttHide.published} ghosts=${mqttHide.ghosts}`,
+      `[runtime-control-plane] desk-pour revision=${pkg.revisionId} acks=${result.ackCount} mqtt=${mqttHide.published} ghosts=${mqttHide.ghosts} disk=${disk.ok}`,
     );
-    jsonWrite(res, 200, {
-      ok: true,
-      status: "applied",
+    const wroteDisk = Boolean(pkg.shards?.length);
+    const diskOk = wroteDisk ? disk.ok === true : true;
+    const engine = wroteDisk
+      ? proveWbRulesEngine({ restarted: result.restarted === true })
+      : { accepted: true, active: false, syntaxError: false, timersReset: false, reason: "no_write" };
+    const pourOk = diskOk && engine.accepted === true;
+    const pourError = !diskOk ? "disk_mismatch" : !engine.accepted ? engine.reason : undefined;
+    jsonWrite(res, pourOk ? 200 : 409, {
+      ok: pourOk,
+      status: pourOk ? "applied" : pourError,
+      ...(pourError ? { error: pourError } : {}),
       scope: pkg.scope || scope,
       appliedRevisionId: pkg.revisionId,
       ackCount: result.ackCount,
       deployMode: result.deployMode,
       restarted: result.restarted,
       emittedSolutions: pkg.emittedSolutions,
+      solutionIds: pkg.solutionIds || solutionIds,
       namedCount: pkg.namedCount,
       hiddenGhosts: Math.max(pkg.hiddenGhosts || 0, mqttHide.ghosts || 0),
       mqttPublished: mqttHide.published || 0,
       mqttLive: mqttHide.liveCount || 0,
       mqttOnly: usedMqttOnly,
+      disk: {
+        ok: disk.ok,
+        files: disk.files,
+        rules: ruleDiskRows(userText, pkg.solutionIds || solutionIds),
+      },
+      bus: {
+        restarted: result.restarted,
+        engineAccepted: engine.accepted === true,
+        timersReset: engine.timersReset === true,
+        syntaxError: engine.syntaxError === true,
+        mqttPublished: mqttHide.published || 0,
+        mqttLive: mqttHide.liveCount || 0,
+      },
     });
   } catch (err) {
     const message = err instanceof Error ? err.message : "deploy failed";
@@ -676,9 +865,80 @@ export async function handleRuntimeRollback(req, res) {
   }
 }
 
+function deskWriteLocked(method, urlPath) {
+  if (method === "GET" || method === "HEAD") return false;
+  return (
+    urlPath === "/runtime/desk-pour" ||
+    urlPath === "/runtime/desk-solutions" ||
+    urlPath === "/runtime/desk-marking" ||
+    urlPath === "/runtime/desk-marking.json" ||
+    urlPath === "/runtime/desk-actuate" ||
+    urlPath === "/runtime/desk-key-plan" ||
+    urlPath === "/runtime/desk-line-plan" ||
+    urlPath === "/runtime/desk-audit"
+  );
+}
+
 export function runtimeHttpPathHandler(req, res) {
   const method = (req.method ?? "GET").toUpperCase();
   const urlPath = (req.url ?? "/").split("?")[0];
+  if (deskWriteLocked(method, urlPath) && !authorizeRuntimeRequest(req)) {
+    jsonWrite(res, 401, { ok: false, error: "AUTH: invalid or missing bearer token" });
+    return true;
+  }
+  if (method === "GET" && urlPath === "/runtime/desk-passport.xlsx") {
+    const last = readLastDeskShelves();
+    const bytes = buildDeskPassportXlsx(undefined, new Date(), {
+      shelves: last.shelves,
+      scan: last.scan,
+    });
+    res.statusCode = 200;
+    res.setHeader("content-type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+    res.setHeader("content-disposition", "attachment; filename=\"flos-shield-passport.xlsx\"");
+    res.setHeader("cache-control", "no-store");
+    res.end(bytes);
+    return true;
+  }
+  if (method === "GET" && urlPath === "/runtime/desk-marking.json") {
+    const doc = readDeskDocument();
+    if (doc.unreadable) {
+      jsonWrite(res, 409, { ok: false, error: "marking_unreadable" });
+      return true;
+    }
+    const body = JSON.stringify(
+      {
+        version: 3,
+        shelves: doc.shelves,
+        solutions: doc.solutions,
+        rooms: doc.rooms,
+        keyPlan: doc.keyPlan,
+        linePlan: doc.linePlan,
+      },
+      null,
+      2,
+    );
+    res.statusCode = 200;
+    res.setHeader("content-type", "application/json; charset=utf-8");
+    res.setHeader("content-disposition", "attachment; filename=\"stol-shchita.json\"");
+    res.setHeader("cache-control", "no-store");
+    res.end(body + "\n");
+    return true;
+  }
+  if (method === "POST" && urlPath === "/runtime/desk-marking.json") {
+    void (async () => {
+      try {
+        const uploaded = await readJsonBody(req, 2_000_000);
+        const restored = replaceDeskDocument(uploaded);
+        if (restored.ok && findContinuousOutputClash(uploaded.solutions)) restored.outputBusy = true;
+        if (restored.ok && findScheduleOutputClash(uploaded.solutions)) restored.outputSchedule = true;
+        jsonWrite(res, restored.ok ? 200 : 400, restored);
+      } catch (err) {
+        const code = err instanceof Error && err.message === "BODY_TOO_LARGE" ? "too_large" : "bad_json";
+        if (!res.headersSent) jsonWrite(res, 400, { ok: false, error: code });
+      }
+    })();
+    return true;
+  }
   if (method === "GET" && (urlPath === "/" || urlPath === "/desk")) {
     return serveCommissionDesk(req, res);
   }

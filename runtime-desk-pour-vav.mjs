@@ -174,6 +174,16 @@ function emitFanRegister(sol) {
   ].join("\n");
 }
 
+export function emitDeskVavHelper() {
+  return emitHelper();
+}
+
+export function emitDeskVavSolution(sol) {
+  if (!isDeskVavSolution(sol)) return "";
+  if (String(sol?.solutionId || "") === VAV_ZONE) return emitZone(sol);
+  return emitFanRegister(sol);
+}
+
 export function emitDeskVavBlock(solutions) {
   const list = Array.isArray(solutions) ? solutions : [];
   const zones = list.filter((s) => String(s?.solutionId || "") === VAV_ZONE);

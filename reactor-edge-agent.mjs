@@ -7,6 +7,7 @@ import fs from "node:fs";
 import http from "node:http";
 import os from "node:os";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 
 // На объекте AAAA до Vercel часто висит, GitHub при этом жив. Heartbeat — только IPv4.
 dns.setDefaultResultOrder("ipv4first");
@@ -25,13 +26,15 @@ import {
 } from "./runtime-control-plane-http.mjs";
 import { setRuntimeMqttScanHandler } from "./runtime-desk-http.mjs";
 import { isMarkShieldDiscoverableDeviceKey } from "./lib/mark-shield-discoverable-device.mjs";
+import { countOfflineDevices } from "./runtime-desk-shelves.mjs";
+import { assessControllerClock, clockFromHostText } from "./runtime-desk-health.mjs";
 import {
   classifyWbRulesJournalLines,
   splitJournalText,
 } from "./wb-rules-journal-incidents.mjs";
 
 /** Одна строка в heartbeat и snapshot — иначе UI врёт версией. */
-const EDGE_AGENT_VERSION = "edge-pilot-v2.lan-desk-197";
+const EDGE_AGENT_VERSION = "edge-pilot-v2.lan-desk-216";
 
 /** Prefer `FLOS_*` (FL OS); fall back to legacy `REACTOR_*` for existing deployments. */
 function env(primary, legacy) {
@@ -230,6 +233,8 @@ function buildEdgeHostSnapshot() {
     ],
     /** Same as heartbeat agentVersion — survives mqtt-ingest merges. */
     agentVersion: EDGE_AGENT_VERSION,
+    /** Старт этого процесса. Самообновление зелёное только если старт новее команды. */
+    agentBootedAt: new Date(agentProcessStartedAtMs).toISOString(),
     /** True when .integrator-backup has files — Comfort «Откатить» without HTTP probe. */
     canRollback: Boolean(loadBackupManifest()?.files?.length),
     lastJournalScanAt: lastJournalScanAt > 0 ? new Date(lastJournalScanAt).toISOString() : null,
@@ -604,14 +609,51 @@ const JOURNAL_INCIDENT_DEDUP_MS = 30 * 60 * 1000;
 let lastJournalScanAt = 0;
 const JOURNAL_SCAN_INTERVAL_MS = 5 * 60 * 1000;
 
-function readWbRulesJournalTail(lines = 80) {
+function readWbRulesJournalTail(lines = 80, timeoutMs = 15_000) {
   const script = `journalctl -u wb-rules -n ${Number(lines) || 80} --no-pager -o cat 2>/dev/null || journalctl -u wb-rules@default -n ${Number(lines) || 80} --no-pager -o cat 2>/dev/null || true`;
   try {
-    return execOnHostBash(script, 15_000);
+    return execOnHostBash(script, timeoutMs);
   } catch (err) {
     console.warn(`[flos-edge-agent] journalctl wb-rules failed: ${err?.message ?? err}`);
     return "";
   }
+}
+
+let busIncidentCache = { at: 0, items: [] };
+let hostClockCache = { at: 0, clock: null };
+
+function controllerClockForDesk() {
+  const now = Date.now();
+  if (hostClockCache.clock && now - hostClockCache.at < 60_000) return hostClockCache.clock;
+  let text = "";
+  try {
+    text = execSync("nsenter --target 1 --mount --uts --ipc --net --pid -- date -Iseconds", {
+      encoding: "utf8",
+      timeout: 1_500,
+    });
+  } catch {
+    text = "";
+  }
+  const host = clockFromHostText(text);
+  const clock = host || assessControllerClock();
+  hostClockCache = { at: now, clock };
+  return clock;
+}
+
+function busIncidentsForDesk() {
+  const now = Date.now();
+  if (now - busIncidentCache.at < 60_000) return busIncidentCache.items;
+  try {
+    const text = readWbRulesJournalTail(40, 1_500);
+    const items = classifyWbRulesJournalLines(splitJournalText(text))
+      .filter((h) => h.ruleId === "modbus-timeout" || h.ruleId === "modbus-crc")
+      .slice(0, 3)
+      .map((h) => ({ ruleId: h.ruleId, reason: h.reason }));
+    busIncidentCache = { at: now, items };
+  } catch {
+    busIncidentCache = { at: now, items: busIncidentCache.items };
+  }
+  return busIncidentCache.items;
 }
 
 async function scanWbRulesJournalIncidents(reason = "periodic") {
@@ -884,6 +926,7 @@ function buildChunkedOrSingleScanAck(entries, meta) {
     ...(meta?.source ? { source: meta.source } : {}),
     ...(meta?.mirrorReuse === true ? { mirrorReuse: true } : {}),
     ...(meta?.mqttMirror ? { mqttMirror: meta.mqttMirror } : {}),
+    ...(meta?.mirrorTopicCount != null ? { mirrorTopicCount: meta.mirrorTopicCount } : {}),
   };
 
   if (!meta?.chunked || sorted.length <= chunkSize) {
@@ -968,6 +1011,42 @@ function runMqttTopicScanChunkCommand(payload) {
   };
 }
 
+/** Входы и счётчики нажатий — то, что нужно живой привязке клавиш. */
+function isDeskPressControl(controlId) {
+  const c = String(controlId || "");
+  return /^Input\s+/i.test(c) || /^EXT\d+_IN/i.test(c) || /^[A-D]\d+_IN/i.test(c);
+}
+
+/**
+ * Стол должен видеть всю шину. Ack режет пачку на 800, хвост лежит в сессии того же процесса.
+ */
+function assembleMqttScanEntries(ack) {
+  const scan = ack?.details?.mqttTopicScan;
+  if (!scan || !Array.isArray(scan.entries)) return null;
+  const total = Number(scan.chunkTotal) || 1;
+  if (total <= 1 || !scan.scanSessionId) return scan;
+  const entries = scan.entries.slice();
+  let incomplete = false;
+  const limit = Math.min(total, 16);
+  for (let i = 1; i < limit; i += 1) {
+    const chunk = runMqttTopicScanChunkCommand({ sessionId: scan.scanSessionId, chunkIndex: i });
+    const more = chunk?.details?.mqttTopicScan?.entries;
+    if (!Array.isArray(more)) {
+      incomplete = true;
+      break;
+    }
+    entries.push(...more);
+  }
+  if (limit < total) incomplete = true;
+  return {
+    ...scan,
+    entries,
+    entryCount: entries.length,
+    truncated: scan.truncated === true || incomplete,
+    omittedDeviceHint: incomplete ? "desk_chunks_incomplete" : scan.omittedDeviceHint ?? null,
+  };
+}
+
 async function runMqttTopicScanCommand(payload) {
   const host = typeof payload?.host === "string" && payload.host.trim() ? payload.host.trim() : "127.0.0.1";
   const port = Number(payload?.port) > 0 ? Number(payload.port) : 1883;
@@ -1002,13 +1081,20 @@ async function runMqttTopicScanCommand(payload) {
     };
   }
   if (mirrorWarm) {
-    const allEntries = [...mqttMirrorState.entriesByPath.values()];
+    const mirrorEntries = [...mqttMirrorState.entriesByPath.values()];
+    const onlyDevice = typeof payload?.deviceTopicKey === "string" ? payload.deviceTopicKey.trim() : "";
+    const allEntries = onlyDevice
+      ? mirrorEntries.filter((e) => e.deviceTopicKey === onlyDevice)
+      : payload?.inputsOnly === true
+        ? mirrorEntries.filter((e) => isDeskPressControl(e.controlId))
+        : mirrorEntries;
     if (markShield) {
       return buildChunkedOrSingleScanAck(allEntries, {
         brokerLabel: `${host}:${port}`,
         scanMs: 0,
         source: "wb_mqtt_mirror",
         collectedCount: allEntries.length,
+        mirrorTopicCount: mirrorEntries.length,
         chunked: true,
         mqttMirror: mqttMirrorHealth(),
       });
@@ -1343,6 +1429,7 @@ function mqttMirrorHealth() {
     lastError: mqttMirrorState.lastError,
     settled: isMqttMirrorSettledForScan(),
     discoverableDeviceCount: countMirrorDiscoverableDevices(),
+    offlineDeviceCount: countOfflineDevices(mqttMirrorState.entriesByPath.values()),
   };
 }
 
@@ -1699,6 +1786,19 @@ function execOnHostBash(script, timeoutMs = 120_000) {
  *
  * Safety: skip during boot grace / debounce so a failed update cannot immediately re-kill a just-restored agent.
  */
+function readAgentBundleFiles() {
+  try {
+    const here = path.dirname(fileURLToPath(import.meta.url));
+    return fs
+      .readFileSync(path.join(here, "agent-bundle-files.txt"), "utf8")
+      .split("\n")
+      .map((line) => line.replace(/#.*/, "").trim())
+      .filter(Boolean);
+  } catch {
+    return [];
+  }
+}
+
 function runAgentSelfUpdateCommand(payload) {
   const force = payload?.force === true || payload?.force === "true" || payload?.force === 1;
   const uptimeMs = Date.now() - agentProcessStartedAtMs;
@@ -1762,15 +1862,14 @@ TIP_INSTALL=${shellQuoteSingle(tipInstallUrl)}
 GH_INSTALL=${shellQuoteSingle(githubInstallUrl)}
 mkdir -p "$AGENT_DIR/lib" "$DATA_DIR"
 source_ok=0
+BUNDLE=${shellQuoteSingle(readAgentBundleFiles().join(" "))}
 if [[ -n "$CLOUD" ]]; then
   echo "[flos-edge-agent] pulling agent files from cloud tip…"
   set +e
-  for f in Dockerfile entrypoint.sh package.json reactor-edge-agent.mjs runtime-control-plane-http.mjs runtime-desk-http.mjs runtime-desk-shelves.mjs runtime-desk-marking.mjs runtime-desk-solutions.mjs runtime-desk-rules-marks.mjs runtime-desk-releases.mjs runtime-desk-pour.mjs runtime-desk-pour-core.mjs runtime-desk-pour-user.mjs runtime-desk-pour-climate.mjs runtime-desk-pour-light.mjs runtime-desk-pour-scenes.mjs runtime-desk-pour-cron.mjs runtime-desk-actuate.mjs runtime-desk-key-scan.mjs runtime-desk-line-beacon.mjs runtime-desk-health.mjs runtime-desk-audit.mjs runtime-desk-pour-vav.mjs runtime-desk-field-cert.mjs runtime-desk-pour-stale.mjs runtime-desk-pour-mqtt.mjs desk.html desk.css desk.js runtime-rules-inventory.mjs docker-compose.yml wb-rules-journal-incidents.mjs; do
+  for f in $BUNDLE; do
+    mkdir -p "$AGENT_DIR/$(dirname "$f")"
     curl -fsSL "$CLOUD/api/edge-agent/files/$f" -o "$AGENT_DIR/$f" || { echo "fail $f"; source_ok=1; break; }
   done
-  if [[ $source_ok -eq 0 ]]; then
-    curl -fsSL "$CLOUD/api/edge-agent/files/lib/mark-shield-discoverable-device.mjs" -o "$AGENT_DIR/lib/mark-shield-discoverable-device.mjs" || source_ok=1
-  fi
   if [[ $source_ok -eq 0 ]] && ! grep -q 'wb_rules_export' "$AGENT_DIR/reactor-edge-agent.mjs" 2>/dev/null; then
     echo "[flos-edge-agent] cloud file stale (no wb_rules_export) — fallback install.sh"
     source_ok=1
@@ -1817,9 +1916,10 @@ echo "[flos-edge-agent] self-update ensure-up done"
     return {
       ok: true,
       details: {
-        agentSelfUpdate: {
+          agentSelfUpdate: {
           scheduled: true,
           pending_restart: true,
+          proved: false,
           phase: "pending_restart",
           gitRef,
           logPath,
@@ -2077,7 +2177,7 @@ async function executeCommand(command) {
     };
   }
   if (commandType === "safe_clean_logs") {
-    return { ok: true, details: { cleaned: true, target: "system_logs" } };
+    return { ok: false, error: "safe_clean_logs_not_implemented" };
   }
   if (commandType === "drift_remediate") {
     const heal = command.payload?.healPackage ?? command.healPackage ?? null;
@@ -3179,7 +3279,10 @@ async function main() {
     projectId,
     cloudBaseUrl: baseUrl,
     agentVersion: EDGE_AGENT_VERSION,
+    agentBootedAt: new Date(agentProcessStartedAtMs).toISOString(),
+    controllerClock: controllerClockForDesk(),
     mqttMirror: mqttMirrorHealth(),
+    busIncidents: busIncidentsForDesk(),
   }));
   setRuntimeMqttScanHandler(async (body) => {
     // instant / allowUnsettledMirror — снимок зеркала без ожидания settle (live desk).
@@ -3195,21 +3298,36 @@ async function main() {
       markShield: true,
       preferMirror: true,
       allowUnsettledMirror: instant,
+      inputsOnly: body?.inputsOnly === true,
+      deviceTopicKey: typeof body?.deviceTopicKey === "string" ? body.deviceTopicKey : "",
       scanMs,
     });
-    const scan = ack?.details?.mqttTopicScan;
-    if (!Array.isArray(scan?.entries)) {
+    const scan = assembleMqttScanEntries(ack);
+    if (!scan || !Array.isArray(scan.entries)) {
       return { ok: false, error: ack?.error || "no_entries" };
     }
+    const mirror = scan.mqttMirror || {};
     return {
       ok: true,
       brokerLabel: scan.brokerLabel || "127.0.0.1:1883",
+      scan: {
+        truncated: scan.truncated === true,
+        discoverableDeviceCount: scan.discoverableDeviceCount ?? mirror.discoverableDeviceCount ?? null,
+        topicCount: scan.mirrorTopicCount ?? scan.collectedCount ?? scan.entries.length,
+        omittedDeviceHint: scan.omittedDeviceHint || null,
+        inputsOnly: body?.inputsOnly === true,
+        settled: mirror.settled === true,
+        offlineDeviceCount: Number(mirror.offlineDeviceCount) || 0,
+        chunkTotal: Number(scan.chunkTotal) || 1,
+      },
       snapshot: {
         version: 1,
         source: "wb_mqtt_scan",
         importedAt: new Date().toISOString(),
         entries: scan.entries,
         discoverableDeviceCount: scan.discoverableDeviceCount,
+        truncated: scan.truncated === true,
+        omittedDeviceHint: scan.omittedDeviceHint || null,
       },
     };
   });

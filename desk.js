@@ -10,17 +10,27 @@
       { id: "buttons", ru: "Кнопки" },
       { id: "scenes", ru: "Сценарии" },
     ];
-    let activeTab = "mark";
+    let activeTab = "intro";
     let markPath = "modules";
     let modFamily = "all";
     let keyPlan = [];
     let keyScan = null; /* { id, need, count, hitKey, baseline, prevClosed } */
+    let keyCatch = null; /* топик пойман, ждёт комнату и подпись */
     let keyScanTimer = 0;
+    let keyScanBusy = false;
+    let keyPlanNote = "";
+    let lastBusScan = null;
+    let markingUnreadable = false;
+    let shieldClockOk = true;
+    let shieldClockUnverified = false;
+    let shieldClockLabel = "";
     let keyRoomFilter = "";
     let keyPlanFocus = false; /* после «+» вернуть фокус в поле подписей */
     let linePlan = [];
     let lineRoomFilter = "";
     let linePlanFocus = false;
+    let linePlanNote = "";
+    let pairBusy = false;
     let lineBeacon = null; /* { id, candidates, idx, current, busy } — шаг по нажатию */
     let lineBeaconFamily = "led"; /* led | relay | all */
     let pairListen = null; /* { timer, baseline, prevClosed, last } */
@@ -158,7 +168,7 @@
         fetch("/runtime/mqtt-scan", {
           method: "POST",
           headers: { "content-type": "application/json" },
-          body: JSON.stringify({ instant: true }),
+          body: JSON.stringify({ instant: true, deviceTopicKey: openMod }),
         })
           .then((r) => r.json())
           .then((j) => {
@@ -322,14 +332,33 @@
       if (mirror.connected) return "Шина: ждёт топики";
       return "Шина: нет MQTT";
     }
+    function cloudRu(state) {
+      const s = String(state || "");
+      if (/^(restored|online|enrolled_awaiting_heartbeat)$/.test(s)) return "Облако на связи";
+      if (s === "enrolling") return "Облако: подключаюсь";
+      if (!s || s === "starting") return "Облако: ещё нет";
+      return "Облако: нет связи";
+    }
     function humanPourError(raw) {
       const s = String(raw || "").trim();
       if (!s) return "Не залил";
+      if (/AUTH:|invalid or missing bearer/i.test(s)) {
+        return "Порт закрыт токеном — тот же ключ, что у заливки из облака.";
+      }
       if (/Failed to fetch|NetworkError|ECONNREFUSED|fetch failed/i.test(s)) {
         return "Нет связи с агентом на этом адресе.";
       }
       if (/need_trigger/i.test(s)) return "В карточке нужна кнопка или датчик с шины.";
       if (/need_target|need_load/i.test(s)) return "В карточке нужна линия из разметки.";
+      if (/disk_mismatch/i.test(s)) return "Диск не совпал — заливку не считаем готовой.";
+      if (/engine_syntax/i.test(s)) return "Движок не принял файл: синтаксическая ошибка в журнале wb-rules.";
+      if (/engine_not_active|not_restarted/i.test(s)) return "Файлы записаны, движок их не принял. Таймеры не подтверждаем.";
+      if (/marking_unreadable/i.test(s)) return "Файл стола не читается. Он не стёрт, на экране плана нет.";
+      if (/solution_ids_over_cap/i.test(s)) return "Слишком много карточек за один раз — залейте пачкой до 480.";
+      if (/output_schedule/i.test(s)) return "Расписание и постоянное правило на одном выходе. Щит не трогал.";
+      if (/output_schedule/i.test(s)) return "Расписание и постоянное правило на одном выходе. Щит не трогал.";
+      if (/output_busy/i.test(s)) return "Два постоянных правила на один выход. Щит не трогал.";
+      if (/body_too_large|bad_json/i.test(s)) return "Запрос заливки не разобран — щит не трогал.";
       if (/EACCES|EROFS|EPERM|permission denied/i.test(s)) {
         return "Нет записи на диск щита (/etc/wb-rules).";
       }
@@ -404,7 +433,12 @@
     }
     function setTab(tab, keepMod) {
       tab = normalizeTab(tab);
-      if (!/^(mark|cards|poured)$/.test(tab)) return;
+      if (!/^(intro|mark|cards|poured)$/.test(tab)) return;
+      if (tab !== "mark") {
+        stopKeyScan();
+        stopLineBeacon();
+        stopPairListen();
+      }
       const was = activeTab;
       activeTab = tab;
       closeCardSheet();
@@ -425,11 +459,13 @@
       });
       const ritual = $("ritual");
       if (ritual) {
-        ritual.textContent = tab === "mark"
-          ? "1 · Разметить → 2 · Типовые → 3 · Залить"
-          : tab === "cards"
-            ? "2 · Типовые → 3 · Залить"
-            : "3 · Залить имена, потом сценарии";
+        ritual.textContent = tab === "intro"
+          ? "Сначала кнопки по комнатам. Потом свет. Запись на щит — в конце."
+          : tab === "mark"
+            ? "Одна комната за раз. Три коротких нажатия, затем имя."
+            : tab === "cards"
+              ? "Правило — когда кнопка и свет уже названы."
+              : "Сначала имена. Потом сценарии. Один раз.";
       }
       if (tab === "mark") renderMark();
       if (tab === "cards") {
@@ -1117,7 +1153,7 @@
         // f36878e3 · 13.10 — коротко; полный fnv1a32:… в title для отладки
         const short =
           rel.label ||
-          [rel.shortId || String(rel.revisionId || "").replace(/^fnv1a32:/i, "").slice(0, 8), rel.dayLabel]
+          [rel.shortId || String(rel.revisionId || "").replace(/^(?:fnv1a32:|sha256:)/i, "").slice(0, 8), rel.dayLabel]
             .filter(Boolean)
             .join(" · ") ||
           String(rel.revisionId || "");
@@ -1754,6 +1790,9 @@
           if (bad) {
             err.textContent = bad.error === "need_trigger" ? "Нужна кнопка с шины"
               : bad.error === "need_target" || bad.error === "need_load" ? "Нужна линия из разметки"
+              : bad.error === "output_taken" ? "Этот выход уже держит такая же карточка"
+              : bad.error === "output_busy" ? "Этот выход уже держит постоянное правило"
+              : bad.error === "output_schedule" ? "На этом выходе расписание спорит с постоянным правилом"
               : (bad.error || "Не сохранил");
             return;
           }
@@ -2322,6 +2361,12 @@
         left.querySelector(".meta").textContent =
           trigH + (tHuman ? " → " + tHuman : "") + (paramH ? " · " + paramH : "");
         left.title = trigF + (tFull ? " → " + tFull : "") + (paramH ? " · " + paramH : "");
+        const onDisk = (pouredRules || []).some((r) => String(r.id || "").indexOf("desk_sol_" + sol.id) === 0);
+        const pourOne = document.createElement("button");
+        pourOne.type = "button";
+        pourOne.className = "ghost";
+        pourOne.textContent = onDisk ? "Обновить" : "Долить";
+        pourOne.addEventListener("click", () => runDeskPour("rules", pourOne, [sol.id]));
         const del = document.createElement("button");
         del.type = "button";
         del.className = "ghost";
@@ -2339,6 +2384,7 @@
           if (card) openCardSheet(card, sol);
         });
         li.appendChild(left);
+        li.appendChild(pourOne);
         li.appendChild(del);
         ul.appendChild(li);
       });
@@ -2741,6 +2787,12 @@
                 ? ("Нужна " + sheetTgtLab(card).toLowerCase() + " из разметки")
               : j.error === "not_pourable"
                 ? "Эта карточка пока не льётся — выберите другую"
+              : j.error === "output_taken"
+                ? "Этот выход уже держит такая же карточка"
+              : j.error === "output_busy"
+                ? "Этот выход уже держит постоянное правило"
+              : j.error === "output_schedule"
+                ? "На этом выходе расписание спорит с постоянным правилом"
               : (j.error || "Не сохранил");
             return;
           }
@@ -2801,6 +2853,7 @@
       socket_button_toggle: "<svg viewBox='0 0 24 24'><path d='M9 7v4M15 7v4M8 15h8'/><rect x='5' y='4' width='14' height='16' rx='3'/></svg>",
       scene_away: "<svg viewBox='0 0 24 24'><path d='M3 11l9-8 9 8'/><path d='M5 10v10h14V10'/></svg>",
       scene_vacation: "<svg viewBox='0 0 24 24'><path d='M4 20l7-16 3 7 6 2z'/></svg>",
+      scene_come_home: "<svg viewBox='0 0 24 24'><path d='M3 11l9-8 9 8'/><path d='M9 21V12h6v9'/></svg>",
       scene_home: "<svg viewBox='0 0 24 24'><path d='M3 11l9-8 9 8'/><path d='M9 21V12h6v9'/></svg>",
       "Свет": "<svg viewBox='0 0 24 24'><circle cx='12' cy='12' r='4'/><path d='M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2'/></svg>",
       "Шторы": "<svg viewBox='0 0 24 24'><path d='M4 4h16v16H4z'/><path d='M4 8h16M12 8v12'/></svg>",
@@ -2895,6 +2948,11 @@
       try {
         const r = await fetch("/runtime/desk-solutions");
         const j = await r.json();
+        if (j && j.error === "marking_unreadable") {
+          markingUnreadable = true;
+          paintBenchReady();
+          return;
+        }
         if (!j.ok) return;
         deskCatalog = j.catalog || [];
         deskSolutions = j.solutions || [];
@@ -2902,6 +2960,7 @@
         renderDeskSolutions();
         stampDiskScenes();
         if (activeTab === "poured") renderReady();
+        if (activeTab === "mark") renderMark();
       } catch (_) { /* агент ниже */ }
     }
     async function loadHealth() {
@@ -2915,7 +2974,6 @@
         const topics = Number(mirror.topicCount) || 0;
         const busOk = mirror.connected === true && topics > 0;
         const cloudState = j.enrollment && j.enrollment.state;
-        const cloudOk = /^(restored|online|enrolled_awaiting_heartbeat)$/.test(String(cloudState || ""));
         const ver = String(j.agentVersion || "").replace(/^.*\./, "") || "—";
         if (!j.ok) {
           box.className = "glass status bad";
@@ -2925,13 +2983,24 @@
         }
         // Локальный пуск через docker: облако не влияет на статус «ок».
         box.className = "glass status " + (busOk ? "ok" : "bad");
+        const clock = j.controllerClock || {};
+        shieldClockOk = clock.ok !== false;
+        shieldClockUnverified = clock.unverified === true;
+        shieldClockLabel = clock.label || "";
+        const offline = Number(mirror.offlineDeviceCount) || 0;
+        const incident = Array.isArray(j.busIncidents) && j.busIncidents[0] ? j.busIncidents[0].reason : "";
+        const busCalm = busOk && shieldClockOk && !shieldClockUnverified && !offline && !incident;
+        box.className = "glass status " + (busCalm ? "ok" : "bad");
         main.textContent = busRu(mirror) + " · " + ver;
         if (sub) {
-          const bits = [];
+          const bits = [cloudRu(cloudState)];
+          if (shieldClockUnverified) bits.push("время щита не прочитано");
+          else if (shieldClockLabel) bits.push(shieldClockOk ? ("часы " + shieldClockLabel) : "часы щита неверные");
+          if (offline) bits.push("молчит " + offline);
+          if (incident) bits.push(incident);
           if (!busOk) bits.push("Проверьте mosquitto на щите");
-          else if (!cloudOk) bits.push("Локальный режим · облако не нужно");
           sub.textContent = bits.join(" · ");
-          sub.hidden = !bits.length;
+          sub.hidden = false;
         }
       } catch (e) {
         box.className = "glass status bad";
@@ -3256,6 +3325,13 @@
       ttl.className = "ttl" + (original ? "" : " mute");
       ttl.textContent = original ? prettyContactName(original) : "Без имени";
       cap.append(knob, ttl);
+      const heldShelf = solutionsOnLoad(s.deviceTopicKey, ch.controlId);
+      if (heldShelf.length) {
+        const note = document.createElement("span");
+        note.className = "hint";
+        note.textContent = heldShelf.join(" · ");
+        cap.append(note);
+      }
       const hint = channelHint(s, ch, isLoad, original, poured);
       if (hint) {
         const h = hint.go ? document.createElement("button") : document.createElement("span");
@@ -3412,7 +3488,11 @@
       try {
         const r = await fetch("/runtime/desk-marking");
         const j = await r.json();
-        if (j.ok && Array.isArray(j.rooms)) deskRooms = j.rooms;
+        if (j && j.error === "marking_unreadable") markingUnreadable = true;
+        else if (j.ok && Array.isArray(j.rooms)) {
+          markingUnreadable = false;
+          deskRooms = j.rooms;
+        }
       } catch (_) { /* стол ниже */ }
       renderMark();
     }
@@ -3660,6 +3740,8 @@
           ? (current.room || "комната")
           : "Комната не выбрана";
       }
+      const heldDrill = solutionsOnLoad(s.deviceTopicKey, ch.controlId);
+      if (heldDrill.length) sub.textContent = (sub.textContent ? sub.textContent + " · " : "") + heldDrill.join(" · ");
       mid.append(ttl, sub);
       mid.addEventListener("click", () => {
         openAssign = assigning ? "" : key;
@@ -4014,10 +4096,13 @@
       (shelves || []).forEach((s) => {
         (s.channels || []).forEach((ch) => {
           const cid = String(ch.controlId || "");
-          const m = /^(Input\s+[A-Z]?\d+)\s+Short Press Counter$/i.exec(cid);
+          const m = /^(Input\s+[A-Z]?\d+)\s+(Short|Long|Double) Press Counter$/i.exec(cid);
           if (m) {
-            map.set(s.deviceTopicKey + "::" + m[1], {
+            const gesture = /^long/i.test(m[2]) ? "long" : /^double/i.test(m[2]) ? "double" : "short";
+            const key = s.deviceTopicKey + "::" + m[1] + (gesture === "short" ? "" : "::" + gesture);
+            map.set(key, {
               kind: "counter",
+              gesture,
               v: Number(ch.lastValue) || 0,
               deviceTopicKey: s.deviceTopicKey,
               controlId: m[1],
@@ -4044,18 +4129,108 @@
       try {
         const r = await fetch("/runtime/desk-key-plan");
         const j = await r.json();
-        keyPlan = Array.isArray(j.keyPlan) ? j.keyPlan : [];
+        if (j && j.error === "marking_unreadable") {
+          markingUnreadable = true;
+          keyPlan = [];
+        } else {
+          if (j && j.ok) markingUnreadable = false;
+          keyPlan = Array.isArray(j.keyPlan) ? j.keyPlan : [];
+        }
       } catch {
         keyPlan = [];
       }
     }
-    function startKeyScan(item) {
+    function pressRises(state, now) {
+      const rises = [];
+      now.forEach((sig, k) => {
+        const base = state.baseline.get(k);
+        if (sig.kind === "counter") {
+          const prev = base && base.kind === "counter" ? base.v : sig.v;
+          const d = sig.v - prev;
+          state.baseline.set(k, sig);
+          if (d > 3) rises.push({ k: k, d: 0, jump: true, sig: sig });
+          else if (d > 0) rises.push({ k: k, d: d, sig: sig });
+        } else if (sig.kind === "level") {
+          const was = state.prevClosed.get(k);
+          state.prevClosed.set(k, Boolean(sig.closed));
+          if (sig.closed && was === false) rises.push({ k: k, d: 1, sig: sig });
+        }
+      });
+      return rises;
+    }
+    function orderedKeys() {
+      const rooms = [...new Set(keyPlan.map((k) => k.room))].sort((a, b) => a.localeCompare(b, "ru"));
+      const ordered = [];
+      rooms.forEach((room) => {
+        keyPlan.filter((k) => k.room === room).forEach((k) => ordered.push(k));
+      });
+      return ordered;
+    }
+    function nextUnboundKey(afterId) {
+      const ordered = orderedKeys();
+      let start = 0;
+      if (afterId) {
+        const i = ordered.findIndex((k) => k.id === afterId);
+        if (i >= 0) start = i + 1;
+      }
+      for (let n = 0; n < ordered.length; n += 1) {
+        const k = ordered[(start + n) % ordered.length];
+        if (k.id !== afterId && !k.deviceTopicKey) return k;
+      }
+      return null;
+    }
+    function keyScanStatusText() {
+      if (!keyScan) return "";
+      const row = keyScan.walk ? null : keyPlan.find((k) => k.id === keyScan.id);
+      const left = Math.max(0, keyScan.need - keyScan.count);
+      const ask = !keyScan.primed
+        ? "Секунду, запоминаю тишину"
+        : left === 3
+          ? "Нажмите выключатель три раза, коротко"
+          : left === 2
+            ? "Ещё два коротких"
+            : left === 1
+              ? "Ещё одно короткое"
+              : "Кнопка нашлась";
+      const where = keyScan.walk
+        ? (String(keyRoomFilter || "").trim() || "Сначала комната")
+        : (row ? row.room + " · " + row.label : "Клавиша");
+      return (keyPlanNote ? keyPlanNote + " " : "")
+        + (keyScan.jump ? "Слишком быстро. Три раза, спокойнее. " : "")
+        + (keyScan.ambiguous ? "Сработали две кнопки. Начните с одной. " : "")
+        + (keyScan.reset && !keyScan.ambiguous && !keyScan.jump ? "Это другая кнопка. Начните сначала. " : "")
+        + where + ". "
+        + ask;
+    }
+    function paintKeyScanLive() {
+      const status = document.querySelector("#mark-body .key-scan-status");
+      if (!status || !keyScan) return false;
+      status.textContent = keyScanStatusText();
+      status.classList.add("live");
+      const armed = document.querySelector("#mark-body .key-row.armed .meta");
+      if (armed) {
+        armed.textContent = keyScan.hitKey
+          ? "Слушаю эту кнопку"
+          : "Ещё не найдена. Три коротких нажатия";
+      }
+      return true;
+    }
+    function startKeyScan(item, opts) {
       stopKeyScan();
+      const walk = !item;
+      const wasBound = Boolean(item && item.deviceTopicKey);
+      if (!walk && item.room) keyRoomFilter = item.room;
+      if (walk) keyCatch = null;
+      const scanId = walk ? "walk" : item.id;
       keyScan = {
-        id: item.id,
+        id: scanId,
+        walk,
         need: 3,
         count: 0,
         hitKey: "",
+        primed: false,
+        ignoreKey: opts && opts.ignoreKey ? opts.ignoreKey : "",
+        ignoreUntil: opts && opts.ignoreKey ? Date.now() + 1600 : 0,
         baseline: pressSignalMap(lastShelvesRows),
         prevClosed: new Map(),
       };
@@ -4063,46 +4238,81 @@
         if (sig.kind === "level") keyScan.prevClosed.set(k, Boolean(sig.closed));
       });
       const tick = () => {
-        if (!keyScan || keyScan.id !== item.id) return;
+        if (!keyScan || keyScan.id !== scanId || keyScanBusy) return;
+        keyScanBusy = true;
         fetch("/runtime/mqtt-scan", {
           method: "POST",
           headers: { "content-type": "application/json" },
-          body: JSON.stringify({ instant: true }),
+          body: JSON.stringify({ instant: true, inputsOnly: true }),
         })
           .then((r) => r.json())
           .then((j) => {
             if (!keyScan || !j || !j.ok || !Array.isArray(j.shelves)) return;
             lastShelvesRows = rememberMergeShelves(lastShelvesRows, j.shelves);
-            const now = pressSignalMap(lastShelvesRows);
-            let rose = "";
-            now.forEach((sig, k) => {
-              const base = keyScan.baseline.get(k);
-              if (sig.kind === "counter") {
-                const prev = base && base.kind === "counter" ? base.v : sig.v;
-                if (sig.v > prev) {
-                  rose = k;
-                  keyScan.baseline.set(k, sig);
-                }
-              } else if (sig.kind === "level") {
-                const was = keyScan.prevClosed.get(k);
-                keyScan.prevClosed.set(k, Boolean(sig.closed));
-                if (sig.closed && was === false) rose = k;
-              }
-            });
-            if (!rose) {
-              renderMark();
+            if (!keyScan.primed) {
+              keyScan.baseline = pressSignalMap(lastShelvesRows);
+              keyScan.prevClosed = new Map();
+              keyScan.baseline.forEach((sig, k) => {
+                if (sig.kind === "level") keyScan.prevClosed.set(k, Boolean(sig.closed));
+              });
+              keyScan.primed = true;
+              if (!paintKeyScanLive()) renderMark();
               return;
             }
-            if (keyScan.hitKey && keyScan.hitKey !== rose) {
-              keyScan.hitKey = rose;
-              keyScan.count = 1;
-            } else {
-              keyScan.hitKey = rose;
-              keyScan.count += 1;
+            const rises = pressRises(keyScan, pressSignalMap(lastShelvesRows)).filter((r) => {
+              if (!keyScan.ignoreKey || r.k !== keyScan.ignoreKey) return true;
+              return Date.now() >= keyScan.ignoreUntil;
+            });
+            if (!rises.length) {
+              if (pressSignalMap(lastShelvesRows).size === 0 && !keyScan.blind) {
+                keyScan.blind = true;
+                keyPlanNote = "Кнопок пока не видно. Нажмите «Обновить» и начните снова.";
+                if (!paintKeyScanLive()) renderMark();
+              }
+              return;
             }
-            renderMark();
+            const clean = rises.filter((r) => !r.jump);
+            if (clean.some((r) => r.sig && r.sig.gesture && r.sig.gesture !== "short")) {
+              keyScan.hitKey = "";
+              keyScan.count = 0;
+              keyPlanNote = "Это было долгое или двойное нажатие. Нужны три коротких.";
+              if (!paintKeyScanLive()) renderMark();
+              return;
+            }
+            if (rises.some((r) => r.jump) || clean.length > 1) {
+              keyScan.hitKey = "";
+              keyScan.count = 0;
+              keyScan.reset = true;
+              keyScan.jump = rises.some((r) => r.jump);
+              keyScan.ambiguous = clean.length > 1;
+              if (!paintKeyScanLive()) renderMark();
+              return;
+            }
+            const rose = clean[0];
+            keyScan.ambiguous = false;
+            keyScan.jump = false;
+            if (keyScan.hitKey && keyScan.hitKey !== rose.k) {
+              keyScan.hitKey = rose.k;
+              keyScan.count = rose.d;
+              keyScan.reset = true;
+            } else {
+              keyScan.reset = false;
+              keyScan.hitKey = rose.k;
+              keyScan.count += rose.d;
+            }
+            if (!paintKeyScanLive()) renderMark();
             if (keyScan.count >= keyScan.need) {
-              const sig = now.get(rose);
+              const sig = rose.sig;
+              if (keyScan.walk) {
+                keyCatch = {
+                  deviceTopicKey: sig.deviceTopicKey,
+                  controlId: sig.controlId,
+                  ignoreKey: rose.k,
+                };
+                stopKeyScan();
+                renderMark();
+                return;
+              }
               const armedId = keyScan.id;
               stopKeyScan();
               fetch("/runtime/desk-key-plan", {
@@ -4118,7 +4328,26 @@
                 .then((r) => r.json())
                 .then((res) => {
                   if (res && res.ok) {
+                    const prevKey = (keyPlan || []).find((k) => k.id === armedId);
                     keyPlan = res.keyPlan || keyPlan;
+                    if (
+                      prevKey &&
+                      prevKey.deviceTopicKey &&
+                      (prevKey.deviceTopicKey !== sig.deviceTopicKey || prevKey.controlId !== sig.controlId)
+                    ) {
+                      const oldName = prevKey.room + " · " + prevKey.label;
+                      lastShelvesRows = (lastShelvesRows || []).map((s) => {
+                        if (!s || s.deviceTopicKey !== prevKey.deviceTopicKey) return s;
+                        return {
+                          ...s,
+                          channels: (s.channels || []).map((c) =>
+                            c && c.controlId === prevKey.controlId && c.name === oldName
+                              ? { ...c, name: "", source: "" }
+                              : c,
+                          ),
+                        };
+                      });
+                    }
                     const bound = (keyPlan || []).find((k) => k.id === armedId);
                     const markName = bound
                       ? (bound.room + " · " + bound.label)
@@ -4143,18 +4372,32 @@
                       head.textContent = "Клавиша привязана · " + sig.deviceTopicKey + "/" + sig.controlId
                         + " · в типовых как кнопка";
                     }
-                    return loadLast().then(() => loadKeyPlan()).then(() => renderMark());
+                    keyPlanNote = "";
+                    const nxt = !wasBound ? nextUnboundKey(armedId) : null;
+                    if (nxt) {
+                      keyRoomFilter = nxt.room;
+                      startKeyScan(nxt, { ignoreKey: rose.k });
+                      return;
+                    }
+                    renderMark();
+                    return;
+                  }
+                  if (res && res.error === "topic_taken") {
+                    keyPlanNote = "Эта кнопка уже называется «" + (res.room || "") + " · " + (res.label || "") + "».";
                   }
                   renderMark();
                 })
                 .catch(() => renderMark());
             }
           })
-          .catch(() => {});
+          .catch(() => {})
+          .finally(() => { keyScanBusy = false; });
       };
       keyScanTimer = setInterval(tick, 280);
       tick();
       renderMark();
+      const armedRow = document.querySelector("#mark-body .key-row.armed");
+      if (armedRow && armedRow.scrollIntoView) armedRow.scrollIntoView({ block: "nearest" });
     }
     function rememberMergeShelves(prev, next) {
       if (!Array.isArray(next) || !next.length) return prev || [];
@@ -4196,45 +4439,203 @@
             keyPlan = j.keyPlan || [];
             keyRoomFilter = roomName;
             keyPlanFocus = true;
+            keyPlanNote = j.dropped
+              ? ("Не влезло " + j.dropped + " из " + j.added + ". План держит " + j.cap + " клавиш.")
+              : (j.duplicates ? ("Уже были в этой комнате: " + j.duplicates + ".") : "");
             if (typeof done === "function") done(j);
             renderMark();
           }
         });
     }
+    function paintCaughtOnShelf(sig, markName) {
+      if (!markName || !sig || !sig.deviceTopicKey || !sig.controlId) return;
+      lastShelvesRows = (lastShelvesRows || []).map((s) => {
+        if (!s || s.deviceTopicKey !== sig.deviceTopicKey) return s;
+        return {
+          ...s,
+          channels: (s.channels || []).map((c) =>
+            c && c.controlId === sig.controlId ? { ...c, name: markName, source: "desk" } : c,
+          ),
+        };
+      });
+    }
+    function saveCaughtKey(label) {
+      const room = String(keyRoomFilter || "").trim();
+      const name = String(label || "").trim();
+      const sig = keyCatch;
+      if (!sig) return;
+      if (!room || !name) {
+        keyPlanNote = "Напишите комнату и имя кнопки.";
+        renderMark();
+        return;
+      }
+      fetch("/runtime/desk-key-plan", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          capture: true,
+          room,
+          label: name,
+          deviceTopicKey: sig.deviceTopicKey,
+          controlId: sig.controlId,
+        }),
+      })
+        .then((r) => r.json())
+        .then((res) => {
+          if (res && res.ok) {
+            keyPlan = res.keyPlan || keyPlan;
+            paintCaughtOnShelf(sig, room + " · " + name);
+            const ignoreKey = sig.ignoreKey;
+            keyCatch = null;
+            keyPlanNote = "";
+            startKeyScan(null, { ignoreKey });
+            return;
+          }
+          if (res && res.error === "topic_taken") {
+            keyPlanNote = "Эта кнопка уже называется «" + (res.room || "") + " · " + (res.label || "") + "».";
+          } else if (res && res.error === "duplicate_label") {
+            keyPlanNote = "В этой комнате такое имя уже есть.";
+          } else if (res && res.error === "need_room_label") {
+            keyPlanNote = "Напишите комнату и имя кнопки.";
+          } else {
+            keyPlanNote = "Не сохранил. Попробуйте ещё раз.";
+          }
+          renderMark();
+        })
+        .catch(() => {
+          keyPlanNote = "Щит не ответил. Попробуйте ещё раз.";
+          renderMark();
+        });
+    }
     function renderKeyScanPanel(body) {
       body.replaceChildren();
-      const intro = document.createElement("p");
-      intro.className = "meta";
-      intro.textContent = "Сначала весь план комнат (по строке на клавишу) → потом обход: «Сканировать» ×3. Канал MCM8/WD14 сам.";
-      body.appendChild(intro);
+      const named = keyPlan.filter((k) => k.deviceTopicKey).length;
+      const phase = document.createElement("p");
+      phase.className = "meta";
+      const roomNow = String(keyRoomFilter || "").trim();
+      phase.textContent = named
+        ? ("Уже названо кнопок: " + named + (roomNow ? ". Сейчас вы в «" + roomNow + "»." : "."))
+        : "Сначала все кнопки дома. Свет назовём следующим кругом.";
+      body.appendChild(phase);
+      const toLight = document.createElement("button");
+      toLight.type = "button";
+      toLight.className = "ghost";
+      toLight.textContent = "Теперь свет";
+      toLight.addEventListener("click", () => {
+        stopKeyScan();
+        modFamily = "lines";
+        loadLinePlan().then(() => renderMark());
+      });
+      body.appendChild(toLight);
+      const roomInp = document.createElement("input");
+      roomInp.className = "bind";
+      roomInp.placeholder = "Комната, например Гардеробная";
+      roomInp.value = keyRoomFilter || "";
+      roomInp.setAttribute("aria-label", "Комната");
+      roomInp.addEventListener("input", () => {
+        keyRoomFilter = roomInp.value;
+      });
+      body.appendChild(roomInp);
       const status = document.createElement("p");
       status.className = "meta key-scan-status";
       if (keyScan) {
-        const row = keyPlan.find((k) => k.id === keyScan.id);
-        status.textContent = "Слушаю «"
-          + (row ? row.room + " · " + row.label : "клавишу")
-          + "» · нажатий "
-          + keyScan.count + "/" + keyScan.need
-          + (keyScan.hitKey ? " · " + keyScan.hitKey.replace("::", "/") : "");
+        status.textContent = keyScanStatusText();
         status.classList.add("live");
       } else {
         const unbound = keyPlan.filter((k) => !k.deviceTopicKey).length;
-        status.textContent = unbound
-          ? ("В плане " + keyPlan.length + ", без привязки " + unbound + " — можно сканировать.")
-          : "Готово к плану. Комната → список клавиш → «+ Добавить».";
+        status.textContent = (keyPlanNote ? keyPlanNote + " " : "")
+          + (unbound
+            ? ("Есть кнопки без найденного выключателя: " + unbound + ".")
+            : "Напишите комнату и нажмите «Слушаю».");
       }
       body.appendChild(status);
+      if (keyCatch) {
+        const card = document.createElement("div");
+        card.className = "key-plan-add glass";
+        const topic = document.createElement("p");
+        topic.className = "meta";
+        topic.textContent = "Кнопка нашлась · " + shelfLabel(keyCatch.deviceTopicKey) + " · " + prettyControlId(keyCatch.controlId);
+        const labInp = document.createElement("input");
+        labInp.className = "bind";
+        labInp.placeholder = "Клавиша 1, основной свет";
+        labInp.value = nextKeyLabelForRoom(String(keyRoomFilter || "").trim());
+        labInp.setAttribute("aria-label", "Подпись клавиши");
+        const act = document.createElement("div");
+        act.className = "key-plan-actions";
+        const save = document.createElement("button");
+        save.type = "button";
+        save.className = "ghost key-add-all";
+        const saveRoom = String(keyRoomFilter || "").trim();
+        save.textContent = saveRoom ? ("Сохранить в «" + saveRoom + "»") : "Сохранить";
+        save.addEventListener("click", () => saveCaughtKey(labInp.value));
+        const skip = document.createElement("button");
+        skip.type = "button";
+        skip.className = "ghost";
+        skip.textContent = "Ещё раз";
+        skip.addEventListener("click", () => {
+          const ignoreKey = keyCatch && keyCatch.ignoreKey;
+          keyCatch = null;
+          startKeyScan(null, { ignoreKey });
+        });
+        labInp.addEventListener("keydown", (e) => {
+          if (e.key === "Enter") {
+            e.preventDefault();
+            saveCaughtKey(labInp.value);
+          }
+        });
+        act.append(save, skip);
+        card.append(topic, labInp, act);
+        body.appendChild(card);
+        setTimeout(() => labInp.focus(), 30);
+      } else if (!keyScan) {
+        const listen = document.createElement("button");
+        listen.type = "button";
+        listen.className = "ghost key-add-all";
+        listen.textContent = "Слушаю";
+        listen.addEventListener("click", () => {
+          keyRoomFilter = String(roomInp.value || "").trim();
+          if (!keyRoomFilter) {
+            keyPlanNote = "Сначала напишите, в какой вы комнате.";
+            renderMark();
+            const again = document.querySelector("#mark-body input.bind");
+            if (again) again.focus();
+            return;
+          }
+          startKeyScan(null);
+        });
+        body.appendChild(listen);
+      } else if (keyScan.walk) {
+        const stop = document.createElement("button");
+        stop.type = "button";
+        stop.className = "ghost";
+        stop.textContent = "Стоп";
+        stop.addEventListener("click", () => { stopKeyScan(); renderMark(); });
+        body.appendChild(stop);
+      }
+      if (!keyScan && !keyCatch && keyPlan.some((k) => !k.deviceTopicKey)) {
+        const goNext = document.createElement("button");
+        goNext.type = "button";
+        goNext.className = "ghost key-next-unbound";
+        goNext.textContent = "Следующая без кнопки";
+        goNext.addEventListener("click", () => {
+          const nxt = nextUnboundKey("");
+          if (!nxt) return;
+          keyRoomFilter = nxt.room;
+          startKeyScan(nxt);
+        });
+        body.appendChild(goNext);
+      }
+      const ahead = document.createElement("details");
+      ahead.className = "more";
+      const aheadSum = document.createElement("summary");
+      aheadSum.textContent = "Если имена уже готовы";
+      ahead.appendChild(aheadSum);
       const addBox = document.createElement("div");
-      addBox.className = "key-plan-add glass";
-      const roomInp = document.createElement("input");
-      roomInp.className = "bind";
-      roomInp.placeholder = "Комната (Спальня)";
-      roomInp.value = keyRoomFilter || "";
-      roomInp.setAttribute("aria-label", "Комната");
+      addBox.className = "key-plan-add";
       const labInp = document.createElement("textarea");
       labInp.className = "bind key-labels";
       labInp.rows = 4;
-      labInp.placeholder = "Клавиши — по одной на строку\nклавиша 1 основное\nклавиша 2 бра у кровати\nсценарная у кровати";
+      labInp.placeholder = "Клавиши — по одной на строку\nВыкл 1 у входа — основное освещение\nВыкл 2 у кровати — бра\nСценарная у кровати — всё выкл";
       labInp.setAttribute("aria-label", "Подписи клавиш");
       const addRow = document.createElement("div");
       addRow.className = "key-plan-actions";
@@ -4248,13 +4649,13 @@
       plusOne.title = "Одна следующая клавиша в этой комнате";
       plusOne.textContent = "+1";
       const submit = () => {
-        postKeyPlanLabels(roomInp.value, labInp.value, () => {
+        postKeyPlanLabels(keyRoomFilter, labInp.value, () => {
           labInp.value = "";
         });
       };
       addBtn.addEventListener("click", submit);
       plusOne.addEventListener("click", () => {
-        const room = String(roomInp.value || "").trim();
+        const room = String(keyRoomFilter || "").trim();
         if (!room) {
           roomInp.focus();
           return;
@@ -4270,8 +4671,9 @@
         }
       });
       addRow.append(addBtn, plusOne);
-      addBox.append(roomInp, labInp, addRow);
-      body.appendChild(addBox);
+      addBox.append(labInp, addRow);
+      ahead.appendChild(addBox);
+      body.appendChild(ahead);
       if (keyPlanFocus) {
         keyPlanFocus = false;
         setTimeout(() => {
@@ -4282,16 +4684,16 @@
       if (!rooms.length) {
         const empty = document.createElement("p");
         empty.className = "meta orphan";
-        empty.textContent = "План пуст — впишите комнату и все клавиши списком, затем «+ Добавить все».";
+        empty.textContent = "Пока пусто. Комната, «Слушаю», три коротких нажатия, имя.";
         body.appendChild(empty);
-        return;
       }
       rooms.forEach((room) => {
         const det = document.createElement("details");
         det.className = "key-room";
-        det.open = !keyRoomFilter || keyRoomFilter === room;
-        const sum = document.createElement("summary");
         const keys = keyPlan.filter((k) => k.room === room);
+        const armedHere = keyScan && !keyScan.walk && keys.some((k) => k.id === keyScan.id);
+        det.open = keyRoomFilter === room || Boolean(armedHere);
+        const sum = document.createElement("summary");
         const bound = keys.filter((k) => k.deviceTopicKey).length;
         const head = document.createElement("span");
         head.className = "key-room-title";
@@ -4324,8 +4726,8 @@
           const sub = document.createElement("span");
           sub.className = "meta";
           sub.textContent = k.deviceTopicKey
-            ? k.deviceTopicKey + "/" + k.controlId
-            : "не привязана";
+            ? (shelfLabel(k.deviceTopicKey) + " · " + prettyControlId(k.controlId))
+            : "Ещё не найдена. Три коротких нажатия";
           mid.append(ttl, sub);
           const act = document.createElement("div");
           act.className = "key-act";
@@ -4340,7 +4742,7 @@
             const scan = document.createElement("button");
             scan.type = "button";
             scan.className = "ghost key-scan-btn";
-            scan.textContent = k.deviceTopicKey ? "Перескан" : "Сканировать";
+            scan.textContent = k.deviceTopicKey ? "Найти снова" : "Найти";
             scan.addEventListener("click", () => startKeyScan(k));
             act.appendChild(scan);
           }
@@ -4383,7 +4785,13 @@
       try {
         const r = await fetch("/runtime/desk-line-plan");
         const j = await r.json();
-        linePlan = Array.isArray(j.linePlan) ? j.linePlan : [];
+        if (j && j.error === "marking_unreadable") {
+          markingUnreadable = true;
+          linePlan = [];
+        } else {
+          if (j && j.ok) markingUnreadable = false;
+          linePlan = Array.isArray(j.linePlan) ? j.linePlan : [];
+        }
       } catch {
         linePlan = [];
       }
@@ -4407,6 +4815,9 @@
             linePlan = j.linePlan || [];
             lineRoomFilter = roomName;
             linePlanFocus = true;
+            linePlanNote = j.dropped
+              ? ("Не влезло " + j.dropped + " из " + j.added + ". План держит " + j.cap + " линий.")
+              : (j.duplicates ? ("Уже были в этой комнате: " + j.duplicates + ".") : "");
             if (typeof done === "function") done(j);
             renderMark();
           }
@@ -4521,7 +4932,13 @@
                 ),
               };
             });
-            return loadLast().then(() => loadLinePlan()).then(() => renderMark());
+            const nxt = (linePlan || []).find((k) => k.id !== armedId && !k.deviceTopicKey);
+            if (nxt) lineRoomFilter = nxt.room;
+            renderMark();
+            return;
+          }
+          if (res && res.error === "topic_taken") {
+            linePlanNote = "Канал уже у «" + (res.room || "") + " · " + (res.label || "") + "». Сначала найдите ту линию заново.";
           }
           renderMark();
         })
@@ -4583,9 +5000,10 @@
       } else {
         const unbound = linePlan.filter((k) => !k.deviceTopicKey).length;
         const famRu = lineBeaconFamily === "led" ? "LED" : lineBeaconFamily === "relay" ? "реле" : "все";
-        status.textContent = unbound
-          ? ("В плане " + linePlan.length + ", без привязки " + unbound + " · маяк: " + famRu)
-          : ("Сначала список линий · маяк: " + famRu);
+        status.textContent = (linePlanNote ? linePlanNote + " " : "")
+          + (unbound
+            ? ("В плане " + linePlan.length + ", без привязки " + unbound + " · маяк: " + famRu)
+            : ("Сначала список линий · маяк: " + famRu));
       }
       body.appendChild(status);
       if (lineBeacon) {
@@ -4716,7 +5134,7 @@
           const sub = document.createElement("span");
           sub.className = "meta";
           sub.textContent = k.deviceTopicKey
-            ? k.deviceTopicKey + "/" + k.controlId
+            ? "/devices/" + k.deviceTopicKey + "/controls/" + k.controlId
             : "не привязана";
           mid.append(ttl, sub);
           const act = document.createElement("div");
@@ -4816,11 +5234,14 @@
           add(ln.deviceTopicKey, ln.controlId, "plan");
         });
       }
-      loads.slice(0, 12).forEach((x) => {
+      const pulseCap = 64;
+      const shown = loads.slice(0, pulseCap);
+      shown.forEach((x) => {
         void actuateChannel(x.deviceTopicKey, x.controlId, "pulse");
       });
       return {
-        count: Math.min(loads.length, 12),
+        count: shown.length,
+        total: loads.length,
         fromTip: loads.filter((x) => x.src === "tip").length,
         fromRoom: loads.filter((x) => x.src !== "tip").length,
       };
@@ -4840,34 +5261,20 @@
         if (sig.kind === "level") pairListen.prevClosed.set(k, Boolean(sig.closed));
       });
       const tick = () => {
-        if (!pairListen) return;
+        if (!pairListen || pairBusy) return;
+        pairBusy = true;
         fetch("/runtime/mqtt-scan", {
           method: "POST",
           headers: { "content-type": "application/json" },
-          body: JSON.stringify({ instant: true }),
+          body: JSON.stringify({ instant: true, inputsOnly: true }),
         })
           .then((r) => r.json())
           .then((j) => {
             if (!pairListen || !j || !j.ok || !Array.isArray(j.shelves)) return;
             lastShelvesRows = rememberMergeShelves(lastShelvesRows, j.shelves);
-            const now = pressSignalMap(lastShelvesRows);
-            let rose = "";
-            now.forEach((sig, k) => {
-              const base = pairListen.baseline.get(k);
-              if (sig.kind === "counter") {
-                const prev = base && base.kind === "counter" ? base.v : sig.v;
-                if (sig.v > prev) {
-                  rose = k;
-                  pairListen.baseline.set(k, sig);
-                }
-              } else if (sig.kind === "level") {
-                const was = pairListen.prevClosed.get(k);
-                pairListen.prevClosed.set(k, Boolean(sig.closed));
-                if (sig.closed && was === false) rose = k;
-              }
-            });
-            if (!rose) return;
-            const sig = now.get(rose);
+            const rises = pressRises(pairListen, pressSignalMap(lastShelvesRows));
+            if (rises.length !== 1 || rises[0].jump) return;
+            const sig = rises[0].sig;
             const name = namedInputLabel(sig.deviceTopicKey, sig.controlId);
             if (!name) return;
             const pulsed = pairPulseForTrigger(sig.deviceTopicKey, sig.controlId, name);
@@ -4880,7 +5287,8 @@
             };
             renderMark();
           })
-          .catch(() => {});
+          .catch(() => {})
+          .finally(() => { pairBusy = false; });
       };
       pairListen.timer = setInterval(tick, 280);
       tick();
@@ -4907,7 +5315,7 @@
         const p = L.pulsed && typeof L.pulsed === "object" ? L.pulsed : { count: Number(L.pulsed) || 0 };
         sub.textContent = L.deviceTopicKey + "/" + L.controlId
           + (p.count
-            ? (" · импульс " + p.count
+            ? (" · импульс " + p.count + (p.total > p.count ? (" из " + p.total) : "")
               + (p.fromRoom ? (" · комната " + p.fromRoom) : "")
               + (p.fromTip ? (" · типовые " + p.fromTip) : ""))
             : " · нет линий комнаты с именем — разметьте свет маяком");
@@ -4958,7 +5366,96 @@
       });
       body.appendChild(stop);
     }
+    function solutionsOnLoad(deviceTopicKey, controlId) {
+      const titles = [];
+      (deskSolutions || []).forEach((sol) => {
+        const hit = (sol.targets || []).some(
+          (t) => t && t.deviceTopicKey === deviceTopicKey && t.controlId === controlId,
+        );
+        if (!hit) return;
+        const card = (deskCatalog || []).find((c) => c.id === sol.solutionId);
+        const title = (card && card.title) || sol.title || sol.solutionId;
+        if (title && !titles.includes(title)) titles.push(title);
+      });
+      return titles;
+    }
+    function deskOutputFight() {
+      const by = new Map();
+      (deskSolutions || []).forEach((s) => {
+        const card = (deskCatalog || []).find((c) => c && c.id === s.solutionId);
+        const kind = card && card.continuous ? "c" : card && card.cron ? "k" : "";
+        if (!kind) return;
+        (s.targets || []).forEach((t) => {
+          if (!t || !t.deviceTopicKey || !t.controlId) return;
+          const key = t.deviceTopicKey + "/" + t.controlId;
+          if (!by.has(key)) by.set(key, { c: new Set(), k: new Set() });
+          by.get(key)[kind].add(s.id || s.solutionId);
+        });
+      });
+      let busy = false;
+      let schedule = false;
+      for (const bucket of by.values()) {
+        if (bucket.c.size > 1) busy = true;
+        if (bucket.c.size && bucket.k.size) schedule = true;
+      }
+      return { busy, schedule };
+    }
+    function gapScanText(scan) {
+      const bits = [];
+      if (Number(scan.modulesMissing) > 0) bits.push(scan.modulesMissing + " модулей");
+      if (Number(scan.channelsMissing) > 0) bits.push(scan.channelsMissing + " каналов");
+      return bits.length ? "не ответили " + bits.join(" и ") + " прошлого снимка" : "шина ещё не вся";
+    }
+    function paintTornDesk() {
+      paintCheckList(
+        [{ level: "bad", text: "Файл стола не читается. На диске он не стёрт, на экране плана нет." }],
+        "Файл стола не читается",
+        "bad",
+      );
+    }
+    function paintBenchReady() {
+      const el = $("benchReady");
+      if (!el) return;
+      if (markingUnreadable) {
+        el.textContent = "Файл стола не читается. На диске он не стёрт, на экране плана нет.";
+        return;
+      }
+      if (shieldClockUnverified) {
+        el.textContent = "Время щита не прочитано. Сверьте часы контроллера с телефоном.";
+        return;
+      }
+      if (shieldClockOk === false) {
+        el.textContent = "Часы щита неверные. Сценарии по времени заработают не в тот час.";
+        return;
+      }
+      const keys = keyPlan.length;
+      const keysBound = keyPlan.filter((k) => k.deviceTopicKey && k.controlId).length;
+      const lines = linePlan.length;
+      const linesBound = linePlan.filter((k) => k.deviceTopicKey && k.controlId).length;
+      const scan = lastBusScan;
+      const busText = !scan
+        ? "шину ещё не снимали"
+        : scan.truncated
+          ? "скан обрезан"
+            : scan.shortScan
+            ? gapScanText(scan)
+            : scan.settled === false
+              ? "шина ещё дописывается"
+              : Number(scan.offlineDeviceCount) > 0
+                ? ("молчит " + scan.offlineDeviceCount)
+                : "шина спокойна";
+      const keyText = keys ? ("клавиши " + keysBound + "/" + keys) : "план клавиш пуст";
+      const lineText = lines ? ("линии " + linesBound + "/" + lines) : "";
+      const ready = Boolean(scan) && scan.truncated !== true && scan.shortScan !== true && scan.settled !== false
+        && !(Number(scan.offlineDeviceCount) > 0)
+        && keys > 0 && keysBound === keys
+        && (lines === 0 || linesBound === lines);
+      const clockBit = shieldClockLabel ? "часы " + shieldClockLabel : "";
+      el.textContent = (ready ? "К стенду готово: " : "К стенду ещё: ")
+        + [busText, keyText, lineText, clockBit].filter(Boolean).join(" · ");
+    }
     function renderMark() {
+      paintBenchReady();
       lastShelvesRows = lastShelvesRows || [];
       const split = splitShelves(lastShelvesRows);
       markPath = "modules";
@@ -4974,9 +5471,9 @@
       const intro = $("markIntro");
       if (intro) {
         intro.textContent = modFamily === "keys"
-          ? "1 · Клавиши: план комнаты → скан 3× нажатий → канал на шине."
+          ? "Напишите комнату. Три коротких нажатия. Дайте кнопке имя."
           : modFamily === "lines"
-            ? "1 · Линии: план комнаты → маяк по щиту → «Это она»."
+            ? "Комнаты уже есть. Включите линию, посмотрите, что загорелось, и назовите светильник."
             : modFamily === "pair"
               ? "1 · Прозвон: нажмите физ. кнопку — увидите имя и импульс связанных линий."
               : "1 · Модуль → канал: комната и тип. Или «Клавиши» / «Линии» / «Прозвон».";
@@ -5015,10 +5512,11 @@
     async function scanNow() {
       $("scan").disabled = true;
       try {
+        $("bus").textContent = "Снимаю шину…";
         const r = await fetch("/runtime/mqtt-scan", {
           method: "POST",
           headers: { "content-type": "application/json" },
-          body: JSON.stringify({ instant: true }),
+          body: JSON.stringify({ scanMs: 8000 }),
         });
         const j = await r.json();
         if (!j.ok) {
@@ -5062,14 +5560,23 @@
       if (openMod) closeModule();
     });
     function showShelves(j) {
-      const shelves = j.shelves || [];
+      const incoming = j.shelves || [];
+      const untrusted = j.scan && (j.scan.truncated === true || j.scan.settled === false || j.scan.shortScan === true);
+      const shelves = (keyScan || untrusted)
+        ? rememberMergeShelves(lastShelvesRows, incoming)
+        : incoming;
       $("bus").className = "meta";
       $("bus").style.color = "";
       const named = shelves.reduce(function (n, s) {
         return n + (s.channels || []).filter(function (c) { return c.source === "rules" && c.name; }).length;
       }, 0);
-      const line = shelves.length + " модулей" +
+      lastBusScan = j.scan || null;
+      let line = shelves.length + " модулей" +
         (named ? " · " + named + " имён из разметки" : "");
+      if (j.scan && j.scan.truncated) line += " · скан обрезан";
+      else if (j.scan && j.scan.shortScan) line += " · " + gapScanText(j.scan);
+      else if (j.scan && j.scan.settled === false) line += " · шина ещё дописывается";
+      else if (j.scan && Number(j.scan.offlineDeviceCount) > 0) line += " · молчит " + j.scan.offlineDeviceCount;
       $("bus").dataset.base = line;
       $("bus").textContent = line;
       $("bus").title = j.brokerLabel ? ("Шина " + j.brokerLabel) : "";
@@ -5096,10 +5603,12 @@
           headEl.hidden = false;
           headEl.style.color = "";
           const headShort = j.revisionId
-            ? String(j.revisionId).replace(/^fnv1a32:/i, "").slice(0, 8)
+            ? String(j.revisionId).replace(/^(?:fnv1a32:|sha256:)/i, "").slice(0, 8)
             : "";
           const files = (j.files || []).map((f) => f.filename).filter(Boolean);
-          headEl.textContent = (j.ruleCount || pouredRules.length) + " правил"
+          const omitted = Number(j.rulesOmitted) || 0;
+          const total = j.ruleCount || pouredRules.length;
+          headEl.textContent = (omitted ? ("показаны " + pouredRules.length + " из " + total) : (total + " правил"))
             + (headShort ? " · " + headShort : "")
             + (files.length ? " · " + releaseWhatRu({ files: files, fileCount: files.length }) : "");
           if (j.revisionId) headEl.title = String(j.revisionId);
@@ -5132,22 +5641,55 @@
       try {
         const r = await fetch("/runtime/mqtt-scan");
         const j = await r.json();
-        if (j.ok && j.shelves && j.shelves.length) showShelves(j);
-      } catch (_) { /* зеркало ниже */ }
+        if (j && j.error === "cache_unreadable") {
+          const bus = $("bus");
+          if (bus) {
+            bus.className = "meta bad";
+            bus.style.color = "rgb(var(--bad))";
+            bus.textContent = "Снимок шины на диске не читается. Нажмите «Обновить».";
+          }
+          return;
+        }
+        if (j.ok && j.shelves && j.shelves.length) {
+          showShelves(j);
+          return;
+        }
+      } catch (_) { /* снимем шину ниже */ }
       await scanNow();
     }
-    function runDeskPour(scope, btn) {
+    function pourResultLine(j) {
+      const diskOk = j.disk ? j.disk.ok === true : true;
+      const diskLine = j.disk ? (diskOk ? "На диске совпало" : "Диск не совпал") : "";
+      const busLine = j.bus
+        ? (j.bus.engineAccepted
+          ? "Движок принял файл"
+          : j.bus.restarted
+            ? "Движок перезапущен, файл не подтверждён"
+            : "Движок не перезапущен")
+        : (j.restarted ? "Движок перезапущен" : "");
+      const timerLine = j.bus && j.bus.timersReset ? "таймеры и удержания сброшены" : "";
+      const mqttLine = (j.bus && j.bus.mqttPublished) || j.mqttPublished
+        ? "Шина " + ((j.bus && j.bus.mqttPublished) || j.mqttPublished)
+        : "";
+      return [diskLine, busLine, timerLine, mqttLine].filter(Boolean).join(" · ");
+    }
+    function runDeskPour(scope, btn, solutionIds) {
       if (!btn || btn.disabled) return;
       const label = btn.textContent;
       btn.disabled = true;
-      btn.textContent = scope === "names" ? "Имена…" : scope === "rules" ? "Сценарии…" : "Убираю…";
+      btn.textContent = solutionIds && solutionIds.length
+        ? "Пишу…"
+        : scope === "names" ? "Имена…" : scope === "rules" ? "Сценарии…" : "Убираю…";
+      const payload = { scope: scope === "repair" ? "names" : scope };
+      if (solutionIds && solutionIds.length) payload.solutionIds = solutionIds;
       fetch("/runtime/desk-pour", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ scope: scope === "repair" ? "names" : scope }),
+        body: JSON.stringify(payload),
       })
         .then((r) => r.json())
         .then((j) => {
+          btn.disabled = false;
           btn.textContent = label;
           if (!j.ok) {
             paintPourButtons();
@@ -5164,24 +5706,27 @@
             head.hidden = false;
             head.style.color = "";
             const scopeRu = j.scope === "rules" ? "Сценарии" : j.scope === "names" ? "Имена" : "Щит";
+            const proof = pourResultLine(j);
             const bits = [
               j.mqttOnly ? "Дубли спрятаны" : scopeRu,
-              j.restarted ? "перезапуск wb-rules" : "",
               j.namedCount ? ("имён " + j.namedCount) : "",
               j.emittedSolutions ? ("сценариев " + j.emittedSolutions) : "",
               j.hiddenGhosts ? ("скрыто " + j.hiddenGhosts) : "",
+              proof,
               j.appliedRevisionId
-                ? String(j.appliedRevisionId).replace(/^fnv1a32:/i, "").slice(0, 8)
+                ? String(j.appliedRevisionId).replace(/^(?:fnv1a32:|sha256:)/i, "").slice(0, 8)
                 : "",
             ].filter(Boolean);
+            if (j.disk && j.disk.ok === false) head.style.color = "rgb(var(--bad))";
             head.textContent = bits.join(" · ") || "Готово";
           }
           pouredPane = "hist";
           openPourMod = "";
-          loadPoured();
+          loadPoured().then(() => renderDeskSolutions());
           loadPreview();
         })
         .catch((e) => {
+          btn.disabled = false;
           btn.textContent = label;
           paintPourButtons();
           const head = $("previewHead");
@@ -5213,6 +5758,85 @@
         } else renderMark();
       });
     });
+    if ($("passportXlsx")) {
+      $("passportXlsx").addEventListener("click", () => {
+        const unboundKeys = keyPlan.filter((k) => !k.deviceTopicKey).length;
+        const unboundLines = linePlan.filter((k) => !k.deviceTopicKey).length;
+        const holes = [];
+        if (markingUnreadable) holes.push("файл стола не читается — на экране плана нет");
+        if (shieldClockUnverified) holes.push("время щита не прочитано — сверьте с телефоном");
+        else if (shieldClockOk === false) holes.push("часы щита неверные — файл домой не везти");
+        const fight = deskOutputFight();
+        if (fight.busy) holes.push("два постоянных правила на один выход — заливка их не запишет");
+        if (fight.schedule) holes.push("расписание и постоянное правило на одном выходе — заливка их не запишет");
+        if (!lastBusScan) holes.push("полный снимок шины ещё не сохранён — сначала «Обновить»");
+        else if (lastBusScan.truncated) holes.push("последний скан шины обрезан");
+        else if (lastBusScan.shortScan) holes.push(gapScanText(lastBusScan) + " — файл домой не везти");
+        else if (lastBusScan.settled === false) holes.push("шина ещё дописывалась в момент снимка");
+        if (unboundKeys) holes.push(unboundKeys + " клавиш без топика");
+        if (unboundLines) holes.push(unboundLines + " линий без канала");
+        if (holes.length && !window.confirm(holes.join("\n") + "\n\nНа листе «Дыры» это будет видно. Скачать файл всё равно?")) {
+          return;
+        }
+        const a = document.createElement("a");
+        a.href = "/runtime/desk-passport.xlsx";
+        a.download = "паспорт-щита.xlsx";
+        a.click();
+      });
+    }
+    if ($("passportJson")) {
+      $("passportJson").addEventListener("click", () => {
+        if (markingUnreadable) {
+          window.alert("Файл стола не читается. JSON не отдаю, чтобы не сохранить пустой дом.");
+          return;
+        }
+        const a = document.createElement("a");
+        a.href = "/runtime/desk-marking.json";
+        a.download = "стол-щита.json";
+        a.click();
+      });
+    }
+    if ($("passportJsonRestore") && $("passportJsonFile")) {
+      $("passportJsonRestore").addEventListener("click", () => $("passportJsonFile").click());
+      $("passportJsonFile").addEventListener("change", () => {
+        const file = $("passportJsonFile").files && $("passportJsonFile").files[0];
+        $("passportJsonFile").value = "";
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = () => {
+          let body;
+          try {
+            body = JSON.parse(String(reader.result || ""));
+          } catch {
+            window.alert("Этот файл не JSON.");
+            return;
+          }
+          if (!window.confirm("Заменить черновик стола этим файлом?\n\nПравила на щите не меняются.")) return;
+          fetch("/runtime/desk-marking.json", {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify(body),
+          })
+            .then((r) => r.json())
+            .then((j) => {
+              if (!j || !j.ok) {
+                window.alert(j && j.error === "too_large" ? "Файл слишком большой." : "Стол не принял файл.");
+                return;
+              }
+              markingUnreadable = false;
+              if (j.outputBusy) {
+                window.alert("Черновик на месте. В нём два постоянных правила на один выход — заливка сценариев их не запишет.");
+              }
+              if (j.outputSchedule) {
+                window.alert("Черновик на месте. На одном выходе расписание спорит с постоянным правилом — заливка сценариев их не запишет.");
+              }
+              window.location.reload();
+            })
+            .catch(() => window.alert("Нет связи со столом."));
+        };
+        reader.readAsText(file);
+      });
+    }
     if ($("clearMarks")) {
       $("clearMarks").addEventListener("click", () => {
         if (
@@ -5364,7 +5988,16 @@
       try {
         if (!(lastShelvesRows || []).length) await loadLast();
         await Promise.all([loadKeyPlan(), loadLinePlan(), loadSolutions()]);
+        if (markingUnreadable) {
+          paintTornDesk();
+          return;
+        }
         const j = await fetchDeskHealth();
+        if (j && j.error === "marking_unreadable") {
+          markingUnreadable = true;
+          paintTornDesk();
+          return;
+        }
         const s = j.summary || {};
         const ready = fieldReadyBits(s, j.issues);
         const head = (ready.ready ? "К полю: разметка закрыта" : "Перед полем закройте хвосты")
@@ -5386,7 +6019,16 @@
       try {
         await loadLast();
         await Promise.all([loadKeyPlan(), loadLinePlan(), loadSolutions()]);
+        if (markingUnreadable) {
+          paintTornDesk();
+          return;
+        }
         const j = await fetchDeskHealth();
+        if (j && j.error === "marking_unreadable") {
+          markingUnreadable = true;
+          paintTornDesk();
+          return;
+        }
         const s = j.summary || {};
         const ready = fieldReadyBits(s, j.issues);
         const head = (ready.ready ? "Диагностика ок · к полю" : "Есть проблемы")
@@ -5500,9 +6142,29 @@
         runDeskPour("repair", $("pour"));
       });
     }
+    document.querySelectorAll("[data-go]").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const go = btn.dataset.go;
+        if (go === "xlsx") {
+          const x = $("passportXlsx");
+          if (x) x.click();
+          return;
+        }
+        if (go === "cards" || go === "poured") {
+          setTab(go);
+          return;
+        }
+        const fam = go === "keys" ? "keys" : go === "lines" ? "lines" : "all";
+        modFamily = fam;
+        openMod = "";
+        setTab("mark");
+        if (fam === "keys") loadKeyPlan().then(() => renderMark());
+        else if (fam === "lines") loadLinePlan().then(() => renderMark());
+      });
+    });
     const fromHash = location.hash.replace("#", "");
-    if (/^(mark|cards|poured|light|buttons|relays|keys|lines|pair)$/.test(fromHash)) setTab(fromHash);
-    else setTab("mark");
+    if (/^(intro|mark|cards|poured|light|buttons|relays|keys|lines|pair)$/.test(fromHash)) setTab(fromHash);
+    else setTab("intro");
     loadHealth();
     loadPoured();
     loadRooms();

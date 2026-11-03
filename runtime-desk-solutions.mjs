@@ -1,10 +1,10 @@
 /**
  * Типовые на столе — тот же каталог, что в Связях. JSON рядом с разметкой, диск не пишем.
- * Telegram на контроллере нет.
+ * Telegram на контроллере нет. leak_notify не заливаем, пока стол не пишет то же правило, что сервис.
+ * vent_vav_zone / vent_vav_fan — не vent_diy_vav (реле). «Я дома» — scene_come_home.
  */
-import fs from "node:fs";
-import path from "node:path";
-import { deskMarkingPath, isDeskDeviceKey, readDeskDocument, upsertDeskShelfMark } from "./runtime-desk-marking.mjs";
+import { isDeskDeviceKey, patchDeskDocument, readDeskDocument, withShelfChannelCards } from "./runtime-desk-marking.mjs";
+import { DESK_CRON_IDS } from "./runtime-desk-pour-cron.mjs";
 import { exclusiveDeskCards, isLoadControl } from "./runtime-desk-rules-marks.mjs";
 
 function isPourLoad(controlId) {
@@ -340,7 +340,7 @@ export const DESK_SOLUTION_CARDS = [
     perLoadLevel: true,
     fields: [{ key: "level", label: "Уровень по умолчанию", unit: "%", def: 0 }],
   }),
-  M("scene_home", "Сцены", "Я дома", "Галка = задать %; без галки = не трогаем.", {
+  M("scene_come_home", "Сцены", "Я дома", "Галка = задать %; без галки = не трогаем.", {
     loadKind: "light",
     perLoadLevel: true,
     fields: [{ key: "level", label: "Уровень по умолчанию", unit: "%", def: 100 }],
@@ -399,7 +399,26 @@ export const DESK_SOLUTION_CARDS = [
 
 /** Витрина L1: только то, что реально льётся в wb-rules. */
 export function deskSolutionCatalog() {
-  return DESK_SOLUTION_CARDS.filter((c) => c.pour !== false);
+  return DESK_SOLUTION_CARDS.filter((c) => c.pour !== false).map((c) => ({
+    ...c,
+    continuous: DESK_CONTINUOUS_CARD_IDS.has(c.id),
+    cron: DESK_CRON_IDS.has(c.id),
+  }));
+}
+
+/** Названия типовых, которые уже держат этот выход. Жесты-чипы тут не прячут движение и климат. */
+export function deskTitlesOnLoad(solutions, deviceTopicKey, controlId) {
+  const titles = [];
+  for (const sol of solutions || []) {
+    const hit = (sol?.targets || []).some(
+      (t) => t && t.deviceTopicKey === deviceTopicKey && t.controlId === controlId,
+    );
+    if (!hit) continue;
+    const card = DESK_SOLUTION_CARDS.find((c) => c.id === sol.solutionId);
+    const title = card?.title || sol.title || sol.solutionId;
+    if (title && !titles.includes(title)) titles.push(title);
+  }
+  return titles;
 }
 
 function contactOf(raw, { withLevel = false } = {}) {
@@ -415,30 +434,139 @@ function contactOf(raw, { withLevel = false } = {}) {
   return row;
 }
 
-function writeDoc(doc) {
-  const file = deskMarkingPath();
-  fs.mkdirSync(path.dirname(file), { recursive: true });
-  const prev = readDeskDocument();
-  fs.writeFileSync(
-    file,
-    JSON.stringify({
-      version: 3,
-      shelves: doc.shelves || {},
-      solutions: doc.solutions || [],
-      rooms: Array.isArray(doc.rooms) ? doc.rooms : [],
-      keyPlan: Array.isArray(doc.keyPlan) ? doc.keyPlan : prev.keyPlan || [],
-      linePlan: Array.isArray(doc.linePlan) ? doc.linePlan : prev.linePlan || [],
-    }, null, 2) + "\n",
-    "utf8",
-  );
+export function listDeskSolutions() {
+  return readDeskDocument().solutions.map((s) => {
+    if (s?.solutionId !== "scene_home") return s;
+    return { ...s, solutionId: "scene_come_home" };
+  });
 }
 
-export function listDeskSolutions() {
-  return readDeskDocument().solutions;
+/** Правила, которые сами продолжают писать в выход. Два таких на один канал дерутся. */
+export const DESK_CONTINUOUS_CARD_IDS = new Set([
+  "light_motion",
+  "light_night_path",
+  "stair_light_motion",
+  "light_reed_on",
+  "ac_cool_comfort",
+  "thermostat_simple_vd",
+  "vent_humidity",
+  "vent_humidity_motion",
+  "vent_co2",
+  "vent_diy_vav",
+  "vent_vav_zone",
+  "vent_vav_fan",
+]);
+
+const LATCHING_CARDS = new Set([
+  "light_button_toggle",
+  "light_dim_hold_mcm",
+  "socket_button_toggle",
+  "curtain_button_open",
+  "curtain_button_close",
+  "curtain_button_stop",
+]);
+
+/** Две одинаковые карточки на один выход гоняются. Сцена и переключение на одной линии — можно. */
+function latchClash(solutions, id, solutionId, targets) {
+  if (!LATCHING_CARDS.has(solutionId)) return null;
+  for (const s of solutions || []) {
+    if (!s || s.id === id || s.solutionId !== solutionId) continue;
+    for (const t of Array.isArray(s.targets) ? s.targets : []) {
+      const hit = (targets || []).find((x) => x.deviceTopicKey === t.deviceTopicKey && x.controlId === t.controlId);
+      if (!hit) continue;
+      return {
+        ok: false,
+        error: "output_taken",
+        deviceTopicKey: t.deviceTopicKey,
+        controlId: t.controlId,
+      };
+    }
+  }
+  return null;
+}
+
+/** Два разных постоянных правила на один выход. Одна карточка с двумя целями — не драка. */
+export function findContinuousOutputClash(solutions) {
+  const by = new Map();
+  for (const s of solutions || []) {
+    if (!s || !DESK_CONTINUOUS_CARD_IDS.has(s.solutionId)) continue;
+    const id = String(s.id || "");
+    for (const t of Array.isArray(s.targets) ? s.targets : []) {
+      if (!t?.deviceTopicKey || !t?.controlId) continue;
+      const key = t.deviceTopicKey + "\0" + t.controlId;
+      if (!by.has(key)) by.set(key, new Map());
+      by.get(key).set(id, s);
+    }
+  }
+  for (const [key, map] of by) {
+    if (map.size < 2) continue;
+    const [deviceTopicKey, controlId] = key.split("\0");
+    const rows = [...map.values()];
+    return {
+      ok: false,
+      error: "output_busy",
+      deviceTopicKey,
+      controlId,
+      ids: rows.map((s) => String(s.id)),
+      other: rows[1].title || rows[1].solutionId || "",
+    };
+  }
+  return null;
+}
+
+/** Постоянное правило и расписание на одном выходе. Два крона и пара закат/рассвет остаются. */
+export function findScheduleOutputClash(solutions) {
+  const by = new Map();
+  for (const s of solutions || []) {
+    const kind = DESK_CONTINUOUS_CARD_IDS.has(s?.solutionId)
+      ? "c"
+      : DESK_CRON_IDS.has(s?.solutionId)
+        ? "k"
+        : "";
+    if (!kind) continue;
+    const id = String(s.id || s.solutionId || "");
+    for (const t of Array.isArray(s.targets) ? s.targets : []) {
+      if (!t?.deviceTopicKey || !t?.controlId) continue;
+      const key = t.deviceTopicKey + "\0" + t.controlId;
+      if (!by.has(key)) by.set(key, { c: new Map(), k: new Map() });
+      by.get(key)[kind].set(id, s);
+    }
+  }
+  for (const [key, bucket] of by) {
+    if (!bucket.c.size || !bucket.k.size) continue;
+    const [deviceTopicKey, controlId] = key.split("\0");
+    const rows = [...bucket.c.values(), ...bucket.k.values()];
+    return {
+      ok: false,
+      error: "output_schedule",
+      deviceTopicKey,
+      controlId,
+      ids: rows.map((s) => String(s.id || s.solutionId || "")),
+      other: rows[1]?.title || rows[1]?.solutionId || "",
+    };
+  }
+  return null;
+}
+
+/** Два постоянных правила на один выход. Сцена и кнопка на той же линии остаются. */
+function clashRow(solutions, id, solutionId, targets, find) {
+  const row = { id, solutionId, targets, title: solutionId };
+  const rest = (solutions || []).filter((s) => s && s.id !== id);
+  return find([...rest, row]);
+}
+
+function continuousClash(solutions, id, solutionId, targets) {
+  return clashRow(solutions, id, solutionId, targets, findContinuousOutputClash);
+}
+
+function scheduleClash(solutions, id, solutionId, targets) {
+  return clashRow(solutions, id, solutionId, targets, findScheduleOutputClash);
 }
 
 export function upsertDeskSolution(input) {
-  const card = DESK_SOLUTION_CARDS.find((c) => c.id === String(input?.solutionId ?? "").trim());
+  const rawId = String(input?.solutionId ?? "").trim();
+  const solutionId = rawId === "scene_home" ? "scene_come_home" : rawId;
+  const card = DESK_SOLUTION_CARDS.find((c) => c.id === solutionId);
   if (!card) return { ok: false, error: "bad_card" };
   if (card.pour === false) return { ok: false, error: "not_pourable" };
   const trigger = contactOf(input?.trigger);
@@ -453,7 +581,9 @@ export function upsertDeskSolution(input) {
   if (!targets.length) return { ok: false, error: "need_target" };
   if (targets.some((t) => !isPourLoad(t.controlId))) return { ok: false, error: "need_load" };
   const doc = readDeskDocument();
-  const id = String(input?.id ?? "").trim() || `sol_${Date.now().toString(36)}`;
+  const id =
+    String(input?.id ?? "").trim() ||
+    `sol_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 6)}`;
   const params = {};
   for (const f of Array.isArray(card.fields) ? card.fields : []) {
     // Уровень на линии живёт в targets[].level; params.level — только fallback/дефолт.
@@ -482,35 +612,65 @@ export function upsertDeskSolution(input) {
     ...(Object.keys(params).length ? { params } : {}),
     savedAt: new Date().toISOString(),
   };
+  const clash =
+    latchClash(doc.solutions, id, card.id, targets) ||
+    continuousClash(doc.solutions, id, card.id, targets) ||
+    scheduleClash(doc.solutions, id, card.id, targets);
+  if (clash) return clash;
   const next = doc.solutions.filter((s) => s.id !== id);
   next.push(row);
-  writeDoc({ ...doc, solutions: next });
-  // Merge: вкл + дим на одной линии должны жить вместе, не затирать друг друга.
-  {
-    const stamp = exclusiveDeskCards([card.id]);
-    if (stamp.length) {
-      const shelves = doc.shelves || {};
-      targets.forEach((t) => {
-        if (!isPourLoad(t.controlId)) return;
-        const prev = shelves[t.deviceTopicKey]?.channels?.[t.controlId]?.cards;
-        const merged = exclusiveDeskCards([...(Array.isArray(prev) ? prev : []), card.id]);
-        if (!merged.length) return;
-        upsertDeskShelfMark({
-          deviceTopicKey: t.deviceTopicKey,
-          controlId: t.controlId,
-          cards: merged,
-        });
-      });
+  let shelves = doc.shelves && typeof doc.shelves === "object" ? doc.shelves : {};
+  const stamp = exclusiveDeskCards([card.id]);
+  if (stamp.length) {
+    for (const t of targets) {
+      if (!isPourLoad(t.controlId)) continue;
+      const prev = shelves[t.deviceTopicKey]?.channels?.[t.controlId]?.cards;
+      const merged = exclusiveDeskCards([...(Array.isArray(prev) ? prev : []), card.id]);
+      if (!merged.length) continue;
+      shelves = withShelfChannelCards(shelves, t.deviceTopicKey, t.controlId, merged);
     }
   }
+  const written = patchDeskDocument({ solutions: next, shelves });
+  if (written?.ok === false) return written;
   return { ok: true, solution: row, solutions: next };
+}
+
+function shelvesWithoutSolutionCard(shelves, solution, remaining) {
+  let next = shelves && typeof shelves === "object" ? shelves : {};
+  const targets = Array.isArray(solution?.targets) ? solution.targets : [];
+  const sid = String(solution?.solutionId || "");
+  if (!sid) return next;
+  for (const t of targets) {
+    const dk = String(t?.deviceTopicKey || "");
+    const cid = String(t?.controlId || "");
+    if (!dk || !cid) continue;
+    const still = remaining.some((s) => {
+      if (String(s?.solutionId || "") !== sid) return false;
+      return (Array.isArray(s.targets) ? s.targets : []).some(
+        (x) => x?.deviceTopicKey === dk && x?.controlId === cid,
+      );
+    });
+    if (still) continue;
+    const prev = next?.[dk]?.channels?.[cid]?.cards;
+    if (!Array.isArray(prev) || !prev.includes(sid)) continue;
+    next = withShelfChannelCards(
+      next,
+      dk,
+      cid,
+      prev.filter((cardId) => cardId !== sid),
+    );
+  }
+  return next;
 }
 
 export function deleteDeskSolution(id) {
   const want = String(id ?? "").trim();
   if (!want) return { ok: false, error: "need_id" };
   const doc = readDeskDocument();
+  const row = doc.solutions.find((s) => s.id === want);
   const solutions = doc.solutions.filter((s) => s.id !== want);
-  writeDoc({ ...doc, solutions });
+  const shelves = shelvesWithoutSolutionCard(doc.shelves, row, solutions);
+  const written = patchDeskDocument({ solutions, shelves });
+  if (written?.ok === false) return written;
   return { ok: true, solutions };
 }

@@ -15,7 +15,7 @@ import {
 } from "./runtime-desk-rules-marks.mjs";
 import { parseDeskDeviceKey } from "./runtime-desk-shelves.mjs";
 
-const MAX_NAME = 80;
+const MAX_NAME = 160;
 
 export function deskMarkingPath() {
   const state = (process.env.FLOS_STATE_PATH || "/var/lib/reactor-edge/agent.state.json").trim();
@@ -38,25 +38,30 @@ function cleanRooms(value) {
     seen.add(k);
     out.push(s);
   }
-  return out.slice(0, 40);
+  return out.slice(0, 80);
 }
 
 export function readDeskDocument() {
+  const file = deskMarkingPath();
+  if (!fs.existsSync(file)) return emptyDoc();
   try {
-    const raw = fs.readFileSync(deskMarkingPath(), "utf8");
+    const raw = fs.readFileSync(file, "utf8");
     const json = JSON.parse(raw);
-    const shelves = json?.shelves && typeof json.shelves === "object" ? json.shelves : {};
-    const solutions = Array.isArray(json?.solutions) ? json.solutions : [];
+    if (!json || typeof json !== "object" || Array.isArray(json)) {
+      return { ...emptyDoc(), unreadable: true };
+    }
+    const shelves = json.shelves && typeof json.shelves === "object" ? json.shelves : {};
+    const solutions = Array.isArray(json.solutions) ? json.solutions : [];
     return {
       version: 3,
       shelves: dropBindsFromShelves(shelves).shelves,
       solutions,
-      rooms: cleanRooms(json?.rooms),
-      keyPlan: Array.isArray(json?.keyPlan) ? json.keyPlan : [],
-      linePlan: Array.isArray(json?.linePlan) ? json.linePlan : [],
+      rooms: cleanRooms(json.rooms),
+      keyPlan: Array.isArray(json.keyPlan) ? json.keyPlan : [],
+      linePlan: Array.isArray(json.linePlan) ? json.linePlan : [],
     };
   } catch {
-    return emptyDoc();
+    return { ...emptyDoc(), unreadable: true };
   }
 }
 
@@ -64,13 +69,30 @@ export function listDeskRooms() {
   return readDeskDocument().rooms;
 }
 
-export function upsertDeskRoom(name) {
-  const room = cleanName(name);
-  if (!room || /·/.test(room)) return { ok: false, error: "need_room" };
+/** Одно написание комнаты: «холл» не заводит вторую комнату рядом с «Холл». */
+export function canonDeskRoom(name) {
+  const s = cleanName(name);
+  if (!s || /·/.test(s)) return "";
+  const cut = s.slice(0, 80);
   const doc = readDeskDocument();
+  const pools = []
+    .concat(doc.rooms || [])
+    .concat((doc.keyPlan || []).map((k) => k && k.room))
+    .concat((doc.linePlan || []).map((k) => k && k.room));
+  const hit = pools.find((r) => String(r || "").toLowerCase() === cut.toLowerCase());
+  return hit ? String(hit) : cut;
+}
+
+export function upsertDeskRoom(name) {
+  const room = canonDeskRoom(name);
+  if (!room) return { ok: false, error: "need_room" };
+  const doc = readDeskDocument();
+  if (doc.unreadable) return { ok: false, error: "marking_unreadable" };
+  if ((doc.rooms || []).some((r) => r === room)) return { ok: true, rooms: doc.rooms, room };
   const rooms = cleanRooms([...(doc.rooms || []), room]);
-  writeDoc({ ...doc, rooms });
-  return { ok: true, rooms };
+  const written = writeDoc({ ...doc, rooms });
+  if (written?.ok === false) return written;
+  return { ok: true, rooms, room };
 }
 
 export function readDeskMarking() {
@@ -81,6 +103,7 @@ export function readDeskMarking() {
 /** Стереть имена/карточки со стола. Комнаты и типовые не трогаем. Щит не пишем. */
 export function clearDeskShelvesMarking() {
   const doc = readDeskDocument();
+  if (doc.unreadable) return { ok: false, error: "marking_unreadable" };
   let cleared = 0;
   for (const shelf of Object.values(doc.shelves || {})) {
     const ch = shelf?.channels && typeof shelf.channels === "object" ? shelf.channels : {};
@@ -96,6 +119,7 @@ export function clearDeskShelvesMarking() {
  */
 export function clearDeskProject() {
   const doc = readDeskDocument();
+  if (doc.unreadable) return { ok: false, error: "marking_unreadable" };
   let clearedShelves = 0;
   for (const shelf of Object.values(doc.shelves || {})) {
     const ch = shelf?.channels && typeof shelf.channels === "object" ? shelf.channels : {};
@@ -120,27 +144,102 @@ export function clearDeskProject() {
 
 function cleanName(value) {
   const s = String(value ?? "").trim().replace(/\s+/g, " ");
-  if (!s || s.length > MAX_NAME) return "";
+  if (!s) return "";
   if (/\/devices\//i.test(s) || /^wb-[a-z0-9-]+_\d/i.test(s)) return "";
-  return s;
+  return s.length > MAX_NAME ? s.slice(0, MAX_NAME) : s;
+}
+
+/**
+ * Меняет только переданные поля. Остальное перечитывается с диска в момент записи,
+ * чтобы сохранение карточки не затирало клавиши, линии и имена каналов.
+ */
+export function patchDeskDocument(patch) {
+  const file = deskMarkingPath();
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  let prev = null;
+  if (fs.existsSync(file)) {
+    let json;
+    try {
+      json = JSON.parse(fs.readFileSync(file, "utf8"));
+    } catch {
+      return { ok: false, error: "marking_unreadable" };
+    }
+    if (!json || typeof json !== "object" || Array.isArray(json)) {
+      return { ok: false, error: "marking_unreadable" };
+    }
+    prev = {
+      shelves: dropBindsFromShelves(json.shelves && typeof json.shelves === "object" ? json.shelves : {}).shelves,
+      solutions: Array.isArray(json.solutions) ? json.solutions : [],
+      rooms: cleanRooms(json.rooms),
+      keyPlan: Array.isArray(json.keyPlan) ? json.keyPlan : [],
+      linePlan: Array.isArray(json.linePlan) ? json.linePlan : [],
+    };
+  } else {
+    prev = emptyDoc();
+  }
+  const has = (key) => patch && Object.prototype.hasOwnProperty.call(patch, key);
+  const shelves = has("shelves")
+    ? dropBindsFromShelves(patch.shelves && typeof patch.shelves === "object" ? patch.shelves : {}).shelves
+    : prev.shelves;
+  const body = {
+    version: 3,
+    shelves,
+    solutions: has("solutions") ? (Array.isArray(patch.solutions) ? patch.solutions : []) : prev.solutions,
+    rooms: has("rooms") ? cleanRooms(patch.rooms) : prev.rooms,
+    keyPlan: has("keyPlan") ? (Array.isArray(patch.keyPlan) ? patch.keyPlan : []) : prev.keyPlan || [],
+    linePlan: has("linePlan") ? (Array.isArray(patch.linePlan) ? patch.linePlan : []) : prev.linePlan || [],
+  };
+  writeDeskFile(body);
+  return { ok: true, ...body };
+}
+
+function writeDeskFile(body) {
+  const file = deskMarkingPath();
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  const tmp = `${file}.tmp-${process.pid}-${Date.now().toString(36)}`;
+  fs.writeFileSync(tmp, JSON.stringify(body, null, 2) + "\n", "utf8");
+  fs.renameSync(tmp, file);
+}
+
+/** Целиком кладёт черновик стола на место, даже если текущий файл порван. Правила щита не трогает. */
+export function replaceDeskDocument(input) {
+  if (!input || typeof input !== "object" || Array.isArray(input)) return { ok: false, error: "bad_json" };
+  const shelvesIn = input.shelves;
+  if (!shelvesIn || typeof shelvesIn !== "object" || Array.isArray(shelvesIn)) {
+    return { ok: false, error: "bad_json" };
+  }
+  const body = {
+    version: 3,
+    shelves: dropBindsFromShelves(shelvesIn).shelves,
+    solutions: Array.isArray(input.solutions) ? input.solutions : [],
+    rooms: cleanRooms(input.rooms),
+    keyPlan: collapseKeyPlan(input.keyPlan),
+    linePlan: Array.isArray(input.linePlan) ? input.linePlan : [],
+  };
+  const raw = JSON.stringify(body);
+  if (raw.length > 2_000_000) return { ok: false, error: "too_large" };
+  writeDeskFile(body);
+  return { ok: true, restored: true, rooms: body.rooms, keyPlan: body.keyPlan, linePlan: body.linePlan };
+}
+
+function collapseKeyPlan(plan) {
+  if (!Array.isArray(plan)) return [];
+  return plan.map((row) => {
+    if (!row || typeof row !== "object" || !row.controlId) return row;
+    const base = deskInputBaseControl(row.controlId);
+    if (!base || base === row.controlId) return row;
+    return { ...row, controlId: base };
+  });
 }
 
 function writeDoc(doc) {
-  const file = deskMarkingPath();
-  fs.mkdirSync(path.dirname(file), { recursive: true });
-  const prev = readDeskDocument();
-  const shelves = dropBindsFromShelves(
-    doc?.shelves && typeof doc.shelves === "object" ? doc.shelves : {},
-  ).shelves;
-  const solutions = Array.isArray(doc?.solutions) ? doc.solutions : prev.solutions;
-  const rooms = Array.isArray(doc?.rooms) ? cleanRooms(doc.rooms) : prev.rooms;
-  const keyPlan = Array.isArray(doc?.keyPlan) ? doc.keyPlan : prev.keyPlan || [];
-  const linePlan = Array.isArray(doc?.linePlan) ? doc.linePlan : prev.linePlan || [];
-  fs.writeFileSync(
-    file,
-    JSON.stringify({ version: 3, shelves, solutions, rooms, keyPlan, linePlan }, null, 2) + "\n",
-    "utf8",
-  );
+  const patch = {};
+  if (doc && Object.prototype.hasOwnProperty.call(doc, "shelves")) patch.shelves = doc.shelves;
+  if (Array.isArray(doc?.solutions)) patch.solutions = doc.solutions;
+  if (Array.isArray(doc?.rooms)) patch.rooms = doc.rooms;
+  if (Array.isArray(doc?.keyPlan)) patch.keyPlan = doc.keyPlan;
+  if (Array.isArray(doc?.linePlan)) patch.linePlan = doc.linePlan;
+  return patchDeskDocument(patch);
 }
 
 function dropBindsFromShelves(shelves) {
@@ -173,12 +272,69 @@ function cleanCards(value) {
   return exclusiveDeskCards(value);
 }
 
+/** Input, или его Short/Long/Double Press Counter — одна и та же клавиша. */
+export function deskInputBaseControl(controlId) {
+  const c = String(controlId || "").trim();
+  const m = /^(Input\s+[A-Z]?\d+)\s+(?:Short|Long|Double) Press Counter$/i.exec(c);
+  if (m) return m[1];
+  if (/^Input\s+[A-Z]?\d+$/i.test(c)) return c;
+  if (/^EXT\d+_IN\d+$/i.test(c) || /^[A-D]\d+_IN\d+$/i.test(c)) return c;
+  return "";
+}
+
+/** Кнопка Input, включая Input A1, слушает счётчик. EXT и A1_IN остаются уровнем. */
+export function deskButtonCounter(controlId, kind = "Short") {
+  const base = deskInputBaseControl(controlId);
+  if (base && /^Input\s+/i.test(base)) return `${base} ${kind} Press Counter`;
+  return String(controlId || "").trim();
+}
+
 export function isDeskDeviceKey(key) {
   const s = String(key ?? "").trim();
   return /^[a-z0-9][a-z0-9._-]{0,79}$/i.test(s) && !/\/devices\//i.test(s);
 }
 
 /** Merge one contact. Never deletes sibling channels. Never writes wb-rules. */
+/** Имя канала в копии полок, без записи на диск. Пустое имя снимает канал, если на нём нет карточек. */
+/** Карточки канала в копии полок, без записи. Пустой список снимает карточки и канал, если имени нет. */
+export function withShelfChannelCards(shelves, deviceTopicKey, controlId, cards) {
+  const next = JSON.parse(JSON.stringify(shelves && typeof shelves === "object" ? shelves : {}));
+  const key = String(deviceTopicKey || "").trim();
+  const cid = String(controlId || "").trim();
+  if (!key || !cid) return next;
+  const shelf = next[key] && typeof next[key] === "object" ? next[key] : {};
+  const channels = shelf.channels && typeof shelf.channels === "object" ? shelf.channels : {};
+  const cur = channels[cid] && typeof channels[cid] === "object" ? { ...channels[cid] } : {};
+  delete cur.binds;
+  const cleaned = cleanCards(cards);
+  if (!cleaned || cleaned.length === 0) delete cur.cards;
+  else cur.cards = cleaned;
+  if (!cur.name && !(Array.isArray(cur.cards) && cur.cards.length)) delete channels[cid];
+  else channels[cid] = cur;
+  if (Object.keys(channels).length === 0) delete next[key];
+  else next[key] = { ...shelf, channels };
+  return next;
+}
+
+export function withShelfChannelName(shelves, deviceTopicKey, controlId, name) {
+  const next = JSON.parse(JSON.stringify(shelves && typeof shelves === "object" ? shelves : {}));
+  const key = String(deviceTopicKey || "").trim();
+  const cid = String(controlId || "").trim();
+  if (!key || !cid) return next;
+  const shelf = next[key] && typeof next[key] === "object" ? next[key] : {};
+  const channels = shelf.channels && typeof shelf.channels === "object" ? shelf.channels : {};
+  const cur = channels[cid] && typeof channels[cid] === "object" ? { ...channels[cid] } : {};
+  delete cur.binds;
+  const cleaned = cleanName(name);
+  if (!cleaned) delete cur.name;
+  else cur.name = cleaned;
+  if (!cur.name && !(Array.isArray(cur.cards) && cur.cards.length)) delete channels[cid];
+  else channels[cid] = cur;
+  if (Object.keys(channels).length === 0) delete next[key];
+  else next[key] = { ...shelf, channels };
+  return next;
+}
+
 export function upsertDeskShelfMark(input) {
   const key = String(input?.deviceTopicKey ?? "").trim();
   const controlId = String(input?.controlId ?? "").trim();

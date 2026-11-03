@@ -1,12 +1,13 @@
 /**
  * Типовые со стола → defineRule в 40_rules_user.
  */
+import { deskButtonCounter } from "./runtime-desk-marking.mjs";
 import { liveDeskDeviceKey } from "./runtime-desk-rules-marks.mjs";
 import { emitDeskClimate, isDeskClimateSolution } from "./runtime-desk-pour-climate.mjs";
 import { emitDeskCron, isDeskCronSolution } from "./runtime-desk-pour-cron.mjs";
 import { emitDeskLight, isDeskLightSolution } from "./runtime-desk-pour-light.mjs";
 import { emitDeskScene, isDeskSceneSolution } from "./runtime-desk-pour-scenes.mjs";
-import { emitDeskVavBlock, isDeskVavSolution } from "./runtime-desk-pour-vav.mjs";
+import { emitDeskVavHelper, emitDeskVavSolution, isDeskVavSolution } from "./runtime-desk-pour-vav.mjs";
 
 const DESK_PREFIX = "desk_sol_";
 const SUPPORTED = new Set([
@@ -26,26 +27,120 @@ function pathOf(c) {
   return liveDeskDeviceKey(c.deviceTopicKey) + "/" + String(c.controlId).trim();
 }
 
+function buttonWhen(trig, kind) {
+  const dev = liveDeskDeviceKey(trig?.deviceTopicKey);
+  const cid = deskButtonCounter(trig?.controlId, kind);
+  if (!dev || !cid) return "";
+  return dev + "/" + cid;
+}
+
 function triggerWhen(trig) {
-  const p = pathOf(trig);
-  if (!p) return "";
-  if (/\/Input \d+$/i.test(p)) return p + " Short Press Counter";
-  return p;
+  return buttonWhen(trig, "Short");
 }
 
 function longWhen(trig) {
-  const p = pathOf(trig);
-  if (!p) return "";
-  if (/\/Input \d+$/i.test(p)) return p + " Long Press Counter";
-  return p;
+  return buttonWhen(trig, "Long");
+}
+
+const RULE_SUFFIXES = [
+  "_offrestore",
+  "_dim_stop",
+  "_dim_up",
+  "_dim_dn",
+  "_winoff",
+  "_toggle",
+  "_alloff",
+  "_scene",
+  "_vavz",
+  "_vavf",
+  "_stale",
+  "_cron",
+  "_clim",
+  "_curt",
+  "_set",
+  "_sec",
+  "_on",
+];
+
+/** desk_sol_<solutionId>_toggle → solutionId. Без суффикса — id целиком (дим). */
+export function deskOwnerFromRuleName(ruleName) {
+  const name = String(ruleName || "");
+  if (!name.startsWith(DESK_PREFIX)) return "";
+  const rest = name.slice(DESK_PREFIX.length);
+  for (const suf of RULE_SUFFIXES) {
+    if (rest.endsWith(suf) && rest.length > suf.length) return rest.slice(0, -suf.length);
+  }
+  return rest;
+}
+
+export function canonDeskSolutionId(solutionId) {
+  return String(solutionId || "") === "scene_home" ? "scene_come_home" : String(solutionId || "");
+}
+
+function canonSol(sol) {
+  if (!sol || typeof sol !== "object") return sol;
+  const solutionId = canonDeskSolutionId(sol.solutionId);
+  return solutionId === sol.solutionId ? sol : { ...sol, solutionId };
+}
+
+function ownedChunk(id, js) {
+  const body = String(js || "").trim();
+  const owner = String(id || "").trim();
+  if (!body || !owner) return "";
+  return `// desk_sol_owner:${owner}\n${body}\n// desk_sol_end:${owner}`;
+}
+
+function escapeReg(s) {
+  return String(s).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function dropOwnerBlock(text, id) {
+  const owner = escapeReg(id);
+  let next = String(text || "").replace(
+    new RegExp(`\\n*// desk_sol_owner:${owner}\\n[\\s\\S]*?// desk_sol_end:${owner}\\n?`, "g"),
+    "\n",
+  );
+  next = next.replace(/defineRule\s*\(\s*['"](desk_sol_[^'"]+)['"][\s\S]*?(?=defineRule\s*\(|$)/g, (block, ruleName) =>
+    deskOwnerFromRuleName(ruleName) === id ? "" : block,
+  );
+  const hold = escapeReg(String(id).replace(/[^a-zA-Z0-9_]/g, "_"));
+  next = next.replace(new RegExp(`^var _desk_hold_${hold}[^\\n]*\\n?`, "gm"), "");
+  return next;
 }
 
 function stripDeskRules(src) {
   let text = String(src || "");
+  text = text.replace(/\n*\/\/ desk_sol_owner:[^\n]*\n[\s\S]*?\/\/ desk_sol_end:[^\n]*\n?/g, "\n");
   text = text.replace(/^\/\/\s*desk_sol[^\n]*\n?/gm, "");
   text = text.replace(/^var _desk_[^\n]*\n?/gm, "");
+  text = text.replace(/function __deskVavY[\s\S]*?function __deskVavPushFan[\s\S]*?\n\}/g, "");
+  text = text.replace(/\(function \(\) \{\n {2}if \(typeof global === 'undefined'\) return;\n[\s\S]*?\}\)\(\);\n?/g, "");
   const re = /defineRule\s*\(\s*['"]desk_sol_[^'"]+['"][\s\S]*?(?=defineRule\s*\(|$)/g;
   return text.replace(re, "").replace(/\n{3,}/g, "\n\n").trim();
+}
+
+/**
+ * Облачный apply дописывает блоки стола, которых нет во входящем шарде.
+ * Не вызывает стол: удаление правила стола делает только заливка стола.
+ */
+export function preserveDeskRules(previous, incoming) {
+  const prev = String(previous || "");
+  let next = String(incoming || "");
+  const extra = [];
+  const marked = /\n*(\/\/ desk_sol_owner:([^\n]+)\n[\s\S]*?\/\/ desk_sol_end:\2\n?)/g;
+  let m;
+  while ((m = marked.exec(prev))) {
+    const owner = m[2];
+    if (!next.includes(`// desk_sol_owner:${owner}\n`)) extra.push(m[1].trim());
+  }
+  const legacy = /defineRule\s*\(\s*['"](desk_sol_[^'"]+)['"][\s\S]*?(?=defineRule\s*\(|$)/g;
+  while ((m = legacy.exec(prev))) {
+    if (next.includes(m[1])) continue;
+    if (extra.some((b) => b.includes(m[1]))) continue;
+    extra.push(m[0].trim());
+  }
+  if (!extra.length) return next;
+  return `${next.replace(/\s*$/, "")}\n\n${extra.join("\n\n")}\n`;
 }
 
 function emitToggle(sol) {
@@ -157,38 +252,91 @@ function emitCustomSet(sol) {
 }
 
 export function supportedDeskSolution(sol) {
-  const sid = String(sol?.solutionId || "");
+  const row = canonSol(sol);
+  const sid = String(row?.solutionId || "");
   return (
     SUPPORTED.has(sid) ||
-    isDeskClimateSolution(sol) ||
-    isDeskCronSolution(sol) ||
-    isDeskLightSolution(sol) ||
-    isDeskSceneSolution(sol) ||
-    isDeskVavSolution(sol)
+    isDeskClimateSolution(row) ||
+    isDeskCronSolution(row) ||
+    isDeskLightSolution(row) ||
+    isDeskSceneSolution(row) ||
+    isDeskVavSolution(row)
   );
 }
 
-export function mergeDeskSolutionsIntoUser(userSrc, solutions) {
-  const base = stripDeskRules(userSrc);
-  const list = Array.isArray(solutions) ? solutions : [];
+function emitOne(sol) {
+  const row = canonSol(sol);
+  if (!supportedDeskSolution(row)) return "";
+  if (isDeskVavSolution(row)) return emitDeskVavSolution(row);
+  const sid = String(row.solutionId || "");
+  if (isDeskClimateSolution(row)) return emitDeskClimate(row);
+  if (isDeskCronSolution(row)) return emitDeskCron(row);
+  if (isDeskLightSolution(row)) return emitDeskLight(row);
+  if (isDeskSceneSolution(row)) return emitDeskScene(row);
+  if (sid === "light_all_off") return emitAllOff(row);
+  if (sid === "master_power_off_restore") return emitMasterOffRestore(row);
+  if (sid === "custom_control_task") return emitCustomSet(row);
+  return emitToggle(row);
+}
+
+function chunksFor(list, { helper }) {
   const chunks = [];
-  const vavBlock = emitDeskVavBlock(list);
-  if (vavBlock) chunks.push(vavBlock);
-  for (const sol of list) {
-    if (!supportedDeskSolution(sol) || isDeskVavSolution(sol)) continue;
-    const sid = String(sol.solutionId || "");
-    let js = "";
-    if (isDeskClimateSolution(sol)) js = emitDeskClimate(sol);
-    else if (isDeskCronSolution(sol)) js = emitDeskCron(sol);
-    else if (isDeskLightSolution(sol)) js = emitDeskLight(sol);
-    else if (isDeskSceneSolution(sol)) js = emitDeskScene(sol);
-    else if (sid === "light_all_off") js = emitAllOff(sol);
-    else if (sid === "master_power_off_restore") js = emitMasterOffRestore(sol);
-    else if (sid === "custom_control_task") js = emitCustomSet(sol);
-    else js = emitToggle(sol);
-    if (js) chunks.push(js);
+  const rows = list.map(canonSol);
+  if (helper && rows.some(isDeskVavSolution)) {
+    const js = emitDeskVavHelper();
+    if (js) chunks.push(ownedChunk("__vav", js));
   }
+  for (const sol of rows) {
+    const js = emitOne(sol);
+    if (js) chunks.push(ownedChunk(sol.id, js));
+  }
+  return chunks;
+}
+
+function joinUser(base, chunks) {
   const banner = "// desk_sol — типовые со стола LAN\n";
-  const next = (base ? base + "\n\n" : "") + (chunks.length ? banner + chunks.join("\n\n") + "\n" : "");
-  return { content: next, emitted: chunks.length, changed: chunks.length > 0 || base !== String(userSrc || "").trim() };
+  const body = chunks.length ? banner + chunks.join("\n\n") + "\n" : "";
+  return ((base ? base + "\n\n" : "") + body).replace(/\n{3,}/g, "\n\n").trim() + (body || base ? "\n" : "");
+}
+
+/**
+ * onlyIds: правка или долив этих карточек. Остальные defineRule на диске не переписываются.
+ * Без onlyIds — полная пересборка правил стола, чужие (не desk_sol) байты остаются.
+ */
+export function mergeDeskSolutionsIntoUser(userSrc, solutions, opts = {}) {
+  const list = (Array.isArray(solutions) ? solutions : []).map(canonSol).filter(supportedDeskSolution);
+  const onlyIds = Array.isArray(opts.onlyIds)
+    ? opts.onlyIds.map((id) => String(id || "").trim()).filter(Boolean)
+    : null;
+  if (!onlyIds) {
+    const base = stripDeskRules(userSrc);
+    const chunks = chunksFor(list, { helper: true });
+    const content = joinUser(base, chunks);
+    return {
+      content,
+      emitted: chunks.filter((c) => !c.startsWith("// desk_sol_owner:__vav\n")).length,
+      changed: content.trim() !== String(userSrc || "").trim(),
+      solutionIds: list.map((s) => String(s.id)),
+    };
+  }
+  const targets = list.filter((s) => onlyIds.includes(String(s.id)));
+  let text = String(userSrc || "");
+  for (const sol of targets) text = dropOwnerBlock(text, String(sol.id));
+  const needHelper = targets.some(isDeskVavSolution) && !text.includes("function __deskVavY");
+  const chunks = chunksFor(targets, { helper: needHelper });
+  let content = text.replace(/\n{3,}/g, "\n\n").trim();
+  if (chunks.length) {
+    if (!content.includes("// desk_sol — типовые со стола LAN")) {
+      content = (content ? content + "\n\n" : "") + "// desk_sol — типовые со стола LAN";
+    }
+    content = content.replace(/\s*$/, "") + "\n\n" + chunks.join("\n\n") + "\n";
+  } else {
+    content = content ? content.replace(/\s*$/, "") + "\n" : "";
+  }
+  return {
+    content,
+    emitted: chunks.filter((c) => !c.startsWith("// desk_sol_owner:__vav\n")).length,
+    changed: content.trim() !== String(userSrc || "").trim(),
+    solutionIds: targets.map((s) => String(s.id)),
+  };
 }

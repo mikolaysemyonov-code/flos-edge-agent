@@ -11,6 +11,7 @@ import {
   clearDeskShelvesMarking,
   deskMarkingPath,
   listDeskRooms,
+  readDeskDocument,
   readDeskMarking,
   upsertDeskRoom,
   upsertDeskShelfMark,
@@ -30,7 +31,7 @@ import {
   readPouredChannelMarks,
   readPouredDeskSnapshot,
 } from "./runtime-desk-rules-marks.mjs";
-import { formatDeskShelfLabel, groupDeskShelves, rememberDeskShelves } from "./runtime-desk-shelves.mjs";
+import { deskScanGap, formatDeskShelfLabel, groupDeskShelves, rememberDeskShelves, unionDeskShelves } from "./runtime-desk-shelves.mjs";
 import { assessDeskCanPour, buildDeskPourPackage } from "./runtime-desk-pour.mjs";
 import {
   actuateDeskChannel,
@@ -39,6 +40,7 @@ import {
 } from "./runtime-desk-actuate.mjs";
 import {
   bindDeskKeyPlanItem,
+  captureDeskKeyPlanItem,
   deleteDeskKeyPlanItem,
   listDeskKeyPlan,
   replaceDeskKeyPlan,
@@ -59,7 +61,6 @@ import {
   listDeskAuditRuns,
   saveDeskAuditRun,
 } from "./runtime-desk-audit.mjs";
-import { listDeskSolutions } from "./runtime-desk-solutions.mjs";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 
@@ -113,19 +114,30 @@ function lastShelvesPath() {
   return path.join(path.dirname(deskMarkingPath()), "desk-last-shelves.json");
 }
 
-export function readLastDeskShelves() {
+function readLastDeskShelvesFile() {
+  const file = lastShelvesPath();
+  if (!fs.existsSync(file)) return null;
   try {
-    const json = JSON.parse(fs.readFileSync(lastShelvesPath(), "utf8"));
-    const shelves = Array.isArray(json?.shelves) ? json.shelves : [];
-    return {
-      ok: true,
-      cached: true,
-      brokerLabel: typeof json?.brokerLabel === "string" ? json.brokerLabel : "",
-      shelves,
-    };
+    const json = JSON.parse(fs.readFileSync(file, "utf8"));
+    if (!json || typeof json !== "object" || Array.isArray(json)) return { unreadable: true };
+    return json;
   } catch {
-    return { ok: true, cached: true, shelves: [] };
+    return { unreadable: true };
   }
+}
+
+export function readLastDeskShelves() {
+  const json = readLastDeskShelvesFile();
+  if (!json) return { ok: true, cached: true, shelves: [], scan: null };
+  if (json.unreadable) return { ok: false, error: "cache_unreadable", cached: true, shelves: [], scan: null };
+  const shelves = Array.isArray(json?.shelves) ? json.shelves : [];
+  return {
+    ok: true,
+    cached: true,
+    brokerLabel: typeof json?.brokerLabel === "string" ? json.brokerLabel : "",
+    shelves,
+    scan: json?.scan && typeof json.scan === "object" ? json.scan : null,
+  };
 }
 
 function withPouredHints(shelves) {
@@ -155,16 +167,20 @@ function withPouredHints(shelves) {
   }));
 }
 
-export function writeLastDeskShelves(shelves, brokerLabel) {
+export function writeLastDeskShelves(shelves, brokerLabel, scan) {
   const file = lastShelvesPath();
   fs.mkdirSync(path.dirname(file), { recursive: true });
+  const prev = readLastDeskShelvesFile();
+  const nextScan = scan === undefined ? (prev?.scan && typeof prev.scan === "object" ? prev.scan : null) : scan;
+  const tmp = `${file}.tmp-${process.pid}-${Date.now().toString(36)}`;
   fs.writeFileSync(
-    file,
+    tmp,
     JSON.stringify(
       {
         version: 1,
         savedAt: new Date().toISOString(),
         brokerLabel: brokerLabel || "",
+        scan: nextScan,
         shelves: Array.isArray(shelves) ? shelves : [],
       },
       null,
@@ -172,12 +188,22 @@ export function writeLastDeskShelves(shelves, brokerLabel) {
     ) + "\n",
     "utf8",
   );
+  fs.renameSync(tmp, file);
+}
+
+/** Живой опрос входов не должен стирать каналы нагрузок, уже увиденные полным сканом. */
+function mergeShelfChannels(prev, next) {
+  return unionDeskShelves(prev, next);
 }
 
 export async function handleRuntimeMqttScan(req, res) {
   const method = (req.method ?? "GET").toUpperCase();
   if (method === "GET") {
     const last = readLastDeskShelves();
+    if (last.error === "cache_unreadable") {
+      jsonEnd(res, 409, { ok: false, error: "cache_unreadable" });
+      return;
+    }
     last.shelves = withPouredHints(applyMarksToShelves(last.shelves));
     jsonEnd(res, 200, last);
     return;
@@ -207,10 +233,41 @@ export async function handleRuntimeMqttScan(req, res) {
   try {
     const out = await mqttScanHandler(body);
     if (out?.ok && Array.isArray(out.snapshot?.entries)) {
+      const partial = body?.inputsOnly === true || Boolean(String(body?.deviceTopicKey || "").trim());
       const grouped = groupDeskShelves(out.snapshot.entries);
-      const merged = rememberDeskShelves(readLastDeskShelves().shelves, grouped);
+      const prevRead = readLastDeskShelves();
+      const prev = prevRead.ok ? prevRead : { shelves: [] };
+      const trustworthy = !partial && out.scan?.settled === true && out.scan?.truncated !== true;
+      const modulesBefore = Array.isArray(prev.shelves) ? prev.shelves.length : 0;
+      const modulesSeen = grouped.length;
+      const gap = deskScanGap(prev.shelves, grouped);
+      const modulesMissing = gap.modulesMissing;
+      const channelsMissing = gap.channelsMissing;
+      const shortScan = trustworthy && gap.short;
+      const merged = trustworthy
+        ? rememberDeskShelves(prev.shelves, grouped)
+        : mergeShelfChannels(prev.shelves, grouped);
       out.shelves = withPouredHints(applyMarksToShelves(merged));
+      if (!partial && out.scan && typeof out.scan === "object") {
+        out.scan = { ...out.scan, modulesBefore, modulesSeen, modulesMissing, channelsMissing, shortScan };
+      }
       if (out.shelves.length) {
+        const scanMeta = partial
+          ? undefined
+          : {
+              truncated: out.scan?.truncated === true,
+              discoverableDeviceCount: out.scan?.discoverableDeviceCount ?? null,
+              topicCount: out.scan?.topicCount ?? null,
+              omittedDeviceHint: out.scan?.omittedDeviceHint || null,
+              settled: out.scan?.settled === true,
+              modulesBefore,
+              modulesSeen,
+              modulesMissing,
+              channelsMissing,
+              shortScan,
+              offlineDeviceCount: Number(out.scan?.offlineDeviceCount) || 0,
+              savedAt: new Date().toISOString(),
+            };
         writeLastDeskShelves(
           out.shelves.map(({ name: _n, room: _r, channels, ...row }) => ({
             ...row,
@@ -223,6 +280,7 @@ export async function handleRuntimeMqttScan(req, res) {
               : [],
           })),
           out.brokerLabel,
+          scanMeta,
         );
       }
     }
@@ -242,10 +300,17 @@ function jsonEnd(res, status, obj) {
   res.end(JSON.stringify(obj));
 }
 
+function markingBlocked() {
+  const doc = readDeskDocument();
+  if (!doc.unreadable) return null;
+  return { ok: false, error: "marking_unreadable" };
+}
+
 export async function handleRuntimeDeskMarking(req, res) {
   const method = (req.method ?? "GET").toUpperCase();
   if (method === "GET") {
-    jsonEnd(res, 200, { ok: true, ...readDeskMarking(), rooms: listDeskRooms() });
+    const blocked = markingBlocked();
+    jsonEnd(res, 200, blocked || { ok: true, ...readDeskMarking(), rooms: listDeskRooms() });
     return;
   }
   if (method !== "PUT" && method !== "POST") {
@@ -304,7 +369,8 @@ export { buildDeskPourPackage, assessDeskCanPour };
 export async function handleRuntimeDeskKeyPlan(req, res) {
   const method = (req.method ?? "GET").toUpperCase();
   if (method === "GET") {
-    jsonEnd(res, 200, { ok: true, keyPlan: listDeskKeyPlan() });
+    const blocked = markingBlocked();
+    jsonEnd(res, 200, blocked || { ok: true, keyPlan: listDeskKeyPlan() });
     return;
   }
   const chunks = [];
@@ -322,7 +388,12 @@ export async function handleRuntimeDeskKeyPlan(req, res) {
     return;
   }
   if (body.replace === true && Array.isArray(body.keyPlan)) {
-    jsonEnd(res, 200, replaceDeskKeyPlan(body.keyPlan));
+    const out = replaceDeskKeyPlan(body.keyPlan);
+    jsonEnd(res, out.ok ? 200 : 400, out);
+    return;
+  }
+  if (body.capture === true) {
+    jsonEnd(res, 200, captureDeskKeyPlanItem(body));
     return;
   }
   if (body.bind === true || (body.deviceTopicKey && body.controlId && body.id && body.bind !== false)) {
@@ -345,7 +416,8 @@ export async function handleRuntimeDeskKeyPlan(req, res) {
 export async function handleRuntimeDeskLinePlan(req, res) {
   const method = (req.method ?? "GET").toUpperCase();
   if (method === "GET") {
-    jsonEnd(res, 200, { ok: true, linePlan: listDeskLinePlan() });
+    const blocked = markingBlocked();
+    jsonEnd(res, 200, blocked || { ok: true, linePlan: listDeskLinePlan() });
     return;
   }
   const chunks = [];
@@ -406,6 +478,11 @@ export async function handleRuntimeDeskHealth(req, res) {
       return;
     }
   }
+  const blocked = markingBlocked();
+  if (blocked) {
+    jsonEnd(res, 409, blocked);
+    return;
+  }
   const health = assessDeskHealth(shelves, {
     keyPlan: listDeskKeyPlan(),
     linePlan: listDeskLinePlan(),
@@ -444,7 +521,8 @@ export async function handleRuntimeDeskAudit(req, res) {
 export async function handleRuntimeDeskSolutions(req, res) {
   const method = (req.method ?? "GET").toUpperCase();
   if (method === "GET") {
-    jsonEnd(res, 200, { ok: true, catalog: deskSolutionCatalog(), solutions: listDeskSolutions() });
+    const blocked = markingBlocked();
+    jsonEnd(res, 200, blocked || { ok: true, catalog: deskSolutionCatalog(), solutions: listDeskSolutions() });
     return;
   }
   const chunks = [];

@@ -4,26 +4,37 @@
 import fs from "node:fs";
 import path from "node:path";
 import {
+  canonDeskRoom,
   deskMarkingPath,
   isDeskDeviceKey,
+  patchDeskDocument,
   upsertDeskRoom,
-  upsertDeskShelfMark,
+  withShelfChannelName,
 } from "./runtime-desk-marking.mjs";
 
-const MAX_LINES = 120;
-const MAX_LABEL = 60;
+const MAX_LINES = 480;
+const MAX_LABEL = 160;
 
 function cleanLabel(value) {
   const s = String(value ?? "").trim().replace(/\s+/g, " ");
-  if (!s || s.length > MAX_LABEL) return "";
+  if (!s) return "";
   if (/\/devices\//i.test(s) || /^wb-[a-z0-9-]+_\d/i.test(s)) return "";
-  return s;
+  return s.length > MAX_LABEL ? s.slice(0, MAX_LABEL) : s;
 }
 
 function cleanRoom(value) {
   const s = cleanLabel(value);
   if (!s || /·/.test(s)) return "";
-  return s.slice(0, 40);
+  return s.slice(0, 80);
+}
+
+function shelvesWithoutLineMark(shelves, row) {
+  if (!row?.deviceTopicKey || !row?.controlId) return shelves;
+  const expect = deskLineMarkName(row.room, row.label);
+  if (!expect) return shelves;
+  const cur = shelves?.[row.deviceTopicKey]?.channels?.[row.controlId]?.name;
+  if (String(cur || "") !== expect) return shelves;
+  return withShelfChannelName(shelves, row.deviceTopicKey, row.controlId, "");
 }
 
 function newId(prefix) {
@@ -39,25 +50,9 @@ function readRawDoc() {
 }
 
 function writeLinePlan(plan) {
-  const file = deskMarkingPath();
-  fs.mkdirSync(path.dirname(file), { recursive: true });
-  const prev = readRawDoc();
-  fs.writeFileSync(
-    file,
-    JSON.stringify(
-      {
-        version: 3,
-        shelves: prev.shelves && typeof prev.shelves === "object" ? prev.shelves : {},
-        solutions: Array.isArray(prev.solutions) ? prev.solutions : [],
-        rooms: Array.isArray(prev.rooms) ? prev.rooms : [],
-        keyPlan: Array.isArray(prev.keyPlan) ? prev.keyPlan : [],
-        linePlan: plan,
-      },
-      null,
-      2,
-    ) + "\n",
-    "utf8",
-  );
+  const written = patchDeskDocument({ linePlan: plan });
+  if (written?.ok === false) return written;
+  return { ok: true };
 }
 
 function normalizePlan(raw) {
@@ -109,7 +104,7 @@ export function listDeskLinePlan() {
 
 export function upsertDeskLinePlanItem(input) {
   const plan = listDeskLinePlan();
-  const room = cleanRoom(input?.room);
+  const room = canonDeskRoom(input?.room);
   const label = cleanLabel(input?.label);
   if (!room || !label) return { ok: false, error: "need_room_label" };
   upsertDeskRoom(room);
@@ -132,15 +127,23 @@ export function upsertDeskLinePlanItem(input) {
       if (prev.boundAt) next.boundAt = prev.boundAt;
     }
   }
+  const twin = plan.find(
+    (k) => k.id !== id && k.room.toLowerCase() === room.toLowerCase() && k.label.toLowerCase() === label.toLowerCase(),
+  );
+  if (twin) {
+    if (!plan.some((k) => k.id === id)) return { ok: true, duplicate: true, line: twin, linePlan: plan };
+    return { ok: false, error: "duplicate_label", room: twin.room, label: twin.label };
+  }
   const idx = plan.findIndex((k) => k.id === id);
   if (idx >= 0) plan[idx] = next;
   else plan.push(next);
-  writeLinePlan(normalizePlan(plan));
+  const written = writeLinePlan(normalizePlan(plan));
+  if (written?.ok === false) return written;
   return { ok: true, line: next, linePlan: listDeskLinePlan() };
 }
 
 export function upsertDeskLinePlanBatch(input) {
-  const room = cleanRoom(input?.room);
+  const room = canonDeskRoom(input?.room);
   if (!room) return { ok: false, error: "need_room_label" };
   const raw = Array.isArray(input?.labels)
     ? input.labels
@@ -156,22 +159,50 @@ export function upsertDeskLinePlanBatch(input) {
     if (seen.has(k)) continue;
     seen.add(k);
     labels.push(label);
-    if (labels.length >= 40) break;
   }
   if (!labels.length) return { ok: false, error: "need_room_label" };
-  let last = { ok: false, error: "need_room_label" };
+  upsertDeskRoom(room);
+  const plan = listDeskLinePlan();
+  const before = plan.length;
+  let duplicates = 0;
+  let accepted = 0;
   for (const label of labels) {
-    last = upsertDeskLinePlanItem({ room, label });
-    if (!last.ok) return last;
+    if (plan.length >= MAX_LINES) break;
+    const twin = plan.find(
+      (k) => k.room.toLowerCase() === room.toLowerCase() && k.label.toLowerCase() === label.toLowerCase(),
+    );
+    accepted += 1;
+    if (twin) {
+      duplicates += 1;
+      continue;
+    }
+    plan.push({ id: newId("line"), room, label });
   }
-  return { ok: true, added: labels.length, linePlan: listDeskLinePlan() };
+  const written = writeLinePlan(normalizePlan(plan));
+  if (written?.ok === false) return written;
+  const linePlan = listDeskLinePlan();
+  const kept = linePlan.length - before;
+  return {
+    ok: true,
+    added: labels.length,
+    kept,
+    duplicates,
+    dropped: Math.max(0, labels.length - accepted),
+    cap: MAX_LINES,
+    linePlan,
+  };
 }
 
 export function deleteDeskLinePlanItem(id) {
   const want = String(id || "").trim();
   if (!want) return { ok: false, error: "need_id" };
-  const plan = listDeskLinePlan().filter((k) => k.id !== want);
-  writeLinePlan(plan);
+  const doc = readRawDoc();
+  const prev = normalizePlan(doc.linePlan).find((k) => k.id === want);
+  let shelves = doc.shelves && typeof doc.shelves === "object" ? doc.shelves : {};
+  if (prev) shelves = shelvesWithoutLineMark(shelves, prev);
+  const plan = normalizePlan(doc.linePlan).filter((k) => k.id !== want);
+  const written = patchDeskDocument({ shelves, linePlan: plan });
+  if (written?.ok === false) return written;
   return { ok: true, linePlan: plan };
 }
 
@@ -179,7 +210,7 @@ export function deskLineMarkName(room, label) {
   const r = cleanRoom(room);
   const l = cleanLabel(label);
   if (!r || !l) return "";
-  return `${r} · ${l}`.slice(0, 80);
+  return `${r} · ${l}`.slice(0, 160);
 }
 
 export function bindDeskLinePlanItem(input) {
@@ -192,20 +223,31 @@ export function bindDeskLinePlanItem(input) {
   if (!isDeskDeviceKey(dk) || !cid || !isDeskBeaconLoad(cid, dk)) {
     return { ok: false, error: "bad_bind" };
   }
+  const taken = plan.find((k) => k.id !== id && k.deviceTopicKey === dk && k.controlId === cid);
+  if (taken) {
+    return { ok: false, error: "topic_taken", room: taken.room, label: taken.label, deviceTopicKey: dk, controlId: cid };
+  }
+  const doc = readRawDoc();
+  let shelves = doc.shelves && typeof doc.shelves === "object" ? doc.shelves : {};
+  if (row.deviceTopicKey && row.controlId && (row.deviceTopicKey !== dk || row.controlId !== cid)) {
+    shelves = shelvesWithoutLineMark(shelves, row);
+  }
   const name = deskLineMarkName(row.room, row.label);
-  const mark = upsertDeskShelfMark({ deviceTopicKey: dk, controlId: cid, name });
-  if (!mark.ok) return mark;
-  return upsertDeskLinePlanItem({
-    id,
-    room: row.room,
-    label: row.label,
-    deviceTopicKey: dk,
-    controlId: cid,
-  });
+  shelves = withShelfChannelName(shelves, dk, cid, name);
+  const nextPlan = plan.map((k) =>
+    k.id === id ? { ...k, deviceTopicKey: dk, controlId: cid, boundAt: new Date().toISOString() } : k,
+  );
+  const written = patchDeskDocument({ shelves, linePlan: normalizePlan(nextPlan) });
+  if (written?.ok === false) return written;
+  return { ok: true, line: nextPlan.find((k) => k.id === id), linePlan: listDeskLinePlan() };
 }
 
 export function clearDeskLinePlan() {
-  writeLinePlan([]);
+  const doc = readRawDoc();
+  let shelves = doc.shelves && typeof doc.shelves === "object" ? doc.shelves : {};
+  for (const row of normalizePlan(doc.linePlan)) shelves = shelvesWithoutLineMark(shelves, row);
+  const written = patchDeskDocument({ shelves, linePlan: [] });
+  if (written?.ok === false) return written;
   return { ok: true, linePlan: [] };
 }
 

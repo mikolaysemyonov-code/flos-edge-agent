@@ -5,8 +5,8 @@
 import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
-import { buildDeskPourPreview, readDeskMarking } from "./runtime-desk-marking.mjs";
-import { listDeskSolutions } from "./runtime-desk-solutions.mjs";
+import { buildDeskPourPreview, readDeskDocument, readDeskMarking } from "./runtime-desk-marking.mjs";
+import { findContinuousOutputClash, findScheduleOutputClash, listDeskSolutions } from "./runtime-desk-solutions.mjs";
 import {
   isLoadControl,
   liveDeskDeviceKey,
@@ -62,9 +62,10 @@ function namedLoadsFromDesk() {
   return out;
 }
 
-function fnvRevision(parts) {
-  const h = crypto.createHash("sha256").update(parts.join("\n"), "utf8").digest("hex").slice(0, 8);
-  return "fnv1a32:" + h;
+/** sha256 байт, которые пишем на диск. Не FNV и не обрезок. */
+export function diskRevisionId(parts) {
+  const h = crypto.createHash("sha256").update(parts.join("\n"), "utf8").digest("hex");
+  return "sha256:" + h;
 }
 
 function buildCoreRepair(coreSrc, named, opts = {}) {
@@ -95,9 +96,30 @@ export function normalizePourScope(raw) {
   return "all";
 }
 
+function deskFileBlocked() {
+  if (!readDeskDocument().unreadable) return null;
+  return {
+    ok: false,
+    canPour: false,
+    canPourNames: false,
+    canPourRules: false,
+    canRepair: false,
+    error: "marking_unreadable",
+    reason: "файл стола не читается",
+    shards: [],
+    loadOrder: [],
+    ready: {},
+    rows: [],
+    gaps: [],
+    unsupported: [],
+  };
+}
+
 export function assessDeskCanPour(preview) {
+  const blocked = deskFileBlocked();
+  if (blocked) return blocked;
   const p = preview || buildDeskPourPreview(readDeskMarking(), readPouredChannelMarks(), readPouredDeskSnapshot().rules || []);
-  const blocked = p.ready?.blocked || 0;
+  const unnamed = p.ready?.blocked || 0;
   const core = readShard("00_core.js");
   const hard = [];
   if (!/defineVirtualDevice\s*\(\s*["']form_logic_os["']/.test(core)) {
@@ -121,7 +143,7 @@ export function assessDeskCanPour(preview) {
   }
   const canPour = hard.length === 0 && /form_logic_os/.test(core) && (canPourNames || canPourRules || Boolean(repair.changed || repair.hiddenGhosts));
   const hints = [];
-  if (blocked > 0) hints.push(blocked + " без имени — пропустим");
+  if (unnamed > 0) hints.push(unnamed + " без имени — пропустим");
   if (canPourNames && canPourRules) hints.unshift("Сначала имена, потом сценарии.");
   else if (canPourNames) hints.unshift("Можно залить имена на щит.");
   else if (canPourRules) hints.unshift("Можно залить сценарии на щит.");
@@ -139,8 +161,13 @@ export function assessDeskCanPour(preview) {
   };
 }
 
-export function buildDeskPourPackage(scopeRaw = "all") {
-  const scope = normalizePourScope(scopeRaw);
+export function buildDeskPourPackage(scopeRaw = "all", opts = {}) {
+  const onlyIds = Array.isArray(opts.solutionIds)
+    ? opts.solutionIds.map((id) => String(id || "").trim()).filter(Boolean)
+    : [];
+  const scope = onlyIds.length ? "rules" : normalizePourScope(scopeRaw);
+  const blocked = deskFileBlocked();
+  if (blocked) return { ...blocked, scope };
   const gate = assessDeskCanPour();
   const wantNames = scope === "all" || scope === "names";
   const wantRules = scope === "all" || scope === "rules";
@@ -152,6 +179,30 @@ export function buildDeskPourPackage(scopeRaw = "all") {
   }
   if (scope === "all" && !gate.canPour) {
     return { ok: false, ...gate, scope, shards: [], loadOrder: [] };
+  }
+  if (wantRules) {
+    const live = listDeskSolutions().filter(supportedDeskSolution);
+    const clash = findContinuousOutputClash(live) || findScheduleOutputClash(live);
+    const hit = clash && (onlyIds.length === 0 || clash.ids.some((id) => onlyIds.includes(id)));
+    if (hit) {
+      return {
+        ok: false,
+        canPour: false,
+        canPourNames: false,
+        canPourRules: false,
+        error: clash.error,
+        reason:
+          clash.error === "output_schedule"
+            ? "расписание и постоянное правило на одном выходе"
+            : "два постоянных правила на один выход",
+        scope,
+        shards: [],
+        loadOrder: [],
+        deviceTopicKey: clash.deviceTopicKey,
+        controlId: clash.controlId,
+        solutionIds: clash.ids,
+      };
+    }
   }
   const coreSrc = readShard("00_core.js");
   const userSrc = readShard("40_rules_user.js") || readShard("40_rules_integrator.js");
@@ -175,13 +226,26 @@ export function buildDeskPourPackage(scopeRaw = "all") {
     activeIds = core.activeIds || [];
   }
 
+  let pouredSolutionIds = [];
   if (wantRules) {
     const sols = listDeskSolutions().filter(supportedDeskSolution);
-    const user = mergeDeskSolutionsIntoUser(userSrc, sols);
+    const user = mergeDeskSolutionsIntoUser(userSrc, sols, onlyIds.length ? { onlyIds } : {});
+    pouredSolutionIds = user.solutionIds || [];
     if (user.changed) {
       shards.push({ filename: "40_rules_user.js", content: user.content });
       emittedSolutions = user.emitted;
     }
+  }
+
+  if (onlyIds.length && pouredSolutionIds.length === 0) {
+    return {
+      ok: false,
+      canPour: false,
+      reason: "нет такой карточки на столе",
+      scope,
+      shards: [],
+      solutionIds: [],
+    };
   }
 
   if (!shards.length) {
@@ -198,9 +262,10 @@ export function buildDeskPourPackage(scopeRaw = "all") {
           : "стол уже совпадает с диском",
       shards: [],
       scope,
+      solutionIds: pouredSolutionIds,
     };
   }
-  const revisionId = fnvRevision(shards.map((s) => s.filename + "\n" + s.content));
+  const revisionId = diskRevisionId(shards.map((s) => s.filename + "\n" + s.content));
   return {
     ok: true,
     canPour: true,
@@ -213,6 +278,7 @@ export function buildDeskPourPackage(scopeRaw = "all") {
     loadOrder: shards.map((s) => s.filename),
     shards,
     emittedSolutions,
+    solutionIds: pouredSolutionIds,
     namedCount,
     hiddenGhosts,
     removedIds,
@@ -232,7 +298,7 @@ export function buildDeskMqttRepairPlan() {
   const shards = [];
   if (core.changed) shards.push({ filename: "00_core.js", content: core.content });
   const revisionId = shards.length
-    ? fnvRevision(shards.map((s) => s.filename + "\n" + s.content))
+    ? diskRevisionId(shards.map((s) => s.filename + "\n" + s.content))
     : "";
   return {
     ok: true,

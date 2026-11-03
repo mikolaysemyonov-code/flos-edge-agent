@@ -5,26 +5,41 @@
 import fs from "node:fs";
 import path from "node:path";
 import {
+  canonDeskRoom,
+  deskInputBaseControl,
   deskMarkingPath,
   isDeskDeviceKey,
+  patchDeskDocument,
   upsertDeskRoom,
-  upsertDeskShelfMark,
+  withShelfChannelName,
 } from "./runtime-desk-marking.mjs";
 
-const MAX_KEYS = 120;
-const MAX_LABEL = 60;
+export { deskInputBaseControl };
+
+/** 150 клавиш на объекте — запас до 480, дальше план честно отказывает. */
+const MAX_KEYS = 480;
+const MAX_LABEL = 160;
 
 function cleanLabel(value) {
   const s = String(value ?? "").trim().replace(/\s+/g, " ");
-  if (!s || s.length > MAX_LABEL) return "";
+  if (!s) return "";
   if (/\/devices\//i.test(s) || /^wb-[a-z0-9-]+_\d/i.test(s)) return "";
-  return s;
+  return s.length > MAX_LABEL ? s.slice(0, MAX_LABEL) : s;
 }
 
 function cleanRoom(value) {
   const s = cleanLabel(value);
   if (!s || /·/.test(s)) return "";
-  return s.slice(0, 40);
+  return s.slice(0, 80);
+}
+
+function shelvesWithoutKeyMark(shelves, row) {
+  if (!row?.deviceTopicKey || !row?.controlId) return shelves;
+  const expect = deskKeyMarkName(row.room, row.label);
+  if (!expect) return shelves;
+  const cur = shelves?.[row.deviceTopicKey]?.channels?.[row.controlId]?.name;
+  if (String(cur || "") !== expect) return shelves;
+  return withShelfChannelName(shelves, row.deviceTopicKey, row.controlId, "");
 }
 
 function newId(prefix) {
@@ -40,25 +55,9 @@ function readRawDoc() {
 }
 
 function writeKeyPlan(plan) {
-  const file = deskMarkingPath();
-  fs.mkdirSync(path.dirname(file), { recursive: true });
-  const prev = readRawDoc();
-  fs.writeFileSync(
-    file,
-    JSON.stringify(
-      {
-        version: 3,
-        shelves: prev.shelves && typeof prev.shelves === "object" ? prev.shelves : {},
-        solutions: Array.isArray(prev.solutions) ? prev.solutions : [],
-        rooms: Array.isArray(prev.rooms) ? prev.rooms : [],
-        keyPlan: plan,
-        linePlan: Array.isArray(prev.linePlan) ? prev.linePlan : [],
-      },
-      null,
-      2,
-    ) + "\n",
-    "utf8",
-  );
+  const written = patchDeskDocument({ keyPlan: plan });
+  if (written?.ok === false) return written;
+  return { ok: true };
 }
 
 function normalizePlan(raw) {
@@ -89,14 +88,15 @@ export function listDeskKeyPlan() {
 
 export function replaceDeskKeyPlan(keys) {
   const plan = normalizePlan(keys);
-  writeKeyPlan(plan);
+  const written = writeKeyPlan(plan);
+  if (written?.ok === false) return written;
   for (const k of plan) upsertDeskRoom(k.room);
-  return { ok: true, keyPlan: plan };
+  return { ok: true, keyPlan: listDeskKeyPlan() };
 }
 
 export function upsertDeskKeyPlanItem(input) {
   const plan = listDeskKeyPlan();
-  const room = cleanRoom(input?.room);
+  const room = canonDeskRoom(input?.room);
   const label = cleanLabel(input?.label);
   if (!room || !label) return { ok: false, error: "need_room_label" };
   upsertDeskRoom(room);
@@ -119,16 +119,24 @@ export function upsertDeskKeyPlanItem(input) {
       if (prev.boundAt) next.boundAt = prev.boundAt;
     }
   }
+  const twin = plan.find(
+    (k) => k.id !== id && k.room.toLowerCase() === room.toLowerCase() && k.label.toLowerCase() === label.toLowerCase(),
+  );
+  if (twin) {
+    if (!plan.some((k) => k.id === id)) return { ok: true, duplicate: true, key: twin, keyPlan: plan };
+    return { ok: false, error: "duplicate_label", room: twin.room, label: twin.label };
+  }
   const idx = plan.findIndex((k) => k.id === id);
   if (idx >= 0) plan[idx] = next;
   else plan.push(next);
-  writeKeyPlan(normalizePlan(plan));
+  const written = writeKeyPlan(normalizePlan(plan));
+  if (written?.ok === false) return written;
   return { ok: true, key: next, keyPlan: listDeskKeyPlan() };
 }
 
 /** Несколько подписей в одну комнату за раз (план до обхода сканом). */
 export function upsertDeskKeyPlanBatch(input) {
-  const room = cleanRoom(input?.room);
+  const room = canonDeskRoom(input?.room);
   if (!room) return { ok: false, error: "need_room_label" };
   const raw = Array.isArray(input?.labels)
     ? input.labels
@@ -144,22 +152,50 @@ export function upsertDeskKeyPlanBatch(input) {
     if (seen.has(k)) continue;
     seen.add(k);
     labels.push(label);
-    if (labels.length >= 40) break;
   }
   if (!labels.length) return { ok: false, error: "need_room_label" };
-  let last = { ok: false, error: "need_room_label" };
+  upsertDeskRoom(room);
+  const plan = listDeskKeyPlan();
+  const before = plan.length;
+  let duplicates = 0;
+  let accepted = 0;
   for (const label of labels) {
-    last = upsertDeskKeyPlanItem({ room, label });
-    if (!last.ok) return last;
+    if (plan.length >= MAX_KEYS) break;
+    const twin = plan.find(
+      (k) => k.room.toLowerCase() === room.toLowerCase() && k.label.toLowerCase() === label.toLowerCase(),
+    );
+    accepted += 1;
+    if (twin) {
+      duplicates += 1;
+      continue;
+    }
+    plan.push({ id: newId("key"), room, label });
   }
-  return { ok: true, added: labels.length, keyPlan: listDeskKeyPlan() };
+  const written = writeKeyPlan(normalizePlan(plan));
+  if (written?.ok === false) return written;
+  const keyPlan = listDeskKeyPlan();
+  const kept = keyPlan.length - before;
+  return {
+    ok: true,
+    added: labels.length,
+    kept,
+    duplicates,
+    dropped: Math.max(0, labels.length - accepted),
+    cap: MAX_KEYS,
+    keyPlan,
+  };
 }
 
 export function deleteDeskKeyPlanItem(id) {
   const want = String(id || "").trim();
   if (!want) return { ok: false, error: "need_id" };
-  const plan = listDeskKeyPlan().filter((k) => k.id !== want);
-  writeKeyPlan(plan);
+  const doc = readRawDoc();
+  const prev = normalizePlan(doc.keyPlan).find((k) => k.id === want);
+  let shelves = doc.shelves && typeof doc.shelves === "object" ? doc.shelves : {};
+  if (prev) shelves = shelvesWithoutKeyMark(shelves, prev);
+  const plan = normalizePlan(doc.keyPlan).filter((k) => k.id !== want);
+  const written = patchDeskDocument({ shelves, keyPlan: plan });
+  if (written?.ok === false) return written;
   return { ok: true, keyPlan: plan };
 }
 
@@ -167,7 +203,44 @@ export function deskKeyMarkName(room, label) {
   const r = cleanRoom(room);
   const l = cleanLabel(label);
   if (!r || !l) return "";
-  return `${r} · ${l}`.slice(0, 80);
+  return `${r} · ${l}`.slice(0, 160);
+}
+
+/** Обход: три нажатия уже дали топик, комната и подпись пишутся вместе с ним. */
+export function captureDeskKeyPlanItem(input) {
+  const room = canonDeskRoom(input?.room);
+  const label = cleanLabel(input?.label);
+  if (!room || !label) return { ok: false, error: "need_room_label" };
+  const dk = String(input?.deviceTopicKey || "").trim();
+  const cid = deskInputBaseControl(input?.controlId);
+  if (!isDeskDeviceKey(dk) || !cid) return { ok: false, error: "bad_bind" };
+  const plan = listDeskKeyPlan();
+  const taken = plan.find(
+    (k) => k.deviceTopicKey === dk && (deskInputBaseControl(k.controlId) || k.controlId) === cid,
+  );
+  if (taken) {
+    return { ok: false, error: "topic_taken", room: taken.room, label: taken.label, deviceTopicKey: dk, controlId: cid };
+  }
+  const twin = plan.find(
+    (k) => k.room.toLowerCase() === room.toLowerCase() && k.label.toLowerCase() === label.toLowerCase(),
+  );
+  if (twin) return { ok: false, error: "duplicate_label", room: twin.room, label: twin.label };
+  if (plan.length >= MAX_KEYS) return { ok: false, error: "key_plan_full", cap: MAX_KEYS };
+  upsertDeskRoom(room);
+  const key = {
+    id: newId("key"),
+    room,
+    label,
+    deviceTopicKey: dk,
+    controlId: cid,
+    boundAt: new Date().toISOString(),
+  };
+  const doc = readRawDoc();
+  let shelves = doc.shelves && typeof doc.shelves === "object" ? doc.shelves : {};
+  shelves = withShelfChannelName(shelves, dk, cid, deskKeyMarkName(room, label));
+  const written = patchDeskDocument({ shelves, keyPlan: normalizePlan([...plan, key]) });
+  if (written?.ok === false) return written;
+  return { ok: true, key, keyPlan: listDeskKeyPlan() };
 }
 
 export function bindDeskKeyPlanItem(input) {
@@ -176,34 +249,35 @@ export function bindDeskKeyPlanItem(input) {
   const row = plan.find((k) => k.id === id);
   if (!row) return { ok: false, error: "bad_key" };
   const dk = String(input?.deviceTopicKey || "").trim();
-  const cid = String(input?.controlId || "")
-    .trim()
-    .replace(/\s+Short Press Counter$/i, "")
-    .trim();
+  const cid = deskInputBaseControl(input?.controlId);
   if (!isDeskDeviceKey(dk) || !cid) return { ok: false, error: "bad_bind" };
+  const taken = plan.find(
+    (k) => k.id !== id && k.deviceTopicKey === dk && (deskInputBaseControl(k.controlId) || k.controlId) === cid,
+  );
+  if (taken) {
+    return { ok: false, error: "topic_taken", room: taken.room, label: taken.label, deviceTopicKey: dk, controlId: cid };
+  }
+  const doc = readRawDoc();
+  let shelves = doc.shelves && typeof doc.shelves === "object" ? doc.shelves : {};
+  if (row.deviceTopicKey && row.controlId && (row.deviceTopicKey !== dk || row.controlId !== cid)) {
+    shelves = shelvesWithoutKeyMark(shelves, row);
+  }
   const name = deskKeyMarkName(row.room, row.label);
-  const mark = upsertDeskShelfMark({ deviceTopicKey: dk, controlId: cid, name });
-  if (!mark.ok) return mark;
-  return upsertDeskKeyPlanItem({
-    id,
-    room: row.room,
-    label: row.label,
-    deviceTopicKey: dk,
-    controlId: cid,
-  });
+  shelves = withShelfChannelName(shelves, dk, cid, name);
+  const nextPlan = plan.map((k) =>
+    k.id === id ? { ...k, deviceTopicKey: dk, controlId: cid, boundAt: new Date().toISOString() } : k,
+  );
+  const written = patchDeskDocument({ shelves, keyPlan: normalizePlan(nextPlan) });
+  if (written?.ok === false) return written;
+  return { ok: true, key: nextPlan.find((k) => k.id === id), keyPlan: listDeskKeyPlan() };
 }
 
 export function clearDeskKeyPlan() {
-  writeKeyPlan([]);
+  const doc = readRawDoc();
+  let shelves = doc.shelves && typeof doc.shelves === "object" ? doc.shelves : {};
+  for (const row of normalizePlan(doc.keyPlan)) shelves = shelvesWithoutKeyMark(shelves, row);
+  const written = patchDeskDocument({ shelves, keyPlan: [] });
+  if (written?.ok === false) return written;
   return { ok: true, keyPlan: [] };
 }
 
-/** Input base from "Input 3" or "Input 3 Short Press Counter". */
-export function deskInputBaseControl(controlId) {
-  const c = String(controlId || "").trim();
-  const m = /^(Input\s+[A-Z]?\d+)\s+Short Press Counter$/i.exec(c);
-  if (m) return m[1];
-  if (/^Input\s+[A-Z]?\d+$/i.test(c)) return c;
-  if (/^EXT\d+_IN\d+$/i.test(c) || /^[A-D]\d+_IN\d+$/i.test(c)) return c;
-  return "";
-}

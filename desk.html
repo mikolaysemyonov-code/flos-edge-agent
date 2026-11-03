@@ -24,11 +24,56 @@
       </div>
     </div>
     <p id="bus" class="meta"></p>
-    <p id="ritual" class="meta ritual">1 · Разметить → 2 · Типовые → 3 · Залить</p>
+    <p id="ritual" class="meta ritual">Сначала кнопки по комнатам. Потом свет. Запись на щит — в конце.</p>
 
-    <section id="panel-mark" class="panel glass" data-tab="mark">
+    <section id="panel-intro" class="panel glass" data-tab="intro">
+      <p class="meta">Вы уже на щите. В сервисе остались код и привязка объекта. Дальше спокойно обходим дом: сначала все кнопки, потом свет, потом тепло и вода.</p>
+      <ol class="walk">
+        <li>
+          <strong>Время</strong>
+          <span>Сверьте часы щита с телефоном. Один раз нажмите «Обновить». Если щит ответил не весь, таблицу домой не берём.</span>
+        </li>
+        <li>
+          <strong>Кнопки по комнатам</strong>
+          <span>Напишите комнату, в которой стоите. «Слушаю». Три коротких нажатия на выключатель. Назовите его, например «Клавиша 1, основной свет». Свет в этот заход не называем.</span>
+          <button type="button" class="ghost" data-go="keys">К кнопкам</button>
+        </li>
+        <li>
+          <strong>Свет в эти комнаты</strong>
+          <span>Вернитесь в ту же комнату. Включите линию и посмотрите, что загорелось. Назовите светильник и укажите, какая кнопка его включает.</span>
+          <button type="button" class="ghost" data-go="lines">К свету</button>
+        </li>
+        <li>
+          <strong>Тепло, вода, движение</strong>
+          <span>Датчик называйте в его комнате. Три нажатия его не найдут: это не выключатель.</span>
+          <button type="button" class="ghost" data-go="modules">К щиту</button>
+        </li>
+        <li>
+          <strong>Как это работает</strong>
+          <span>Правило добавляйте, когда кнопка и свет уже названы. «Я дома» и другие сцены — когда свет разложен по комнатам.</span>
+          <button type="button" class="ghost" data-go="cards">К правилам</button>
+        </li>
+        <li>
+          <strong>Записать на щит</strong>
+          <span>Один раз в конце дня. Сначала имена, потом сценарии. Посреди обхода щит не трогаем.</span>
+          <button type="button" class="ghost" data-go="poured">Записать</button>
+        </li>
+        <li>
+          <strong>Файл для дома</strong>
+          <span>Таблица на флешку и в архив объекта. По ней вспоминают дом потом, не во время обхода.</span>
+          <button type="button" class="ghost" data-go="xlsx">Скачать таблицу</button>
+        </li>
+      </ol>
+    </section>
+
+    <section id="panel-mark" class="panel glass" hidden data-tab="mark">
       <p class="meta" id="markIntro">1 · Модуль → канал: комната и тип. Или «Клавиши» / «Линии» — план и скан.</p>
       <div class="mark-actions">
+        <button id="passportXlsx" class="ghost" type="button" title="Комнаты, клавиши, нагрузки, топики и связи. На флешку заказчику и в архив проекта.">Таблица Excel</button>
+        <button id="passportJson" class="ghost" type="button" title="Черновик стола. Класть обратно, если файл стола порвался. Не заливает правила.">JSON стола</button>
+        <button id="passportJsonRestore" class="ghost" type="button" title="Положить сохранённый JSON на место черновика. Правила на щите не меняются.">Вернуть JSON</button>
+        <input id="passportJsonFile" type="file" accept="application/json,.json" hidden>
+        <p id="benchReady" class="meta">К стенду: шину ещё не снимали.</p>
         <button id="clearMarks" class="ghost mark-clear" type="button" title="Убрать имена со стола. Типовые и комнаты останутся. Щит не трогаем.">Снять разметку</button>
         <button id="clearProject" class="ghost mark-clear mark-wipe" type="button" title="Стереть разметку, планы клавиш/линий, типовые и комнаты. Можно сразу снять desk_sol со щита.">Очистить проект</button>
       </div>
@@ -37,8 +82,8 @@
         <button type="button" data-fam="light" aria-pressed="false">Свет</button>
         <button type="button" data-fam="buttons" aria-pressed="false">Кнопки</button>
         <button type="button" data-fam="relays" aria-pressed="false">Реле</button>
-        <button type="button" data-fam="keys" aria-pressed="false">Клавиши · скан</button>
-        <button type="button" data-fam="lines" aria-pressed="false">Линии · маяк</button>
+        <button type="button" data-fam="keys" aria-pressed="false">Клавиши</button>
+        <button type="button" data-fam="lines" aria-pressed="false">Светильники</button>
         <button type="button" data-fam="pair" aria-pressed="false">Прозвон</button>
       </div>
       <div id="rooms-mark" class="rooms" hidden aria-hidden="true"></div>
@@ -89,7 +134,11 @@
     </section>
   </main>
   <nav class="dock" role="tablist" aria-label="Ритуал пуска">
-    <button class="tab" type="button" role="tab" data-tab="mark" aria-selected="true">
+    <button class="tab" type="button" role="tab" data-tab="intro" aria-selected="true">
+      <span class="ico"><svg viewBox="0 0 24 24"><path d="M12 3v18"/><path d="M5 8h14"/><path d="M5 16h14"/></svg></span>
+      <span>Вводное</span>
+    </button>
+    <button class="tab" type="button" role="tab" data-tab="mark" aria-selected="false">
       <span class="ico"><svg viewBox="0 0 24 24"><path d="M3 7h18M3 12h18M3 17h12"/></svg></span>
       <span>Разметить <span class="n" id="n-mark"></span></span>
     </button>

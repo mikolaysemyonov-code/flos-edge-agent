@@ -2,6 +2,8 @@
  * Диагностика стола перед заливкой: дыры в разметке, плане, типовых.
  * Без MQTT — чистая функция по снимку полок + планам.
  */
+import { deskInputBaseControl } from "./runtime-desk-marking.mjs";
+import { findContinuousOutputClash, findScheduleOutputClash } from "./runtime-desk-solutions.mjs";
 
 function contactKey(dk, cid) {
   return String(dk || "") + "::" + String(cid || "");
@@ -15,6 +17,31 @@ function isInput(cid) {
 function isLoad(cid) {
   const c = String(cid || "").trim();
   return /^Channel\s+\d+$/i.test(c) || /^K\d+$/i.test(c) || /^CCT\d+$/i.test(c);
+}
+
+function clockLabel(year, month, day, hh, mm) {
+  const ok = year >= 2026 && year <= 2035;
+  const dd = String(day).padStart(2, "0");
+  const mo = String(month).padStart(2, "0");
+  return {
+    ok,
+    label: ok ? dd + "." + mo + " " + String(hh).padStart(2, "0") + ":" + String(mm).padStart(2, "0") : "часы неверные",
+  };
+}
+
+/** Строка `date -Iseconds` с часов контроллера, не из контейнера. */
+export function clockFromHostText(text) {
+  const raw = String(text || "").trim();
+  const m = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})/.exec(raw);
+  if (!m) return null;
+  const face = clockLabel(Number(m[1]), Number(m[2]), Number(m[3]), m[4], m[5]);
+  return { ...face, source: "host", iso: raw, unverified: false };
+}
+
+/** Часы процесса. Сценарий «в 23:15» идёт по часам контроллера, этот циферблат — запасной. */
+export function assessControllerClock(now = new Date()) {
+  const face = clockLabel(now.getFullYear(), now.getMonth() + 1, now.getDate(), now.getHours(), now.getMinutes());
+  return { ...face, source: "process", iso: now.toISOString(), unverified: true };
 }
 
 function issue(level, code, text, extra = {}) {
@@ -46,7 +73,7 @@ export function assessDeskHealth(shelves, ctx = {}) {
     const dk = String(s?.deviceTopicKey || "");
     for (const ch of Array.isArray(s?.channels) ? s.channels : []) {
       const cid = String(ch?.controlId || "");
-      if (/Short Press Counter$/i.test(cid)) continue;
+      if (/\s+(?:Short|Long|Shortlong|Double) Press Counter$/i.test(cid)) continue;
       const name = String(ch?.name || "").trim();
       byContact.set(contactKey(dk, cid), { dk, cid, name, s });
       if (name) {
@@ -98,7 +125,9 @@ export function assessDeskHealth(shelves, ctx = {}) {
       }
       continue;
     }
-    const base = String(t.controlId).replace(/\s+Short Press Counter$/i, "").trim();
+    const base =
+      deskInputBaseControl(t.controlId) ||
+      String(t.controlId || "").replace(/\s+(?:Short|Long|Shortlong|Double) Press Counter$/i, "").trim();
     const k = contactKey(t.deviceTopicKey, base);
     if (!trigUsed.has(k)) trigUsed.set(k, []);
     trigUsed.get(k).push(sol.title || sol.solutionId || sol.id);
@@ -119,6 +148,31 @@ export function assessDeskHealth(shelves, ctx = {}) {
         issue("bad", "sol_no_load", "Типовая «" + (sol.title || sol.solutionId) + "» без линий"),
       );
     }
+  }
+
+  const busy = findContinuousOutputClash(solutions);
+  if (busy) {
+    issues.push(
+      issue(
+        "bad",
+        "output_busy",
+        "Два постоянных правила на " + busy.deviceTopicKey + "/" + busy.controlId + ". Заливка их не запишет.",
+      ),
+    );
+  }
+  const schedule = findScheduleOutputClash(solutions);
+  if (schedule) {
+    issues.push(
+      issue(
+        "bad",
+        "output_schedule",
+        "Расписание и постоянное правило на " +
+          schedule.deviceTopicKey +
+          "/" +
+          schedule.controlId +
+          ". Заливка их не запишет.",
+      ),
+    );
   }
 
   for (const [k, titles] of trigUsed) {

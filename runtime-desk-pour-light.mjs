@@ -2,6 +2,7 @@
  * L1 свет со стола → defineRule (motion/reed/night + dim Auto-Change).
  * Параметры: level (%), offDelay (сек; 0 = гасить сразу при уходе).
  */
+import { deskButtonCounter } from "./runtime-desk-marking.mjs";
 import { liveDeskDeviceKey } from "./runtime-desk-rules-marks.mjs";
 
 const LIGHT = new Set([
@@ -37,10 +38,46 @@ function inputBase(trig) {
 }
 
 function press(trig, kind) {
-  const base = inputBase(trig);
-  if (!base) return "";
-  if (/\/Input \d+$/i.test(base)) return base + " " + kind + " Press Counter";
-  return base;
+  const dev = liveDeskDeviceKey(trig?.deviceTopicKey);
+  const cid = deskButtonCounter(trig?.controlId, kind);
+  if (!dev || !cid) return "";
+  return dev + "/" + cid;
+}
+
+function isLedChannelPath(path) {
+  return /\/Channel \d+$/i.test(String(path || ""));
+}
+
+function isSwitchPath(path) {
+  const p = String(path || "");
+  return /\/K\d+$/i.test(p) || /\/(?:Curtain|Actuator) \d+ (?:Open|Close)$/i.test(p);
+}
+
+/** LED: ключ 0/1 и яркость 0…100. Реле и привод: 0/1. 100% яркости остаётся 100. */
+export function wbActuatorSetLines(path, pct, ruleId, priority = 50) {
+  const p = String(path || "");
+  const topic = JSON.stringify(p);
+  const id = JSON.stringify(String(ruleId || ""));
+  const n = Math.max(0, Math.min(100, Number(pct) || 0));
+  const pri = Number(priority) || 50;
+  if (isLedChannelPath(p)) {
+    const bri = JSON.stringify(p + " Brightness");
+    return [
+      `wbActuatorSet(${topic}, ${n <= 0 ? 0 : 1}, ${id}, ${pri});`,
+      `wbActuatorSet(${bri}, ${n}, ${id}, ${pri});`,
+    ];
+  }
+  if (isSwitchPath(p)) {
+    return [`wbActuatorSet(${topic}, ${n <= 0 ? 0 : 1}, ${id}, ${pri});`];
+  }
+  return [`wbActuatorSet(${topic}, ${n}, ${id}, ${pri});`];
+}
+
+function setLines(paths, pct, ruleId, priority, indent) {
+  return paths
+    .flatMap((path) => wbActuatorSetLines(path, pct, ruleId, priority))
+    .map((line) => indent + line)
+    .join("\n");
 }
 
 function autoChangeOf(channelPath) {
@@ -52,29 +89,17 @@ function autoChangeOf(channelPath) {
   return p + " Auto-Change";
 }
 
-/** WB-LED switch 0/1; уровень 1…100 пишем как есть (реле трактует >0 как ON). */
-function levelPayload(levelPct) {
-  const n = Math.max(0, Math.min(100, Number(levelPct) || 0));
-  if (n <= 0) return 0;
-  if (n >= 100) return 1;
-  return n;
-}
-
 function emitOnWhenActive(sol, defaults) {
   const when = pathOf(sol.trigger);
   const loads = (sol.targets || []).map(pathOf).filter(Boolean);
   if (!when || !loads.length) return "";
   const id = "desk_sol_" + sol.id + "_on";
   const p = sol.params || {};
-  const level = levelPayload(num(p, "level", defaults.level));
+  const level = Math.max(0, Math.min(100, num(p, "level", defaults.level)));
   const offDelay = Math.max(0, Math.floor(num(p, "offDelay", defaults.offDelay)));
   const latch = "_desk_hold_" + String(sol.id || "").replace(/[^a-zA-Z0-9_]/g, "_");
-  const onSets = loads
-    .map((path) => `        wbActuatorSet(${esc(path)}, ${level}, ${esc(id)}, 50);`)
-    .join("\n");
-  const offSets = loads
-    .map((path) => `        wbActuatorSet(${esc(path)}, 0, ${esc(id)}, 50);`)
-    .join("\n");
+  const onSets = setLines(loads, level, id, 50, "        ");
+  const offSets = setLines(loads, 0, id, 50, "        ");
   const offBody =
     offDelay > 0
       ? [

@@ -22,6 +22,7 @@ COPY runtime-desk-pour-scenes.mjs /app/runtime-desk-pour-scenes.mjs
 COPY runtime-desk-pour-cron.mjs /app/runtime-desk-pour-cron.mjs
 COPY runtime-desk-actuate.mjs /app/runtime-desk-actuate.mjs
 COPY runtime-desk-key-scan.mjs /app/runtime-desk-key-scan.mjs
+COPY runtime-desk-passport.mjs /app/runtime-desk-passport.mjs
 COPY runtime-desk-line-beacon.mjs /app/runtime-desk-line-beacon.mjs
 COPY runtime-desk-audit.mjs /app/runtime-desk-audit.mjs
 COPY runtime-desk-health.mjs /app/runtime-desk-health.mjs
@@ -35,6 +36,7 @@ COPY desk.js /app/desk.js
 COPY runtime-rules-inventory.mjs /app/runtime-rules-inventory.mjs
 COPY wb-rules-journal-incidents.mjs /app/wb-rules-journal-incidents.mjs
 COPY lib/ /app/lib/
+COPY agent-bundle-files.txt /app/agent-bundle-files.txt
 COPY entrypoint.sh /app/entrypoint.sh
 
 RUN chmod +x /app/entrypoint.sh
