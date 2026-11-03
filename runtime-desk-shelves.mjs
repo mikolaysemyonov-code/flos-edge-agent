@@ -300,14 +300,17 @@ export function deskScanGap(prev, next) {
 }
 
 /**
- * Пока в новом снимке нет каждого модуля и канала прошлого полного, щит не подменяется.
- * Новый модуль добавляется. Полная замена — только когда прошлые адреса и каналы на месте.
+ * Спокойный снимок — это щит сейчас. Модуля нет в новом снимке — его нет на столе.
+ * Пустой ответ не стирает прошлый снимок. Канал, который модуль не повторил, остаётся.
  */
 export function rememberDeskShelves(prev, next) {
   const prevArr = Array.isArray(prev) ? prev : [];
   const nextArr = Array.isArray(next) ? next : [];
   if (!nextArr.length) return prevArr;
   if (!prevArr.length) return nextArr;
-  if (deskScanGap(prevArr, nextArr).short) return unionDeskShelves(prevArr, nextArr);
-  return nextArr;
+  const gap = deskScanGap(prevArr, nextArr);
+  if (!gap.short) return nextArr;
+  const live = new Set(nextArr.map((s) => s?.deviceTopicKey).filter(Boolean));
+  const kept = prevArr.filter((s) => s?.deviceTopicKey && live.has(s.deviceTopicKey));
+  return unionDeskShelves(kept, nextArr);
 }

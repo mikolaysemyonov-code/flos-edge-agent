@@ -5617,7 +5617,7 @@
     });
     function showShelves(j) {
       const incoming = j.shelves || [];
-      const untrusted = j.scan && (j.scan.truncated === true || j.scan.settled === false || j.scan.shortScan === true);
+      const untrusted = j.scan && (j.scan.truncated === true || j.scan.settled === false);
       const shelves = (keyScan || untrusted)
         ? rememberMergeShelves(lastShelvesRows, incoming)
         : incoming;

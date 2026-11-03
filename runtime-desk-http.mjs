@@ -243,7 +243,7 @@ export async function handleRuntimeMqttScan(req, res) {
       const gap = deskScanGap(prev.shelves, grouped);
       const modulesMissing = gap.modulesMissing;
       const channelsMissing = gap.channelsMissing;
-      const shortScan = trustworthy && gap.short;
+      const shortScan = trustworthy && gap.channelsMissing > 0 && gap.modulesMissing === 0;
       const merged = trustworthy
         ? rememberDeskShelves(prev.shelves, grouped)
         : mergeShelfChannels(prev.shelves, grouped);
