@@ -540,6 +540,7 @@
       color: rgb(186 230 253);
       font-weight: 650;
     }
+    .walk-sheet { grid-column: 1 / -1; display: flex; flex-direction: column; gap: .55rem; }
     .key-room {
       border: 1px solid rgb(255 255 255 / .1);
       border-radius: .75rem;

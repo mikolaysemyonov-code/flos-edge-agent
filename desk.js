@@ -4420,8 +4420,22 @@
       });
       return [...byKey.values()];
     }
+    function sameRoom(a, b) {
+      return String(a || "").trim().toLowerCase() === String(b || "").trim().toLowerCase();
+    }
+    function roomCanon(name) {
+      const s = String(name || "").trim();
+      const hit = (keyPlan || []).find((k) => k && sameRoom(k.room, s));
+      return hit ? hit.room : s;
+    }
+    function caughtNamed() {
+      if (!keyCatch) return null;
+      return (keyPlan || []).find((k) =>
+        k && k.deviceTopicKey === keyCatch.deviceTopicKey && String(k.controlId || "") === String(keyCatch.controlId || ""),
+      ) || null;
+    }
     function nextKeyLabelForRoom(room) {
-      const n = keyPlan.filter((k) => k.room === room).length + 1;
+      const n = keyPlan.filter((k) => sameRoom(k.room, room)).length + 1;
       return "клавиша " + n;
     }
     function postKeyPlanLabels(room, labelsText, done) {
@@ -4460,7 +4474,7 @@
       });
     }
     function saveCaughtKey(label) {
-      const room = String(keyRoomFilter || "").trim();
+      const room = roomCanon(keyRoomFilter);
       const name = String(label || "").trim();
       const sig = keyCatch;
       if (!sig) return;
@@ -4507,8 +4521,11 @@
           renderMark();
         });
     }
-    function renderKeyScanPanel(body) {
-      body.replaceChildren();
+    function renderKeyScanPanel(root) {
+      root.replaceChildren();
+      const body = document.createElement("div");
+      body.className = "walk-sheet";
+      root.appendChild(body);
       const named = keyPlan.filter((k) => k.deviceTopicKey).length;
       const phase = document.createElement("p");
       phase.className = "meta";
@@ -4538,9 +4555,14 @@
       body.appendChild(roomInp);
       const status = document.createElement("p");
       status.className = "meta key-scan-status";
+      const namedCatch = caughtNamed();
       if (keyScan) {
         status.textContent = keyScanStatusText();
         status.classList.add("live");
+      } else if (namedCatch) {
+        status.hidden = true;
+      } else if (keyCatch) {
+        status.textContent = keyPlanNote || "Дайте кнопке имя и сохраните её в эту комнату.";
       } else {
         const unbound = keyPlan.filter((k) => !k.deviceTopicKey).length;
         status.textContent = (keyPlanNote ? keyPlanNote + " " : "")
@@ -4549,7 +4571,25 @@
             : "Напишите комнату и нажмите «Слушаю».");
       }
       body.appendChild(status);
-      if (keyCatch) {
+      if (keyCatch && namedCatch) {
+        const card = document.createElement("div");
+        card.className = "key-plan-add glass";
+        const topic = document.createElement("p");
+        topic.className = "meta";
+        topic.textContent = "Это уже «" + namedCatch.room + " · " + namedCatch.label + "». Нажмите другую кнопку.";
+        const again = document.createElement("button");
+        again.type = "button";
+        again.className = "ghost key-add-all";
+        again.textContent = "Другая кнопка";
+        again.addEventListener("click", () => {
+          const ignoreKey = keyCatch && keyCatch.ignoreKey;
+          keyCatch = null;
+          keyPlanNote = "";
+          startKeyScan(null, { ignoreKey });
+        });
+        card.append(topic, again);
+        body.appendChild(card);
+      } else if (keyCatch) {
         const card = document.createElement("div");
         card.className = "key-plan-add glass";
         const topic = document.createElement("p");
@@ -4692,8 +4732,20 @@
         det.className = "key-room";
         const keys = keyPlan.filter((k) => k.room === room);
         const armedHere = keyScan && !keyScan.walk && keys.some((k) => k.id === keyScan.id);
-        det.open = keyRoomFilter === room || Boolean(armedHere);
+        det.open = sameRoom(keyRoomFilter, room) || Boolean(armedHere);
         const sum = document.createElement("summary");
+        sum.addEventListener("click", (e) => {
+          if (e.target.closest("button")) return;
+          keyRoomFilter = room;
+          if (keyCatch && !caughtNamed()) {
+            renderMark();
+            return;
+          }
+          const ignoreKey = keyCatch && keyCatch.ignoreKey;
+          keyCatch = null;
+          keyPlanNote = "";
+          startKeyScan(null, { ignoreKey });
+        });
         const bound = keys.filter((k) => k.deviceTopicKey).length;
         const head = document.createElement("span");
         head.className = "key-room-title";
