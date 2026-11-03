@@ -177,7 +177,24 @@ want_pinned_github() {
 }
 
 field_dockerfile_ok() {
-  [[ -s "$1" ]] && grep -qE '^COPY runtime-rules-inventory\.mjs ' "$1" && grep -qE '^COPY desk\.html ' "$1" && grep -qE '^COPY desk\.css ' "$1" && grep -qE '^COPY desk\.js ' "$1" && grep -qE '^COPY runtime-desk-shelves\.mjs ' "$1" && grep -qE '^COPY runtime-desk-marking\.mjs ' "$1" && grep -qE '^COPY runtime-desk-solutions\.mjs ' "$1" && grep -qE '^COPY runtime-desk-rules-marks\.mjs ' "$1" && grep -qE '^COPY runtime-desk-releases\.mjs ' "$1" && grep -qE '^COPY runtime-desk-pour\.mjs ' "$1" && grep -qE '^COPY runtime-desk-pour-core\.mjs ' "$1" && grep -qE '^COPY runtime-desk-pour-user\.mjs ' "$1" && grep -qE '^COPY runtime-desk-pour-climate\.mjs ' "$1" && grep -qE '^COPY runtime-desk-pour-light\.mjs ' "$1" && grep -qE '^COPY runtime-desk-pour-scenes\.mjs ' "$1" && grep -qE '^COPY runtime-desk-pour-cron\.mjs ' "$1" && grep -qE '^COPY runtime-desk-actuate\.mjs ' "$1" && grep -qE '^COPY runtime-desk-key-scan\.mjs ' "$1" && grep -qE '^COPY runtime-desk-line-beacon\.mjs ' "$1" && grep -qE '^COPY runtime-desk-health\.mjs ' "$1" && grep -qE '^COPY runtime-desk-audit\.mjs ' "$1" && grep -qE '^COPY runtime-desk-pour-vav\.mjs ' "$1" && grep -qE '^COPY runtime-desk-field-cert\.mjs ' "$1" && grep -qE '^COPY runtime-desk-pour-stale\.mjs ' "$1" && grep -qE '^COPY runtime-desk-pour-mqtt\.mjs ' "$1"
+  [[ -s "$1" ]] && grep -qE '^COPY runtime-rules-inventory\.mjs ' "$1" && grep -qE '^COPY desk\.html ' "$1" && grep -qE '^COPY desk\.css ' "$1" && grep -qE '^COPY desk\.js ' "$1" && grep -qE '^COPY runtime-desk-shelves\.mjs ' "$1" && grep -qE '^COPY runtime-desk-marking\.mjs ' "$1" && grep -qE '^COPY runtime-desk-solutions\.mjs ' "$1" && grep -qE '^COPY runtime-desk-rules-marks\.mjs ' "$1" && grep -qE '^COPY runtime-desk-releases\.mjs ' "$1" && grep -qE '^COPY runtime-desk-pour\.mjs ' "$1" && grep -qE '^COPY runtime-desk-pour-core\.mjs ' "$1" && grep -qE '^COPY runtime-desk-pour-user\.mjs ' "$1" && grep -qE '^COPY runtime-desk-pour-climate\.mjs ' "$1" && grep -qE '^COPY runtime-desk-pour-light\.mjs ' "$1" && grep -qE '^COPY runtime-desk-pour-scenes\.mjs ' "$1" && grep -qE '^COPY runtime-desk-pour-cron\.mjs ' "$1" && grep -qE '^COPY runtime-desk-actuate\.mjs ' "$1" && grep -qE '^COPY runtime-desk-key-scan\.mjs ' "$1" && grep -qE '^COPY runtime-desk-line-beacon\.mjs ' "$1" && grep -qE '^COPY runtime-desk-health\.mjs ' "$1" && grep -qE '^COPY runtime-desk-audit\.mjs ' "$1" && grep -qE '^COPY runtime-desk-pour-vav\.mjs ' "$1" && grep -qE '^COPY runtime-desk-field-cert\.mjs ' "$1" && grep -qE '^COPY runtime-desk-pour-stale\.mjs ' "$1" && grep -qE '^COPY runtime-desk-pour-mqtt\.mjs ' "$1" && grep -qE '^COPY agent-bundle-files\.txt ' "$1"
+}
+
+# Список файлов — agent-bundle-files.txt, не вторая копия в этом скрипте.
+fetch_bundle() {
+  local base="$1"
+  local list="$AGENT_DIR/agent-bundle-files.txt"
+  local f
+  mkdir -p "$AGENT_DIR/lib"
+  curl_get "$base/agent-bundle-files.txt" -o "$list" || return 1
+  while IFS= read -r f || [[ -n "${f:-}" ]]; do
+    f="${f%%#*}"
+    f="$(printf '%s' "$f" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')"
+    [[ -z "$f" || "$f" == "agent-bundle-files.txt" ]] && continue
+    mkdir -p "$AGENT_DIR/$(dirname "$f")"
+    curl_get "$base/$f" -o "$AGENT_DIR/$f" || return 1
+  done < "$list"
+  chmod +x "$AGENT_DIR/entrypoint.sh" 2>/dev/null || true
 }
 
 ensure_agent_files() {
@@ -200,13 +217,9 @@ ensure_agent_files() {
     echo "[flos-edge-agent] --git-ref $GIT_REF — беру GitHub, tip не подменяю"
   elif cloud_tip_reachable; then
     echo "[flos-edge-agent] скачиваю файлы с tip/облака ($CLOUD_FILES)…"
-    local ok=1
-    for f in Dockerfile docker-compose.yml entrypoint.sh package.json reactor-edge-agent.mjs runtime-control-plane-http.mjs runtime-desk-http.mjs runtime-desk-shelves.mjs runtime-desk-marking.mjs runtime-desk-solutions.mjs runtime-desk-rules-marks.mjs runtime-desk-releases.mjs runtime-desk-pour.mjs runtime-desk-pour-core.mjs runtime-desk-pour-user.mjs runtime-desk-pour-climate.mjs runtime-desk-pour-light.mjs runtime-desk-pour-scenes.mjs runtime-desk-pour-cron.mjs runtime-desk-actuate.mjs runtime-desk-key-scan.mjs runtime-desk-passport.mjs runtime-desk-line-beacon.mjs runtime-desk-health.mjs runtime-desk-audit.mjs runtime-desk-pour-vav.mjs runtime-desk-field-cert.mjs runtime-desk-pour-stale.mjs runtime-desk-pour-mqtt.mjs desk.html desk.css desk.js runtime-rules-inventory.mjs wb-rules-journal-incidents.mjs; do
-      curl_get "$CLOUD_FILES/$f" -o "$AGENT_DIR/$f" || ok=0
-    done
-    curl_get "$CLOUD_FILES/lib/mark-shield-discoverable-device.mjs" -o "$AGENT_DIR/lib/mark-shield-discoverable-device.mjs" || ok=0
-    if [[ "$ok" == "1" ]] && grep -q 'wb_rules_export' "$AGENT_DIR/reactor-edge-agent.mjs" 2>/dev/null && field_dockerfile_ok "$AGENT_DIR/Dockerfile"; then
-      chmod +x "$AGENT_DIR/entrypoint.sh"
+    if fetch_bundle "$CLOUD_FILES" \
+      && grep -q 'wb_rules_export' "$AGENT_DIR/reactor-edge-agent.mjs" 2>/dev/null \
+      && field_dockerfile_ok "$AGENT_DIR/Dockerfile"; then
       return
     fi
     echo "[flos-edge-agent] tip неполный или Dockerfile без field COPY — беру GitHub"
@@ -214,17 +227,13 @@ ensure_agent_files() {
     echo "[flos-edge-agent] tip недоступен с щита (таймаут) — беру GitHub"
   fi
   echo "[flos-edge-agent] скачиваю файлы с GitHub ($RAW)…"
-  for f in Dockerfile docker-compose.yml entrypoint.sh package.json reactor-edge-agent.mjs runtime-control-plane-http.mjs runtime-desk-http.mjs runtime-desk-shelves.mjs runtime-desk-marking.mjs runtime-desk-solutions.mjs runtime-desk-rules-marks.mjs runtime-desk-releases.mjs runtime-desk-pour.mjs runtime-desk-pour-core.mjs runtime-desk-pour-user.mjs runtime-desk-pour-climate.mjs runtime-desk-pour-light.mjs runtime-desk-pour-scenes.mjs runtime-desk-pour-cron.mjs runtime-desk-actuate.mjs runtime-desk-key-scan.mjs runtime-desk-passport.mjs runtime-desk-line-beacon.mjs runtime-desk-health.mjs runtime-desk-audit.mjs runtime-desk-pour-vav.mjs runtime-desk-field-cert.mjs runtime-desk-pour-stale.mjs runtime-desk-pour-mqtt.mjs desk.html desk.css desk.js runtime-rules-inventory.mjs wb-rules-journal-incidents.mjs; do
-    curl_get "$RAW/$f" -o "$AGENT_DIR/$f"
-  done
-  curl_get "$RAW/lib/mark-shield-discoverable-device.mjs" -o "$AGENT_DIR/lib/mark-shield-discoverable-device.mjs"
-  chmod +x "$AGENT_DIR/entrypoint.sh"
+  fetch_bundle "$RAW"
 }
 
 # Не поднимать Restarting-контейнер, если GitHub/tip отдал JS без модуля в образе.
 assert_field_image_complete() {
   local missing=0
-  for f in runtime-rules-inventory.mjs wb-rules-journal-incidents.mjs runtime-control-plane-http.mjs runtime-desk-http.mjs runtime-desk-shelves.mjs runtime-desk-marking.mjs runtime-desk-solutions.mjs runtime-desk-rules-marks.mjs runtime-desk-releases.mjs runtime-desk-pour.mjs runtime-desk-pour-core.mjs runtime-desk-pour-user.mjs runtime-desk-pour-climate.mjs runtime-desk-pour-light.mjs runtime-desk-pour-scenes.mjs runtime-desk-pour-cron.mjs runtime-desk-actuate.mjs runtime-desk-key-scan.mjs runtime-desk-passport.mjs runtime-desk-line-beacon.mjs runtime-desk-health.mjs runtime-desk-audit.mjs runtime-desk-pour-vav.mjs runtime-desk-field-cert.mjs runtime-desk-pour-stale.mjs runtime-desk-pour-mqtt.mjs desk.html desk.css desk.js reactor-edge-agent.mjs Dockerfile; do
+  for f in runtime-rules-inventory.mjs wb-rules-journal-incidents.mjs runtime-control-plane-http.mjs runtime-desk-http.mjs runtime-desk-shelves.mjs runtime-desk-marking.mjs runtime-desk-solutions.mjs runtime-desk-rules-marks.mjs runtime-desk-releases.mjs runtime-desk-pour.mjs runtime-desk-pour-core.mjs runtime-desk-pour-user.mjs runtime-desk-pour-climate.mjs runtime-desk-pour-light.mjs runtime-desk-pour-scenes.mjs runtime-desk-pour-cron.mjs runtime-desk-actuate.mjs runtime-desk-key-scan.mjs runtime-desk-passport.mjs runtime-desk-line-beacon.mjs runtime-desk-health.mjs runtime-desk-audit.mjs runtime-desk-pour-vav.mjs runtime-desk-field-cert.mjs runtime-desk-pour-stale.mjs runtime-desk-pour-mqtt.mjs desk.html desk.css desk.js reactor-edge-agent.mjs Dockerfile agent-bundle-files.txt; do
     if [[ ! -s "$AGENT_DIR/$f" ]]; then
       echo "[flos-edge-agent] ERROR: нет $AGENT_DIR/$f — не собираю дырявый образ." >&2
       missing=1
