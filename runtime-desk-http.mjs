@@ -31,7 +31,7 @@ import {
   readPouredChannelMarks,
   readPouredDeskSnapshot,
 } from "./runtime-desk-rules-marks.mjs";
-import { deskScanGap, formatDeskShelfLabel, groupDeskShelves, patchDeskShelfValues } from "./runtime-desk-shelves.mjs";
+import { applyDeskScanShelves, deskScanGap, formatDeskShelfLabel, groupDeskShelves } from "./runtime-desk-shelves.mjs";
 import { assessDeskCanPour, buildDeskPourPackage } from "./runtime-desk-pour.mjs";
 import {
   actuateDeskChannel,
@@ -234,25 +234,18 @@ export async function handleRuntimeMqttScan(req, res) {
       const grouped = groupDeskShelves(out.snapshot.entries);
       const prevRead = readLastDeskShelves();
       const prev = prevRead.ok ? prevRead : { shelves: [] };
-      const truncated = out.scan?.truncated === true;
       const modulesBefore = Array.isArray(prev.shelves) ? prev.shelves.length : 0;
       const modulesSeen = grouped.length;
       const gap = deskScanGap(prev.shelves, grouped);
       const modulesMissing = gap.modulesMissing;
       const channelsMissing = gap.channelsMissing;
       const shortScan = false;
-      const merged = partial
-        ? patchDeskShelfValues(prev.shelves, grouped)
-        : !truncated && grouped.length
-          ? grouped
-          : Array.isArray(prev.shelves)
-            ? prev.shelves
-            : [];
+      const merged = applyDeskScanShelves(prev.shelves, grouped, { partial });
       out.shelves = withPouredHints(applyMarksToShelves(merged));
       if (!partial && out.scan && typeof out.scan === "object") {
         out.scan = { ...out.scan, modulesBefore, modulesSeen, modulesMissing, channelsMissing, shortScan };
       }
-      if (out.shelves.length) {
+      if (!partial || out.shelves.length) {
         const scanMeta = partial
           ? undefined
           : {

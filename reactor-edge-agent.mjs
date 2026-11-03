@@ -34,7 +34,7 @@ import {
 } from "./wb-rules-journal-incidents.mjs";
 
 /** Одна строка в heartbeat и snapshot — иначе UI врёт версией. */
-const EDGE_AGENT_VERSION = "edge-pilot-v2.lan-desk-220";
+const EDGE_AGENT_VERSION = "edge-pilot-v2.lan-desk-221";
 
 /** Prefer `FLOS_*` (FL OS); fall back to legacy `REACTOR_*` for existing deployments. */
 function env(primary, legacy) {
@@ -1047,34 +1047,58 @@ function assembleMqttScanEntries(ack) {
   };
 }
 
+function clearMqttMirrorEntries() {
+  mqttMirrorState.entriesByPath.clear();
+  mqttMirrorState.dirtyPaths.clear();
+  mqttMirrorState.bootstrapSent.clear();
+  mqttMirrorState.topicCount = 0;
+  mqttMirrorState.lastNewPathAtMs = null;
+}
+
+/** Свежий dump после «Обновить»: тишина после последней новой темы, без пола в 4 модуля. */
+function isResyncDumpReady() {
+  if (mqttMirrorState.connected !== true) return false;
+  const subAt = mqttMirrorState.subscribedAtMs;
+  if (!subAt || !Number.isFinite(subAt)) return false;
+  const ageMs = Date.now() - subAt;
+  const lastNew = mqttMirrorState.lastNewPathAtMs;
+  if (!Number.isFinite(lastNew)) return ageMs >= MQTT_MIRROR_SETTLE_QUIET_MS;
+  if (ageMs < 500) return false;
+  return Date.now() - lastNew >= MQTT_MIRROR_SETTLE_QUIET_MS;
+}
+
 async function resyncMqttMirrorFromBroker(waitMs) {
   const client = mqttMirrorState.client;
   if (!client || mqttMirrorState.connected !== true) return false;
   const topics = ["/devices/#", "devices/#", "/devices/+/controls/+", "devices/+/controls/+"];
-  mqttMirrorState.entriesByPath.clear();
-  mqttMirrorState.dirtyPaths.clear();
-  mqttMirrorState.topicCount = 0;
-  mqttMirrorState.lastNewPathAtMs = null;
+  mqttMirrorState.acceptIngest = false;
   mqttMirrorState.subscribedAtMs = null;
-  await new Promise((resolve) => {
+  const subscribed = await new Promise((resolve) => {
     let done = false;
-    const finish = () => {
+    const finish = (ok) => {
       if (done) return;
       done = true;
-      resolve();
+      resolve(ok);
     };
-    const timer = setTimeout(finish, 1500);
+    const timer = setTimeout(() => finish(false), 4000);
     client.unsubscribe(topics, () => {
-      client.subscribe(topics, { qos: 0 }, () => {
+      client.subscribe(topics, { qos: 0 }, (err) => {
+        if (done) return;
         clearTimeout(timer);
+        clearMqttMirrorEntries();
         mqttMirrorState.subscribedAtMs = Date.now();
-        finish();
+        mqttMirrorState.acceptIngest = true;
+        finish(!err);
       });
     });
   });
+  if (!subscribed) {
+    mqttMirrorState.acceptIngest = true;
+    return false;
+  }
   const deadline = Date.now() + Math.max(2000, Math.min(Number(waitMs) || 8000, 12_000));
   while (Date.now() < deadline) {
-    if (isMqttMirrorSettledForScan()) break;
+    if (isResyncDumpReady()) break;
     await new Promise((r) => setTimeout(r, 200));
   }
   return true;
@@ -1100,10 +1124,12 @@ async function runMqttTopicScanCommand(payload) {
   const instantMirror = payload?.allowUnsettledMirror === true;
   const inputsOnly = payload?.inputsOnly === true;
   const onlyDevice = typeof payload?.deviceTopicKey === "string" ? payload.deviceTopicKey.trim() : "";
+  let resynced = false;
   if (!instantMirror && !inputsOnly && !onlyDevice && mqttMirrorState.connected && mqttMirrorState.client) {
-    await resyncMqttMirrorFromBroker(scanMs);
+    resynced = await resyncMqttMirrorFromBroker(scanMs);
+    if (!resynced) return { ok: false, error: "Шина не ответила" };
   }
-  const mirrorWarm = preferMirror && (isMqttMirrorSettledForScan() || (instantMirror && hasMirrorNow));
+  const mirrorWarm = preferMirror && (resynced || isMqttMirrorSettledForScan() || (instantMirror && hasMirrorNow));
   if (preferMirror && instantMirror && !mirrorWarm) {
     return {
       ok: true,
@@ -1120,6 +1146,9 @@ async function runMqttTopicScanCommand(payload) {
   }
   if (mirrorWarm) {
     const mirrorEntries = [...mqttMirrorState.entriesByPath.values()];
+    const mirrorHealth = resynced
+      ? { ...mqttMirrorHealth(), settled: isResyncDumpReady() }
+      : mqttMirrorHealth();
     const allEntries = onlyDevice
       ? mirrorEntries.filter((e) => e.deviceTopicKey === onlyDevice)
       : payload?.inputsOnly === true
@@ -1133,7 +1162,7 @@ async function runMqttTopicScanCommand(payload) {
         collectedCount: allEntries.length,
         mirrorTopicCount: mirrorEntries.length,
         chunked: true,
-        mqttMirror: mqttMirrorHealth(),
+        mqttMirror: mirrorHealth,
       });
     }
     const snapshot = buildMqttMirrorSnapshotV1(ackMaxEntries);
@@ -1150,7 +1179,7 @@ async function runMqttTopicScanCommand(payload) {
           truncated: snapshot.truncated === true,
           discoverableDeviceCount: snapshot.discoverableDeviceCount,
           omittedDeviceHint: snapshot.omittedDeviceHint ?? null,
-          mqttMirror: mqttMirrorHealth(),
+          mqttMirror: mirrorHealth,
         },
       },
     };
@@ -1496,6 +1525,7 @@ function pruneMirrorControlsForOfflineDevice(deviceTopicKey) {
 }
 
 function ingestMqttMirrorMessage(topic, buf) {
+  if (mqttMirrorState.acceptIngest === false) return;
   const normalized = String(topic).replace(/^\/+/, "/").replace(/^([^/])/, "/$1");
   const parts = normalized.split("/").filter(Boolean);
   const importedAt = new Date().toISOString();

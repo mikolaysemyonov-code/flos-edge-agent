@@ -5553,8 +5553,8 @@
         : modFamily === "relays"
           ? "Реле на шине нет."
           : modFamily === "light"
-            ? "Света на шине нет. Нажмите «Обновить»."
-            : "Модулей на шине нет. Нажмите «Обновить».";
+            ? "Света на шине нет."
+            : "На шине модулей нет.";
       fillModuleVitrine(body, famRows, empty);
     }
     function renderShelves(rows) {
@@ -5571,23 +5571,19 @@
           body: JSON.stringify({ scanMs: 8000 }),
         });
         const j = await r.json();
-        if (!j.ok) {
-          if (!lastShelvesRows.length) {
-            $("bus").className = "meta bad";
-            $("bus").style.color = "rgb(var(--bad))";
-            delete $("bus").dataset.base;
-          $("bus").textContent = j.error || "Скан не вышел";
-          }
-          return;
-        }
-        if (j.shelves && j.shelves.length) showShelves(j);
-      } catch (e) {
-        if (!lastShelvesRows.length) {
-          $("bus").className = "meta";
+        if (!j.ok || !Array.isArray(j.shelves)) {
+          $("bus").className = "meta bad";
           $("bus").style.color = "rgb(var(--bad))";
           delete $("bus").dataset.base;
-          $("bus").textContent = String(e.message || e);
+          $("bus").textContent = j.error || "Шина не ответила";
+          return;
         }
+        showShelves(j);
+      } catch (e) {
+        $("bus").className = "meta";
+        $("bus").style.color = "rgb(var(--bad))";
+        delete $("bus").dataset.base;
+        $("bus").textContent = String(e.message || e);
       } finally {
         $("scan").disabled = false;
       }
@@ -5612,8 +5608,7 @@
       if (openMod) closeModule();
     });
     function showShelves(j) {
-      const incoming = j.shelves || [];
-      const shelves = incoming.length ? incoming : (lastShelvesRows || []);
+      const shelves = Array.isArray(j.shelves) ? j.shelves : [];
       $("bus").className = "meta";
       $("bus").style.color = "";
       const named = shelves.reduce(function (n, s) {

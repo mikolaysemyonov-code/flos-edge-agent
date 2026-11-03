@@ -325,6 +325,15 @@ export function rememberDeskShelves(prev, next) {
   return nextArr;
 }
 
+/**
+ * «Обновить» — состав шины как в этом снимке, включая пустой.
+ * Частичный опрос (кнопка, один модуль) только обновляет значения.
+ */
+export function applyDeskScanShelves(prev, next, opts = {}) {
+  if (opts?.partial === true) return patchDeskShelfValues(prev, next);
+  return Array.isArray(next) ? next : [];
+}
+
 /** Живой опрос входов обновляет значения. Новых модулей из старого снимка не добавляет. */
 export function patchDeskShelfValues(prev, next) {
   const updates = new Map();
