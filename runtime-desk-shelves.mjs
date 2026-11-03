@@ -326,11 +326,13 @@ export function rememberDeskShelves(prev, next) {
 }
 
 /**
- * «Обновить» — состав шины как в этом снимке, включая пустой.
+ * Готовый снимок заменяет стол, включая пустой.
+ * Неготовый полный опрос состав не трогает.
  * Частичный опрос (кнопка, один модуль) только обновляет значения.
  */
 export function applyDeskScanShelves(prev, next, opts = {}) {
   if (opts?.partial === true) return patchDeskShelfValues(prev, next);
+  if (opts?.ready === false) return Array.isArray(prev) ? prev : [];
   return Array.isArray(next) ? next : [];
 }
 

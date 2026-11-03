@@ -875,7 +875,8 @@ function deskWriteLocked(method, urlPath) {
     urlPath === "/runtime/desk-actuate" ||
     urlPath === "/runtime/desk-key-plan" ||
     urlPath === "/runtime/desk-line-plan" ||
-    urlPath === "/runtime/desk-audit"
+    urlPath === "/runtime/desk-audit" ||
+    urlPath === "/runtime/mqtt-scan"
   );
 }
 

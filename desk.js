@@ -1,3 +1,19 @@
+(function installDeskWriteAuth() {
+  const meta = document.querySelector('meta[name="flos-desk-token"]');
+  const token = meta && meta.getAttribute("content");
+  if (!token) return;
+  const orig = window.fetch.bind(window);
+  window.fetch = function (input, init) {
+    const url = typeof input === "string" ? input : (input && input.url) || "";
+    const method = String((init && init.method) || (typeof input !== "string" && input && input.method) || "GET").toUpperCase();
+    if (url.indexOf("/runtime/") === 0 && method !== "GET" && method !== "HEAD") {
+      const headers = new Headers((init && init.headers) || (typeof input !== "string" && input && input.headers) || {});
+      if (!headers.has("authorization")) headers.set("authorization", "Bearer " + token);
+      init = Object.assign({}, init || {}, { headers: headers });
+    }
+    return orig(input, init);
+  };
+})();
     const $ = (id) => document.getElementById(id);
     let liveKeys = {};
     let pouredRules = [];

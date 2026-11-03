@@ -73,7 +73,19 @@ export function setRuntimeMqttScanHandler(fn) {
 export function serveCommissionDesk(_req, res) {
   const file = path.join(HERE, "desk.html");
   try {
-    const html = fs.readFileSync(file, "utf8");
+    let html = fs.readFileSync(file, "utf8");
+    const token = (
+      process.env.FLOS_RUNTIME_HTTP_AUTH_TOKEN ||
+      process.env.REACTOR_RUNTIME_HTTP_AUTH_TOKEN ||
+      ""
+    ).trim();
+    if (token) {
+      const safe = token.replace(/&/g, "&amp;").replace(/"/g, "&quot;");
+      html = html.replace(
+        "<head>",
+        `<head>\n  <meta name="flos-desk-token" content="${safe}" />`,
+      );
+    }
     res.statusCode = 200;
     res.setHeader("content-type", "text/html; charset=utf-8");
     res.setHeader("cache-control", "no-store");
@@ -240,12 +252,13 @@ export async function handleRuntimeMqttScan(req, res) {
       const modulesMissing = gap.modulesMissing;
       const channelsMissing = gap.channelsMissing;
       const shortScan = false;
-      const merged = applyDeskScanShelves(prev.shelves, grouped, { partial });
+      const ready = !partial && out.scan?.settled === true && out.scan?.truncated !== true;
+      const merged = applyDeskScanShelves(prev.shelves, grouped, { partial, ready });
       out.shelves = withPouredHints(applyMarksToShelves(merged));
       if (!partial && out.scan && typeof out.scan === "object") {
         out.scan = { ...out.scan, modulesBefore, modulesSeen, modulesMissing, channelsMissing, shortScan };
       }
-      if (!partial || out.shelves.length) {
+      if (ready || (partial && out.shelves.length)) {
         const scanMeta = partial
           ? undefined
           : {
