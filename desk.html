@@ -8,9 +8,9 @@
 </head>
 <body>
   <main>
-    <p class="kicker">Стол щита</p>
+    <p class="kicker">Сегодня</p>
     <div class="top">
-      <h1>Пуск щита</h1>
+      <h1>Обход дома</h1>
       <div class="top-actions">
         <button id="fieldCert" class="ghost" type="button">Сертификат</button>
         <button id="scan" class="ghost" type="button">Обновить</button>
@@ -24,44 +24,51 @@
       </div>
     </div>
     <p id="bus" class="meta"></p>
-    <p id="ritual" class="meta ritual">Сначала кнопки по комнатам. Потом свет. Запись на щит — в конце.</p>
+    <p id="ritual" class="meta ritual" hidden>Сначала кнопки по комнатам. Потом свет. Запись на щит — в конце.</p>
 
-    <section id="panel-intro" class="panel glass" data-tab="intro">
-      <p class="meta">Вы уже на щите. В сервисе остались код и привязка объекта. Дальше спокойно обходим дом: сначала все кнопки, потом свет, потом тепло и вода.</p>
+    <section id="panel-intro" class="panel" data-tab="intro">
       <ol class="walk">
         <li>
+          <span class="step">1</span>
           <strong>Время</strong>
-          <span>Сверьте часы щита с телефоном. Один раз нажмите «Обновить». Если щит ответил не весь, таблицу домой не берём.</span>
+          <span>Часы щита и телефон должны идти вместе. Иначе свет вечером включится не в тот час.</span>
+          <button type="button" class="ghost" data-go="time">Сверить</button>
         </li>
         <li>
-          <strong>Кнопки по комнатам</strong>
-          <span>Напишите комнату, в которой стоите. «Слушаю». Три коротких нажатия на выключатель. Назовите его, например «Клавиша 1, основной свет». Свет в этот заход не называем.</span>
-          <button type="button" class="ghost" data-go="keys">К кнопкам</button>
+          <span class="step">2</span>
+          <strong>Кнопки</strong>
+          <span>Встаньте в комнате. Три коротких нажатия — и у клавиши появляется имя.</span>
+          <button type="button" class="ghost" data-go="keys">По комнатам</button>
         </li>
         <li>
-          <strong>Свет в эти комнаты</strong>
-          <span>Вернитесь в ту же комнату. Включите линию и посмотрите, что загорелось. Назовите светильник и укажите, какая кнопка его включает.</span>
+          <span class="step">3</span>
+          <strong>Свет</strong>
+          <span>Та же комната. Включите линию и назовите то, что загорелось.</span>
           <button type="button" class="ghost" data-go="lines">К свету</button>
         </li>
         <li>
-          <strong>Тепло, вода, движение</strong>
-          <span>Датчик называйте в его комнате. Три нажатия его не найдут: это не выключатель.</span>
-          <button type="button" class="ghost" data-go="modules">К щиту</button>
+          <span class="step">4</span>
+          <strong>Тепло и вода</strong>
+          <span>Датчик называется там, где он висит. Тремя нажатиями его не найти.</span>
+          <button type="button" class="ghost" data-go="modules">К датчикам</button>
         </li>
         <li>
-          <strong>Как это работает</strong>
-          <span>Правило добавляйте, когда кнопка и свет уже названы. «Я дома» и другие сцены — когда свет разложен по комнатам.</span>
-          <button type="button" class="ghost" data-go="cards">К правилам</button>
+          <span class="step">5</span>
+          <strong>Сцены</strong>
+          <span>Когда кнопки и свет уже знакомы, соберите «Я дома».</span>
+          <button type="button" class="ghost" data-go="cards">К сценам</button>
         </li>
         <li>
-          <strong>Записать на щит</strong>
-          <span>Один раз в конце дня. Сначала имена, потом сценарии. Посреди обхода щит не трогаем.</span>
+          <span class="step">6</span>
+          <strong>На щит</strong>
+          <span>Один раз, в конце. До этого щит просто слушает.</span>
           <button type="button" class="ghost" data-go="poured">Записать</button>
         </li>
         <li>
-          <strong>Файл для дома</strong>
-          <span>Таблица на флешку и в архив объекта. По ней вспоминают дом потом, не во время обхода.</span>
-          <button type="button" class="ghost" data-go="xlsx">Скачать таблицу</button>
+          <span class="step">7</span>
+          <strong>Домой</strong>
+          <span>Таблица на память. Во время обхода она не нужна.</span>
+          <button type="button" class="ghost" data-go="xlsx">Забрать таблицу</button>
         </li>
       </ol>
     </section>
@@ -136,7 +143,7 @@
   <nav class="dock" role="tablist" aria-label="Ритуал пуска">
     <button class="tab" type="button" role="tab" data-tab="intro" aria-selected="true">
       <span class="ico"><svg viewBox="0 0 24 24"><path d="M12 3v18"/><path d="M5 8h14"/><path d="M5 16h14"/></svg></span>
-      <span>Вводное</span>
+      <span>Начало</span>
     </button>
     <button class="tab" type="button" role="tab" data-tab="mark" aria-selected="false">
       <span class="ico"><svg viewBox="0 0 24 24"><path d="M3 7h18M3 12h18M3 17h12"/></svg></span>

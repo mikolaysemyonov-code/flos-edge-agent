@@ -458,9 +458,12 @@
         p.hidden = p.dataset.tab !== tab;
       });
       const ritual = $("ritual");
+      const busLine = $("bus");
+      if (busLine) busLine.hidden = tab === "intro";
       if (ritual) {
+        ritual.hidden = tab === "intro";
         ritual.textContent = tab === "intro"
-          ? "Сначала кнопки по комнатам. Потом свет. Запись на щит — в конце."
+          ? ""
           : tab === "mark"
             ? "Одна комната за раз. Три коротких нажатия, затем имя."
             : tab === "cards"
@@ -2991,16 +2994,17 @@
         const incident = Array.isArray(j.busIncidents) && j.busIncidents[0] ? j.busIncidents[0].reason : "";
         const busCalm = busOk && shieldClockOk && !shieldClockUnverified && !offline && !incident;
         box.className = "glass status " + (busCalm ? "ok" : "bad");
-        main.textContent = busRu(mirror) + " · " + ver;
+        main.textContent = busCalm ? "Щит на связи" : (busOk ? "Щит ответил не весь" : "Щит молчит");
+        main.title = ver;
         if (sub) {
-          const bits = [cloudRu(cloudState)];
-          if (shieldClockUnverified) bits.push("время щита не прочитано");
-          else if (shieldClockLabel) bits.push(shieldClockOk ? ("часы " + shieldClockLabel) : "часы щита неверные");
-          if (offline) bits.push("молчит " + offline);
+          const bits = [];
+          if (shieldClockUnverified) bits.push("Время не прочитано");
+          else if (!shieldClockOk) bits.push("Часы не совпадают с телефоном");
+          if (offline) bits.push(offline === 1 ? "Один модуль молчит" : ("Молчит модулей: " + offline));
           if (incident) bits.push(incident);
-          if (!busOk) bits.push("Проверьте mosquitto на щите");
+          if (cloudRu(cloudState) === "Облако на связи") bits.push("Сервис видит щит");
           sub.textContent = bits.join(" · ");
-          sub.hidden = false;
+          sub.hidden = bits.length === 0;
         }
       } catch (e) {
         box.className = "glass status bad";
@@ -6197,6 +6201,11 @@
     document.querySelectorAll("[data-go]").forEach((btn) => {
       btn.addEventListener("click", () => {
         const go = btn.dataset.go;
+        if (go === "time") {
+          const scan = $("scan");
+          if (scan) scan.click();
+          return;
+        }
         if (go === "xlsx") {
           const x = $("passportXlsx");
           if (x) x.click();
