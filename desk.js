@@ -191,7 +191,7 @@
               };
             });
             for (const n of j.shelves) {
-              if (!prev.some((s) => s.deviceTopicKey === n.deviceTopicKey)) {
+              if (n?.deviceTopicKey === openMod && !prev.some((s) => s.deviceTopicKey === n.deviceTopicKey)) {
                 lastShelvesRows.push(n);
               }
             }
@@ -4252,7 +4252,7 @@
           .then((r) => r.json())
           .then((j) => {
             if (!keyScan || !j || !j.ok || !Array.isArray(j.shelves)) return;
-            lastShelvesRows = rememberMergeShelves(lastShelvesRows, j.shelves);
+            lastShelvesRows = paintLiveValues(lastShelvesRows, j.shelves);
             if (!keyScan.primed) {
               keyScan.baseline = pressSignalMap(lastShelvesRows);
               keyScan.prevClosed = new Map();
@@ -4403,26 +4403,22 @@
       const armedRow = document.querySelector("#mark-body .key-row.armed");
       if (armedRow && armedRow.scrollIntoView) armedRow.scrollIntoView({ block: "nearest" });
     }
-    function rememberMergeShelves(prev, next) {
-      if (!Array.isArray(next) || !next.length) return prev || [];
-      const byKey = new Map((prev || []).map((s) => [s.deviceTopicKey, s]));
-      next.forEach((n) => {
-        const old = byKey.get(n.deviceTopicKey);
-        if (!old) {
-          byKey.set(n.deviceTopicKey, n);
-          return;
-        }
-        const vals = new Map((n.channels || []).map((c) => [c.controlId, c]));
-        const channels = (old.channels || []).map((c) => {
-          const nu = vals.get(c.controlId);
-          return nu ? { ...c, lastValue: nu.lastValue } : c;
-        });
-        vals.forEach((c, id) => {
-          if (!(old.channels || []).some((x) => x.controlId === id)) channels.push(c);
-        });
-        byKey.set(n.deviceTopicKey, { ...old, channels });
+    function paintLiveValues(prev, next) {
+      const updates = new Map();
+      for (const s of next || []) {
+        if (!s || !s.deviceTopicKey) continue;
+        updates.set(s.deviceTopicKey, new Map((s.channels || []).map((c) => [c.controlId, c.lastValue])));
+      }
+      return (prev || []).map((s) => {
+        const row = updates.get(s.deviceTopicKey);
+        if (!row) return s;
+        return {
+          ...s,
+          channels: (s.channels || []).map((c) =>
+            row.has(c.controlId) ? { ...c, lastValue: row.get(c.controlId) } : c,
+          ),
+        };
       });
-      return [...byKey.values()];
     }
     function sameRoom(a, b) {
       return String(a || "").trim().toLowerCase() === String(b || "").trim().toLowerCase();
@@ -5327,7 +5323,7 @@
           .then((r) => r.json())
           .then((j) => {
             if (!pairListen || !j || !j.ok || !Array.isArray(j.shelves)) return;
-            lastShelvesRows = rememberMergeShelves(lastShelvesRows, j.shelves);
+            lastShelvesRows = paintLiveValues(lastShelvesRows, j.shelves);
             const rises = pressRises(pairListen, pressSignalMap(lastShelvesRows));
             if (rises.length !== 1 || rises[0].jump) return;
             const sig = rises[0].sig;
@@ -5617,10 +5613,7 @@
     });
     function showShelves(j) {
       const incoming = j.shelves || [];
-      const untrusted = j.scan && (j.scan.truncated === true || j.scan.settled === false);
-      const shelves = (keyScan || untrusted)
-        ? rememberMergeShelves(lastShelvesRows, incoming)
-        : incoming;
+      const shelves = incoming.length ? incoming : (lastShelvesRows || []);
       $("bus").className = "meta";
       $("bus").style.color = "";
       const named = shelves.reduce(function (n, s) {
@@ -5702,13 +5695,8 @@
           if (bus) {
             bus.className = "meta bad";
             bus.style.color = "rgb(var(--bad))";
-            bus.textContent = "Снимок шины на диске не читается. Нажмите «Обновить».";
+            bus.textContent = "Снимок шины на диске не читается. Слушаю щит заново.";
           }
-          return;
-        }
-        if (j.ok && j.shelves && j.shelves.length) {
-          showShelves(j);
-          return;
         }
       } catch (_) { /* снимем шину ниже */ }
       await scanNow();

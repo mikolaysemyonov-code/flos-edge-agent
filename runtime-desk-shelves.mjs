@@ -160,13 +160,28 @@ export function deskChannelIsOn(lastValue) {
   return false;
 }
 
+function metaErrorOffline(entry) {
+  if (entry?.controlId !== "__device_meta_error") return false;
+  const v = entry.lastValue;
+  return v === 1 || v === true || v === "1" || v === "true";
+}
+
 export function groupDeskShelves(entries) {
+  const list = Array.isArray(entries) ? entries : [];
+  const offline = new Set();
+  for (const entry of list) {
+    if (!metaErrorOffline(entry)) continue;
+    const raw = deviceKeyFromEntry(entry);
+    if (!raw) continue;
+    offline.add(parseDeskDeviceKey(raw)?.canonical ?? raw);
+  }
   const map = new Map();
-  for (const entry of Array.isArray(entries) ? entries : []) {
+  for (const entry of list) {
     const raw = deviceKeyFromEntry(entry);
     if (!raw || !isMarkShieldDiscoverableDeviceKey(raw)) continue;
     const parsed = parseDeskDeviceKey(raw);
     const key = parsed?.canonical ?? raw;
+    if (offline.has(key)) continue;
     let row = map.get(key);
     if (!row) {
       row = {
@@ -300,17 +315,36 @@ export function deskScanGap(prev, next) {
 }
 
 /**
- * Спокойный снимок — это щит сейчас. Модуля нет в новом снимке — его нет на столе.
- * Пустой ответ не стирает прошлый снимок. Канал, который модуль не повторил, остаётся.
+ * Непустой снимок MQTT заменяет стол целиком. Пустой ответ прошлый снимок не стирает.
+ * Канал или модуль, которого в новом снимке нет, на стол не возвращается.
  */
 export function rememberDeskShelves(prev, next) {
   const prevArr = Array.isArray(prev) ? prev : [];
   const nextArr = Array.isArray(next) ? next : [];
   if (!nextArr.length) return prevArr;
-  if (!prevArr.length) return nextArr;
-  const gap = deskScanGap(prevArr, nextArr);
-  if (!gap.short) return nextArr;
-  const live = new Set(nextArr.map((s) => s?.deviceTopicKey).filter(Boolean));
-  const kept = prevArr.filter((s) => s?.deviceTopicKey && live.has(s.deviceTopicKey));
-  return unionDeskShelves(kept, nextArr);
+  return nextArr;
+}
+
+/** Живой опрос входов обновляет значения. Новых модулей из старого снимка не добавляет. */
+export function patchDeskShelfValues(prev, next) {
+  const updates = new Map();
+  for (const s of Array.isArray(next) ? next : []) {
+    if (!s?.deviceTopicKey) continue;
+    updates.set(
+      s.deviceTopicKey,
+      new Map((Array.isArray(s.channels) ? s.channels : []).map((c) => [c?.controlId, c])),
+    );
+  }
+  return (Array.isArray(prev) ? prev : []).map((s) => {
+    const row = updates.get(s?.deviceTopicKey);
+    if (!row) return s;
+    return {
+      ...s,
+      channels: (Array.isArray(s.channels) ? s.channels : []).map((c) => {
+        const n = row.get(c?.controlId);
+        if (!n || !Object.prototype.hasOwnProperty.call(n, "lastValue")) return c;
+        return { ...c, lastValue: n.lastValue };
+      }),
+    };
+  });
 }

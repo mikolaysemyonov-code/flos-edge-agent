@@ -34,7 +34,7 @@ import {
 } from "./wb-rules-journal-incidents.mjs";
 
 /** Одна строка в heartbeat и snapshot — иначе UI врёт версией. */
-const EDGE_AGENT_VERSION = "edge-pilot-v2.lan-desk-219";
+const EDGE_AGENT_VERSION = "edge-pilot-v2.lan-desk-220";
 
 /** Prefer `FLOS_*` (FL OS); fall back to legacy `REACTOR_*` for existing deployments. */
 function env(primary, legacy) {
@@ -1047,6 +1047,39 @@ function assembleMqttScanEntries(ack) {
   };
 }
 
+async function resyncMqttMirrorFromBroker(waitMs) {
+  const client = mqttMirrorState.client;
+  if (!client || mqttMirrorState.connected !== true) return false;
+  const topics = ["/devices/#", "devices/#", "/devices/+/controls/+", "devices/+/controls/+"];
+  mqttMirrorState.entriesByPath.clear();
+  mqttMirrorState.dirtyPaths.clear();
+  mqttMirrorState.topicCount = 0;
+  mqttMirrorState.lastNewPathAtMs = null;
+  mqttMirrorState.subscribedAtMs = null;
+  await new Promise((resolve) => {
+    let done = false;
+    const finish = () => {
+      if (done) return;
+      done = true;
+      resolve();
+    };
+    const timer = setTimeout(finish, 1500);
+    client.unsubscribe(topics, () => {
+      client.subscribe(topics, { qos: 0 }, () => {
+        clearTimeout(timer);
+        mqttMirrorState.subscribedAtMs = Date.now();
+        finish();
+      });
+    });
+  });
+  const deadline = Date.now() + Math.max(2000, Math.min(Number(waitMs) || 8000, 12_000));
+  while (Date.now() < deadline) {
+    if (isMqttMirrorSettledForScan()) break;
+    await new Promise((r) => setTimeout(r, 200));
+  }
+  return true;
+}
+
 async function runMqttTopicScanCommand(payload) {
   const host = typeof payload?.host === "string" && payload.host.trim() ? payload.host.trim() : "127.0.0.1";
   const port = Number(payload?.port) > 0 ? Number(payload.port) : 1883;
@@ -1065,6 +1098,11 @@ async function runMqttTopicScanCommand(payload) {
           : true;
   const hasMirrorNow = mqttMirrorState.connected === true && mqttMirrorState.entriesByPath.size > 0;
   const instantMirror = payload?.allowUnsettledMirror === true;
+  const inputsOnly = payload?.inputsOnly === true;
+  const onlyDevice = typeof payload?.deviceTopicKey === "string" ? payload.deviceTopicKey.trim() : "";
+  if (!instantMirror && !inputsOnly && !onlyDevice && mqttMirrorState.connected && mqttMirrorState.client) {
+    await resyncMqttMirrorFromBroker(scanMs);
+  }
   const mirrorWarm = preferMirror && (isMqttMirrorSettledForScan() || (instantMirror && hasMirrorNow));
   if (preferMirror && instantMirror && !mirrorWarm) {
     return {
@@ -1082,7 +1120,6 @@ async function runMqttTopicScanCommand(payload) {
   }
   if (mirrorWarm) {
     const mirrorEntries = [...mqttMirrorState.entriesByPath.values()];
-    const onlyDevice = typeof payload?.deviceTopicKey === "string" ? payload.deviceTopicKey.trim() : "";
     const allEntries = onlyDevice
       ? mirrorEntries.filter((e) => e.deviceTopicKey === onlyDevice)
       : payload?.inputsOnly === true
@@ -1463,10 +1500,24 @@ function ingestMqttMirrorMessage(topic, buf) {
   const parts = normalized.split("/").filter(Boolean);
   const importedAt = new Date().toISOString();
   mqttMirrorState.lastMsgAt = importedAt;
+  const deviceTopicKey = parts[1] || "";
+  const topicPath =
+    parts.length === 4 && parts[0] === "devices" && parts[2] === "meta" && parts[3] === "error"
+      ? `/devices/${deviceTopicKey}/meta/error`
+      : parts.length === 4 && parts[0] === "devices" && parts[2] === "controls"
+        ? `/devices/${deviceTopicKey}/controls/${parts[3]}`
+        : "";
+  if (!buf || buf.length === 0) {
+    if (!topicPath || !mqttMirrorState.entriesByPath.has(topicPath)) return;
+    mqttMirrorState.entriesByPath.delete(topicPath);
+    mqttMirrorState.dirtyPaths.delete(topicPath);
+    mqttMirrorState.bootstrapSent.delete(topicPath);
+    mqttMirrorState.pendingRemovedPaths.add(topicPath);
+    mqttMirrorState.topicCount = mqttMirrorState.entriesByPath.size;
+    return;
+  }
   if (parts.length === 4 && parts[0] === "devices" && parts[2] === "meta" && parts[3] === "error") {
-    const deviceTopicKey = parts[1];
     if (!isMarkShieldDiscoverableDeviceKey(deviceTopicKey)) return;
-    const topicPath = `/devices/${deviceTopicKey}/meta/error`;
     const raw = buf.length > 0 ? buf.toString("utf8") : "";
     let lastValue;
     if (raw === "0") lastValue = 0;
@@ -1493,11 +1544,9 @@ function ingestMqttMirrorMessage(topic, buf) {
     return;
   }
   if (parts.length !== 4 || parts[0] !== "devices" || parts[2] !== "controls") return;
-  const deviceTopicKey = parts[1];
   if (!isMarkShieldDiscoverableDeviceKey(deviceTopicKey)) return;
   const controlId = parts[3];
   if (!controlId || /meta/i.test(controlId)) return;
-  const topicPath = `/devices/${deviceTopicKey}/controls/${controlId}`;
   const raw = buf.length > 0 ? buf.toString("utf8") : "";
   let valueType = "unknown";
   if (raw === "0" || raw === "1") valueType = "switch";

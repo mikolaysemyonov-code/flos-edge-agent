@@ -31,7 +31,7 @@ import {
   readPouredChannelMarks,
   readPouredDeskSnapshot,
 } from "./runtime-desk-rules-marks.mjs";
-import { deskScanGap, formatDeskShelfLabel, groupDeskShelves, rememberDeskShelves, unionDeskShelves } from "./runtime-desk-shelves.mjs";
+import { deskScanGap, formatDeskShelfLabel, groupDeskShelves, patchDeskShelfValues } from "./runtime-desk-shelves.mjs";
 import { assessDeskCanPour, buildDeskPourPackage } from "./runtime-desk-pour.mjs";
 import {
   actuateDeskChannel,
@@ -191,10 +191,7 @@ export function writeLastDeskShelves(shelves, brokerLabel, scan) {
   fs.renameSync(tmp, file);
 }
 
-/** Живой опрос входов не должен стирать каналы нагрузок, уже увиденные полным сканом. */
-function mergeShelfChannels(prev, next) {
-  return unionDeskShelves(prev, next);
-}
+/** Живой опрос входов меняет значения. Состав модулей берётся только из полного снимка MQTT. */
 
 export async function handleRuntimeMqttScan(req, res) {
   const method = (req.method ?? "GET").toUpperCase();
@@ -237,16 +234,20 @@ export async function handleRuntimeMqttScan(req, res) {
       const grouped = groupDeskShelves(out.snapshot.entries);
       const prevRead = readLastDeskShelves();
       const prev = prevRead.ok ? prevRead : { shelves: [] };
-      const trustworthy = !partial && out.scan?.settled === true && out.scan?.truncated !== true;
+      const truncated = out.scan?.truncated === true;
       const modulesBefore = Array.isArray(prev.shelves) ? prev.shelves.length : 0;
       const modulesSeen = grouped.length;
       const gap = deskScanGap(prev.shelves, grouped);
       const modulesMissing = gap.modulesMissing;
       const channelsMissing = gap.channelsMissing;
-      const shortScan = trustworthy && gap.channelsMissing > 0 && gap.modulesMissing === 0;
-      const merged = trustworthy
-        ? rememberDeskShelves(prev.shelves, grouped)
-        : mergeShelfChannels(prev.shelves, grouped);
+      const shortScan = false;
+      const merged = partial
+        ? patchDeskShelfValues(prev.shelves, grouped)
+        : !truncated && grouped.length
+          ? grouped
+          : Array.isArray(prev.shelves)
+            ? prev.shelves
+            : [];
       out.shelves = withPouredHints(applyMarksToShelves(merged));
       if (!partial && out.scan && typeof out.scan === "object") {
         out.scan = { ...out.scan, modulesBefore, modulesSeen, modulesMissing, channelsMissing, shortScan };
