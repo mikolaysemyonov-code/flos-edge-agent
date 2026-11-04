@@ -4197,8 +4197,10 @@
     function countUnboundAll() {
       let n = 0;
       (lastShelvesRows || []).forEach((s) => {
-        visibleChannels(s).forEach((ch) => {
-          if (!nameRoom(pairName(s, ch))) n += 1;
+        (s.channels || []).forEach((ch) => {
+          if (!/^Input\s+\d+$/i.test(String(ch?.controlId || ""))) return;
+          if (String(ch?.name || "").trim()) return;
+          n += 1;
         });
       });
       return n;
@@ -5206,9 +5208,11 @@
         status.textContent = "Смотрю каналы на щите.";
         if (!lineBeaconLoading) void loadBeaconCandidates();
       } else {
+        const silentN = (lineBeaconCandidates || []).filter((ch) => ch.silent).length;
         status.textContent = (linePlanNote ? linePlanNote + " " : "")
           + "Каналов " + (lineBeaconCandidates || []).length
           + ", с именем " + markedN
+          + (silentN ? ". Пунктир — шина канал не прислала, ряд модуля всё равно целый" : "")
           + ". Нажмите кружок — загорится только он.";
       }
       body.appendChild(status);
@@ -5233,8 +5237,10 @@
           const row = beaconLineFor(ch);
           const circle = document.createElement("button");
           circle.type = "button";
-          circle.className = "line-beacon-circle sm" + (on ? " on" : "") + (row || ch.name ? " marked" : "");
-          circle.title = on ? "Погасить" : "Зажечь только этот канал";
+          circle.className = "line-beacon-circle sm" + (on ? " on" : "") + (row || ch.name ? " marked" : "") + (ch.silent ? " silent" : "");
+          circle.title = ch.silent
+            ? "Шина этот канал не прислала. Нажатие всё равно пробует включить"
+            : (on ? "Погасить" : "Зажечь только этот канал");
           const shown = row
             ? (matchLightPurpose(row.label, ch.kind || "led") || row.label)
             : "";

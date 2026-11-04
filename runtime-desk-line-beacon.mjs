@@ -11,6 +11,7 @@ import {
   upsertDeskRoom,
   withShelfChannelName,
 } from "./runtime-desk-marking.mjs";
+import { completeDeskModuleChannels } from "./runtime-desk-shelves.mjs";
 
 const MAX_LINES = 480;
 const MAX_LABEL = 160;
@@ -331,7 +332,7 @@ export function deskBeaconCandidates(shelves, opts = {}) {
     : "all";
   const free = [];
   const named = [];
-  for (const s of Array.isArray(shelves) ? shelves : []) {
+  for (const s of completeDeskModuleChannels(shelves)) {
     const dk = String(s?.deviceTopicKey || "").trim();
     if (!dk || !isDeskDeviceKey(dk)) continue;
     for (const ch of Array.isArray(s.channels) ? s.channels : []) {
@@ -346,6 +347,7 @@ export function deskBeaconCandidates(shelves, opts = {}) {
         name,
         kind,
         holdMs: deskBeaconHoldMs(kind),
+        silent: ch?.silent === true,
         label: name || dk + "/" + cid,
       };
       if (name) named.push(row);

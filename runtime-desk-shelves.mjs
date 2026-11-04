@@ -116,6 +116,53 @@ export function isDeskShelfChannelControl(controlId, deviceTopicKey) {
   return false;
 }
 
+/** Фиксированный ряд выходов. Канал, которого не было в снимке, всё равно остаётся в ряду. */
+const OUTPUT_BANK = {
+  led: 4,
+  ampled: 4,
+  mdm3: 3,
+  mr6c: 6,
+  mr6cu: 6,
+  mr6cv3: 6,
+  "mr6c-v3": 6,
+  mr6lv: 6,
+  mrps6: 6,
+  mr12: 12,
+  mr3: 3,
+  mr3lv: 3,
+  mrwl3: 3,
+  mrm2: 2,
+  mrwm: 2,
+  mrwm2: 2,
+};
+
+export function expectedDeskOutputIds(deviceTopicKey) {
+  const parsed = parseDeskDeviceKey(deviceTopicKey);
+  const n = parsed ? OUTPUT_BANK[parsed.type] : 0;
+  if (!n) return [];
+  const channel = isLedFamily(parsed.type) || parsed.type === "mdm3";
+  const ids = [];
+  for (let i = 1; i <= n; i += 1) ids.push(channel ? `Channel ${i}` : `K${i}`);
+  return ids;
+}
+
+export function completeDeskModuleChannels(shelves) {
+  return (Array.isArray(shelves) ? shelves : []).map((shelf) => {
+    const expect = expectedDeskOutputIds(shelf?.deviceTopicKey);
+    if (!expect.length) return shelf;
+    const channels = Array.isArray(shelf.channels) ? shelf.channels.slice() : [];
+    const have = new Set(channels.map((ch) => String(ch?.controlId || "")));
+    let added = false;
+    for (const controlId of expect) {
+      if (have.has(controlId)) continue;
+      channels.push({ controlId, silent: true });
+      added = true;
+    }
+    if (!added) return shelf;
+    return { ...shelf, channelCount: channels.length, channels };
+  });
+}
+
 function familyRank(type) {
   if (isRelayFamily(type)) return 10;
   if (/led|ampled|mdm|mao/i.test(type)) return 20;

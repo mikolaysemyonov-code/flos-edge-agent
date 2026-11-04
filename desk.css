@@ -661,6 +661,10 @@
     .line-beacon-circle.marked {
       border-color: rgb(167 243 208 / .65);
     }
+    .line-beacon-circle.silent {
+      border-style: dashed;
+      opacity: .72;
+    }
     .line-beacon-circle .cap {
       max-width: 4.1rem;
       overflow: hidden;
