@@ -50,6 +50,7 @@ import {
 import { addDeskRoom, listDeskWalk, setDeskSite } from "./runtime-desk-walk.mjs";
 import {
   bindDeskLinePlanItem,
+  markDeskBeaconChannel,
   deleteDeskLinePlanItem,
   deskBeaconCandidates,
   listDeskLinePlan,
@@ -460,6 +461,10 @@ export async function handleRuntimeDeskLinePlan(req, res) {
         family: body.family,
       }),
     });
+    return;
+  }
+  if (body.mark === true) {
+    jsonEnd(res, 200, markDeskBeaconChannel(body));
     return;
   }
   if (body.bind === true || (body.deviceTopicKey && body.controlId && body.id && body.bind !== false)) {

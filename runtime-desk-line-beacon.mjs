@@ -30,7 +30,7 @@ function cleanRoom(value) {
 
 function shelvesWithoutLineMark(shelves, row) {
   if (!row?.deviceTopicKey || !row?.controlId) return shelves;
-  const expect = deskLineMarkName(row.room, row.label);
+  const expect = deskLineMarkName(row.room, row.label, row.code);
   if (!expect) return shelves;
   const cur = shelves?.[row.deviceTopicKey]?.channels?.[row.controlId]?.name;
   if (String(cur || "") !== expect) return shelves;
@@ -64,6 +64,9 @@ function normalizePlan(raw) {
     const label = cleanLabel(row?.label);
     if (!room || !label) continue;
     const item = { id, room, label };
+    if (/^\d{3}$/.test(String(row?.code || ""))) item.code = String(row.code);
+    const floor = Number(row?.floor);
+    if (floor >= 1 && floor <= 9) item.floor = floor;
     const dk = String(row?.deviceTopicKey || "").trim();
     const cid = String(row?.controlId || "").trim();
     if (dk && cid && isDeskDeviceKey(dk)) {
@@ -206,11 +209,65 @@ export function deleteDeskLinePlanItem(id) {
   return { ok: true, linePlan: plan };
 }
 
-export function deskLineMarkName(room, label) {
+export function deskLineMarkName(room, label, code) {
   const r = cleanRoom(room);
   const l = cleanLabel(label);
   if (!r || !l) return "";
-  return `${r} · ${l}`.slice(0, 160);
+  const c = /^\d{3}$/.test(String(code || "")) ? String(code) + " " : "";
+  return `${c}${r} · ${l}`.slice(0, 160);
+}
+
+/** Кружок канала: комната и назначение пишутся на этот выход. Уже размеченный заменяется. */
+export function markDeskBeaconChannel(input) {
+  const room = canonDeskRoom(input?.room);
+  const label = cleanLabel(input?.label);
+  const dk = String(input?.deviceTopicKey || "").trim();
+  const cid = String(input?.controlId || "").trim();
+  if (!room || !label) return { ok: false, error: "need_room_label" };
+  if (!isDeskDeviceKey(dk) || !cid || !isDeskBeaconLoad(cid, dk)) return { ok: false, error: "bad_bind" };
+  const code = /^\d{3}$/.test(String(input?.code || "")) ? String(input.code) : "";
+  const floor = Number(input?.floor);
+  upsertDeskRoom(room);
+  const plan = listDeskLinePlan();
+  const taken = plan.find((k) => k.deviceTopicKey === dk && k.controlId === cid);
+  const unbound = plan.find(
+    (k) => !k.deviceTopicKey && k.room.toLowerCase() === room.toLowerCase() && k.label.toLowerCase() === label.toLowerCase(),
+  );
+  const id = taken?.id || unbound?.id || newId("line");
+  const clash = (text) => plan.some(
+    (k) => k.id !== id && k.room.toLowerCase() === room.toLowerCase() && k.label.toLowerCase() === text.toLowerCase(),
+  );
+  let useLabel = label;
+  if (clash(useLabel)) {
+    let n = 2;
+    while (clash(label + " " + n) && n < 20) n += 1;
+    useLabel = label + " " + n;
+  }
+  const doc = readRawDoc();
+  let shelves = doc.shelves && typeof doc.shelves === "object" ? doc.shelves : {};
+  const prev = plan.find((k) => k.id === id);
+  if (prev?.deviceTopicKey && prev?.controlId && (prev.deviceTopicKey !== dk || prev.controlId !== cid)) {
+    shelves = shelvesWithoutLineMark(shelves, prev);
+  }
+  if (taken && taken.id !== id) shelves = shelvesWithoutLineMark(shelves, taken);
+  const name = deskLineMarkName(room, useLabel, code);
+  shelves = withShelfChannelName(shelves, dk, cid, name);
+  const key = {
+    id,
+    room,
+    label: useLabel,
+    deviceTopicKey: dk,
+    controlId: cid,
+    boundAt: new Date().toISOString(),
+  };
+  if (code) key.code = code;
+  if (floor >= 1 && floor <= 9) key.floor = floor;
+  const nextPlan = plan.some((k) => k.id === id)
+    ? plan.map((k) => (k.id === id ? key : k))
+    : [...plan, key];
+  const written = patchDeskDocument({ shelves, linePlan: normalizePlan(nextPlan) });
+  if (written?.ok === false) return written;
+  return { ok: true, line: key, linePlan: listDeskLinePlan() };
 }
 
 export function bindDeskLinePlanItem(input) {

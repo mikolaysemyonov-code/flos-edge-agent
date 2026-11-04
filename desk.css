@@ -623,6 +623,33 @@
       padding: .55rem;
       -webkit-tap-highlight-color: transparent;
     }
+    .line-beacon-grid { margin: 0 0 .75rem; }
+    .line-beacon-mod { margin: 0 0 .45rem; }
+    .line-beacon-dots {
+      display: flex;
+      flex-wrap: wrap;
+      gap: .45rem;
+    }
+    .line-beacon-circle.sm {
+      width: 4.6rem;
+      height: 4.6rem;
+      font-size: .95rem;
+      padding: .3rem;
+    }
+    .line-beacon-circle.marked {
+      border-color: rgb(167 243 208 / .65);
+    }
+    .line-beacon-circle .cap {
+      display: block;
+      max-width: 4.1rem;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      font-size: .58rem;
+      font-weight: 650;
+      opacity: .8;
+      margin-top: .12rem;
+    }
     .line-beacon-circle.on {
       background: rgb(var(--sky) / .28);
       border-color: rgb(186 230 253);
