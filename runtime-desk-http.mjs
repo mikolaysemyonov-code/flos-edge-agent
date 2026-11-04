@@ -47,6 +47,7 @@ import {
   upsertDeskKeyPlanBatch,
   upsertDeskKeyPlanItem,
 } from "./runtime-desk-key-scan.mjs";
+import { addDeskRoom, listDeskWalk, setDeskSite } from "./runtime-desk-walk.mjs";
 import {
   bindDeskLinePlanItem,
   deleteDeskLinePlanItem,
@@ -377,7 +378,7 @@ export async function handleRuntimeDeskKeyPlan(req, res) {
   const method = (req.method ?? "GET").toUpperCase();
   if (method === "GET") {
     const blocked = markingBlocked();
-    jsonEnd(res, 200, blocked || { ok: true, keyPlan: listDeskKeyPlan() });
+    jsonEnd(res, 200, blocked || { ok: true, keyPlan: listDeskKeyPlan(), ...listDeskWalk() });
     return;
   }
   const chunks = [];
@@ -396,6 +397,16 @@ export async function handleRuntimeDeskKeyPlan(req, res) {
   }
   if (body.replace === true && Array.isArray(body.keyPlan)) {
     const out = replaceDeskKeyPlan(body.keyPlan);
+    jsonEnd(res, out.ok ? 200 : 400, out);
+    return;
+  }
+  if (body.site && typeof body.site === "object") {
+    const out = setDeskSite(body.site);
+    jsonEnd(res, out.ok ? 200 : 400, out);
+    return;
+  }
+  if (body.addRoom && typeof body.addRoom === "object") {
+    const out = addDeskRoom(body.addRoom);
     jsonEnd(res, out.ok ? 200 : 400, out);
     return;
   }

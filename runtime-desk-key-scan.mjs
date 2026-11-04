@@ -35,7 +35,7 @@ function cleanRoom(value) {
 
 function shelvesWithoutKeyMark(shelves, row) {
   if (!row?.deviceTopicKey || !row?.controlId) return shelves;
-  const expect = deskKeyMarkName(row.room, row.label);
+  const expect = deskKeyMarkName(row.room, row.label, row.code);
   if (!expect) return shelves;
   const cur = shelves?.[row.deviceTopicKey]?.channels?.[row.controlId]?.name;
   if (String(cur || "") !== expect) return shelves;
@@ -69,6 +69,10 @@ function normalizePlan(raw) {
     const label = cleanLabel(row?.label);
     if (!room || !label) continue;
     const item = { id, room, label };
+    const code = String(row?.code || "").trim();
+    if (/^\d{3}$/.test(code)) item.code = code;
+    const floor = Math.round(Number(row?.floor) || 0);
+    if (floor >= 1 && floor <= 9) item.floor = floor;
     const dk = String(row?.deviceTopicKey || "").trim();
     const cid = String(row?.controlId || "").trim();
     if (dk && cid && isDeskDeviceKey(dk)) {
@@ -199,11 +203,12 @@ export function deleteDeskKeyPlanItem(id) {
   return { ok: true, keyPlan: plan };
 }
 
-export function deskKeyMarkName(room, label) {
+export function deskKeyMarkName(room, label, code) {
   const r = cleanRoom(room);
   const l = cleanLabel(label);
   if (!r || !l) return "";
-  return `${r} · ${l}`.slice(0, 160);
+  const c = /^\d{3}$/.test(String(code || "")) ? String(code) + " " : "";
+  return `${c}${r} · ${l}`.slice(0, 160);
 }
 
 /** Обход: три нажатия уже дали топик, комната и подпись пишутся вместе с ним. */
@@ -221,23 +226,38 @@ export function captureDeskKeyPlanItem(input) {
   if (taken) {
     return { ok: false, error: "topic_taken", room: taken.room, label: taken.label, deviceTopicKey: dk, controlId: cid };
   }
-  const twin = plan.find(
-    (k) => k.room.toLowerCase() === room.toLowerCase() && k.label.toLowerCase() === label.toLowerCase(),
-  );
-  if (twin) return { ok: false, error: "duplicate_label", room: twin.room, label: twin.label };
+  const code = String(input?.code || "").trim();
+  const floor = Math.round(Number(input?.floor) || 0);
+  let useLabel = label;
+  if (/^\d{3}$/.test(code)) {
+    let n = 2;
+    const takenLabel = (name) =>
+      plan.some((k) => k.code === code && k.label.toLowerCase() === name.toLowerCase());
+    while (takenLabel(useLabel)) {
+      useLabel = label + " " + n;
+      n += 1;
+    }
+  } else {
+    const twin = plan.find(
+      (k) => k.room.toLowerCase() === room.toLowerCase() && k.label.toLowerCase() === label.toLowerCase(),
+    );
+    if (twin) return { ok: false, error: "duplicate_label", room: twin.room, label: twin.label };
+  }
   if (plan.length >= MAX_KEYS) return { ok: false, error: "key_plan_full", cap: MAX_KEYS };
   upsertDeskRoom(room);
   const key = {
     id: newId("key"),
     room,
-    label,
+    label: useLabel,
     deviceTopicKey: dk,
     controlId: cid,
     boundAt: new Date().toISOString(),
   };
+  if (/^\d{3}$/.test(code)) key.code = code;
+  if (floor >= 1 && floor <= 9) key.floor = floor;
   const doc = readRawDoc();
   let shelves = doc.shelves && typeof doc.shelves === "object" ? doc.shelves : {};
-  shelves = withShelfChannelName(shelves, dk, cid, deskKeyMarkName(room, label));
+  shelves = withShelfChannelName(shelves, dk, cid, deskKeyMarkName(room, useLabel, key.code));
   const written = patchDeskDocument({ shelves, keyPlan: normalizePlan([...plan, key]) });
   if (written?.ok === false) return written;
   return { ok: true, key, keyPlan: listDeskKeyPlan() };
@@ -262,7 +282,7 @@ export function bindDeskKeyPlanItem(input) {
   if (row.deviceTopicKey && row.controlId && (row.deviceTopicKey !== dk || row.controlId !== cid)) {
     shelves = shelvesWithoutKeyMark(shelves, row);
   }
-  const name = deskKeyMarkName(row.room, row.label);
+  const name = deskKeyMarkName(row.room, row.label, row.code);
   shelves = withShelfChannelName(shelves, dk, cid, name);
   const nextPlan = plan.map((k) =>
     k.id === id ? { ...k, deviceTopicKey: dk, controlId: cid, boundAt: new Date().toISOString() } : k,

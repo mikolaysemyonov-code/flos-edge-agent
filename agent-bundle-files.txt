@@ -20,6 +20,7 @@ runtime-desk-pour-scenes.mjs
 runtime-desk-pour-cron.mjs
 runtime-desk-actuate.mjs
 runtime-desk-key-scan.mjs
+runtime-desk-walk.mjs
 runtime-desk-passport.mjs
 runtime-desk-line-beacon.mjs
 runtime-desk-health.mjs

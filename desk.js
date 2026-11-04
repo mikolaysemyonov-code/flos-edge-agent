@@ -30,6 +30,11 @@
     let markPath = "modules";
     let modFamily = "all";
     let keyPlan = [];
+    let walkSite = { kind: "", floors: 1 };
+    let walkRooms = [];
+    let walkCatalog = [];
+    let walkPurposes = [];
+    let walkRoomOpen = false;
     let keyScan = null; /* { id, need, count, hitKey, baseline, prevClosed } */
     let keyCatch = null; /* топик пойман, ждёт комнату и подпись */
     let keyScanTimer = 0;
@@ -4200,6 +4205,10 @@
         } else {
           if (j && j.ok) markingUnreadable = false;
           keyPlan = Array.isArray(j.keyPlan) ? j.keyPlan : [];
+          walkSite = j.site && typeof j.site === "object" ? j.site : { kind: "", floors: 1 };
+          walkRooms = Array.isArray(j.roomBook) ? j.roomBook : [];
+          walkCatalog = Array.isArray(j.roomCatalog) ? j.roomCatalog : [];
+          walkPurposes = Array.isArray(j.purposes) ? j.purposes : [];
         }
       } catch {
         keyPlan = [];
@@ -4258,7 +4267,7 @@
               ? "Ещё одно короткое"
               : "Кнопка нашлась";
       const where = keyScan.walk
-        ? (String(keyRoomFilter || "").trim() || "Сначала комната")
+        ? "Выключатель"
         : (row ? row.room + " · " + row.label : "Клавиша");
       return (keyPlanNote ? keyPlanNote + " " : "")
         + (keyScan.jump ? "Слишком быстро. Три раза, спокойнее. " : "")
@@ -4534,13 +4543,13 @@
         };
       });
     }
-    function saveCaughtKey(label) {
-      const room = roomCanon(keyRoomFilter);
-      const name = String(label || "").trim();
+    function saveCaughtKey(code, purpose) {
+      const place = (walkRooms || []).find((r) => r && r.code === code);
+      const name = String(purpose || "").trim();
       const sig = keyCatch;
       if (!sig) return;
-      if (!room || !name) {
-        keyPlanNote = "Напишите комнату и имя кнопки.";
+      if (!place || !name) {
+        keyPlanNote = "Выберите комнату и назначение.";
         renderMark();
         return;
       }
@@ -4549,7 +4558,9 @@
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
           capture: true,
-          room,
+          room: place.name,
+          code: place.code,
+          floor: place.floor,
           label: name,
           deviceTopicKey: sig.deviceTopicKey,
           controlId: sig.controlId,
@@ -4559,11 +4570,11 @@
         .then((res) => {
           if (res && res.ok) {
             keyPlan = res.keyPlan || keyPlan;
-            paintCaughtOnShelf(sig, room + " · " + name);
-            const ignoreKey = sig.ignoreKey;
+            const saved = res.key || {};
+            paintCaughtOnShelf(sig, (saved.code ? saved.code + " " : "") + (saved.room || place.name) + " · " + (saved.label || name));
             keyCatch = null;
             keyPlanNote = "";
-            startKeyScan(null, { ignoreKey });
+            loadKeyPlan().then(() => renderMark());
             return;
           }
           if (res && res.error === "topic_taken") {
@@ -4587,57 +4598,89 @@
       const body = document.createElement("div");
       body.className = "walk-sheet";
       root.appendChild(body);
-      const named = keyPlan.filter((k) => k.deviceTopicKey).length;
+      if (!walkSite || !walkSite.kind) {
+        const phase = document.createElement("p");
+        phase.className = "meta";
+        phase.textContent = "Сначала объект. Комнаты и выключатели встанут в таблицу с кодом помещения.";
+        const row = document.createElement("div");
+        row.className = "key-plan-actions";
+        const flat = document.createElement("button");
+        flat.type = "button";
+        flat.className = "ghost key-add-all";
+        flat.textContent = "Квартира";
+        flat.addEventListener("click", () => postWalk({ site: { kind: "flat", floors: 1 } }));
+        const house = document.createElement("button");
+        house.type = "button";
+        house.className = "ghost";
+        house.textContent = "Частный дом";
+        const floors = document.createElement("select");
+        floors.className = "bind";
+        floors.setAttribute("aria-label", "Этажей");
+        [1, 2, 3, 4, 5].forEach((n) => {
+          const opt = document.createElement("option");
+          opt.value = String(n);
+          opt.textContent = n + (n === 1 ? " этаж" : n < 5 ? " этажа" : " этажей");
+          floors.appendChild(opt);
+        });
+        floors.value = "2";
+        house.addEventListener("click", () => postWalk({ site: { kind: "house", floors: Number(floors.value) || 2 } }));
+        row.append(flat, house, floors);
+        body.append(phase, row);
+        return;
+      }
       const phase = document.createElement("p");
       phase.className = "meta";
-      const roomNow = String(keyRoomFilter || "").trim();
-      phase.textContent = named
-        ? ("Уже названо кнопок: " + named + (roomNow ? ". Сейчас вы в «" + roomNow + "»." : "."))
-        : "Сначала все кнопки дома. Свет назовём следующим кругом.";
+      phase.textContent = walkSite.kind === "house"
+        ? ("Дом · этажей " + walkSite.floors + ". Код комнаты: этаж и порядок, 101, 102, 201.")
+        : "Квартира. Код комнаты: 101, 102, 103.";
       body.appendChild(phase);
-      const toLight = document.createElement("button");
-      toLight.type = "button";
-      toLight.className = "ghost";
-      toLight.textContent = "Теперь свет";
-      toLight.addEventListener("click", () => {
-        stopKeyScan();
-        modFamily = "lines";
-        loadLinePlan().then(() => renderMark());
+      const roomsHead = document.createElement("div");
+      roomsHead.className = "key-plan-actions";
+      const add = document.createElement("button");
+      add.type = "button";
+      add.className = "ghost key-add-all";
+      add.textContent = walkRoomOpen ? "Свернуть" : "+ Комната";
+      add.addEventListener("click", () => {
+        walkRoomOpen = !walkRoomOpen;
+        renderMark();
       });
-      body.appendChild(toLight);
-      const roomInp = document.createElement("input");
-      roomInp.className = "bind";
-      roomInp.placeholder = "Комната, например Гардеробная";
-      roomInp.value = keyRoomFilter || "";
-      roomInp.setAttribute("aria-label", "Комната");
-      roomInp.addEventListener("input", () => {
-        keyRoomFilter = roomInp.value;
+      roomsHead.appendChild(add);
+      body.appendChild(roomsHead);
+      if (walkRoomOpen) body.appendChild(roomAddCard());
+      const roomList = document.createElement("div");
+      roomList.className = "walk-rooms";
+      const orderedRooms = (walkRooms || []).slice().sort((a, b) => String(a.code).localeCompare(String(b.code)));
+      if (!orderedRooms.length) {
+        const empty = document.createElement("p");
+        empty.className = "meta orphan";
+        empty.textContent = "Комнат пока нет. Добавьте первую — с первого этажа, из списка.";
+        roomList.appendChild(empty);
+      }
+      orderedRooms.forEach((room) => {
+        const chip = document.createElement("span");
+        chip.className = "mod-pill on";
+        chip.textContent = room.code + " · " + (walkSite.kind === "house" ? (room.floor + " эт. ") : "") + room.name;
+        roomList.appendChild(chip);
       });
-      body.appendChild(roomInp);
+      body.appendChild(roomList);
       const status = document.createElement("p");
       status.className = "meta key-scan-status";
-      const namedCatch = caughtNamed();
       if (keyScan) {
         status.textContent = keyScanStatusText();
         status.classList.add("live");
-      } else if (namedCatch) {
-        status.hidden = true;
       } else if (keyCatch) {
-        status.textContent = keyPlanNote || "Дайте кнопке имя и сохраните её в эту комнату.";
+        status.textContent = keyPlanNote || "Выберите комнату и назначение.";
       } else {
-        const unbound = keyPlan.filter((k) => !k.deviceTopicKey).length;
-        status.textContent = (keyPlanNote ? keyPlanNote + " " : "")
-          + (unbound
-            ? ("Есть кнопки без найденного выключателя: " + unbound + ".")
-            : "Напишите комнату и нажмите «Слушаю».");
+        status.textContent = (keyPlanNote ? keyPlanNote + " " : "") + "Сканировать — три коротких нажатия, система назовёт вход.";
       }
       body.appendChild(status);
-      if (keyCatch && namedCatch) {
+      if (keyCatch && caughtNamed()) {
         const card = document.createElement("div");
         card.className = "key-plan-add glass";
         const topic = document.createElement("p");
         topic.className = "meta";
-        topic.textContent = "Это уже «" + namedCatch.room + " · " + namedCatch.label + "». Нажмите другую кнопку.";
+        const namedCatch = caughtNamed();
+        topic.textContent = "Это уже «" + (namedCatch.code ? namedCatch.code + " " : "") + namedCatch.room + " · " + namedCatch.label + "». Нажмите другую кнопку.";
         const again = document.createElement("button");
         again.type = "button";
         again.className = "ghost key-add-all";
@@ -4651,61 +4694,20 @@
         card.append(topic, again);
         body.appendChild(card);
       } else if (keyCatch) {
-        const card = document.createElement("div");
-        card.className = "key-plan-add glass";
-        const topic = document.createElement("p");
-        topic.className = "meta";
-        topic.textContent = "Кнопка нашлась · " + shelfLabel(keyCatch.deviceTopicKey) + " · " + prettyControlId(keyCatch.controlId);
-        const labInp = document.createElement("input");
-        labInp.className = "bind";
-        labInp.placeholder = "Клавиша 1, основной свет";
-        labInp.value = nextKeyLabelForRoom(String(keyRoomFilter || "").trim());
-        labInp.setAttribute("aria-label", "Подпись клавиши");
-        const act = document.createElement("div");
-        act.className = "key-plan-actions";
-        const save = document.createElement("button");
-        save.type = "button";
-        save.className = "ghost key-add-all";
-        const saveRoom = String(keyRoomFilter || "").trim();
-        save.textContent = saveRoom ? ("Сохранить в «" + saveRoom + "»") : "Сохранить";
-        save.addEventListener("click", () => saveCaughtKey(labInp.value));
-        const skip = document.createElement("button");
-        skip.type = "button";
-        skip.className = "ghost";
-        skip.textContent = "Ещё раз";
-        skip.addEventListener("click", () => {
-          const ignoreKey = keyCatch && keyCatch.ignoreKey;
-          keyCatch = null;
-          startKeyScan(null, { ignoreKey });
-        });
-        labInp.addEventListener("keydown", (e) => {
-          if (e.key === "Enter") {
-            e.preventDefault();
-            saveCaughtKey(labInp.value);
-          }
-        });
-        act.append(save, skip);
-        card.append(topic, labInp, act);
-        body.appendChild(card);
-        setTimeout(() => labInp.focus(), 30);
+        body.appendChild(assignCard());
       } else if (!keyScan) {
         const listen = document.createElement("button");
         listen.type = "button";
         listen.className = "ghost key-add-all";
-        listen.textContent = "Слушаю";
+        listen.textContent = "Сканировать";
+        listen.disabled = !orderedRooms.length;
+        listen.title = orderedRooms.length ? "Нажмите выключатель три раза" : "Сначала добавьте комнату";
         listen.addEventListener("click", () => {
-          keyRoomFilter = String(roomInp.value || "").trim();
-          if (!keyRoomFilter) {
-            keyPlanNote = "Сначала напишите, в какой вы комнате.";
-            renderMark();
-            const again = document.querySelector("#mark-body input.bind");
-            if (again) again.focus();
-            return;
-          }
+          keyPlanNote = "";
           startKeyScan(null);
         });
         body.appendChild(listen);
-      } else if (keyScan.walk) {
+      } else {
         const stop = document.createElement("button");
         stop.type = "button";
         stop.className = "ghost";
@@ -4713,179 +4715,211 @@
         stop.addEventListener("click", () => { stopKeyScan(); renderMark(); });
         body.appendChild(stop);
       }
-      if (!keyScan && !keyCatch && keyPlan.some((k) => !k.deviceTopicKey)) {
-        const goNext = document.createElement("button");
-        goNext.type = "button";
-        goNext.className = "ghost key-next-unbound";
-        goNext.textContent = "Следующая без кнопки";
-        goNext.addEventListener("click", () => {
-          const nxt = nextUnboundKey("");
-          if (!nxt) return;
-          keyRoomFilter = nxt.room;
-          startKeyScan(nxt);
-        });
-        body.appendChild(goNext);
-      }
-      const ahead = document.createElement("details");
-      ahead.className = "more";
-      const aheadSum = document.createElement("summary");
-      aheadSum.textContent = "Если имена уже готовы";
-      ahead.appendChild(aheadSum);
-      const addBox = document.createElement("div");
-      addBox.className = "key-plan-add";
-      const labInp = document.createElement("textarea");
-      labInp.className = "bind key-labels";
-      labInp.rows = 4;
-      labInp.placeholder = "Клавиши — по одной на строку\nВыкл 1 у входа — основное освещение\nВыкл 2 у кровати — бра\nСценарная у кровати — всё выкл";
-      labInp.setAttribute("aria-label", "Подписи клавиш");
-      const addRow = document.createElement("div");
-      addRow.className = "key-plan-actions";
-      const addBtn = document.createElement("button");
-      addBtn.type = "button";
-      addBtn.className = "ghost key-add-all";
-      addBtn.textContent = "+ Добавить все";
-      const plusOne = document.createElement("button");
-      plusOne.type = "button";
-      plusOne.className = "ghost";
-      plusOne.title = "Одна следующая клавиша в этой комнате";
-      plusOne.textContent = "+1";
-      const submit = () => {
-        postKeyPlanLabels(keyRoomFilter, labInp.value, () => {
-          labInp.value = "";
-        });
-      };
-      addBtn.addEventListener("click", submit);
-      plusOne.addEventListener("click", () => {
-        const room = String(keyRoomFilter || "").trim();
-        if (!room) {
-          roomInp.focus();
-          return;
-        }
-        postKeyPlanLabels(room, nextKeyLabelForRoom(room), () => {
-          labInp.value = "";
-        });
-      });
-      labInp.addEventListener("keydown", (e) => {
-        if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
-          e.preventDefault();
-          submit();
-        }
-      });
-      addRow.append(addBtn, plusOne);
-      addBox.append(labInp, addRow);
-      ahead.appendChild(addBox);
-      body.appendChild(ahead);
-      if (keyPlanFocus) {
-        keyPlanFocus = false;
-        setTimeout(() => {
-          labInp.focus();
-        }, 30);
-      }
-      const rooms = [...new Set(keyPlan.map((k) => k.room))].sort((a, b) => a.localeCompare(b, "ru"));
-      if (!rooms.length) {
-        const empty = document.createElement("p");
-        empty.className = "meta orphan";
-        empty.textContent = "Пока пусто. Комната, «Слушаю», три коротких нажатия, имя.";
-        body.appendChild(empty);
-      }
-      rooms.forEach((room) => {
-        const det = document.createElement("details");
-        det.className = "key-room";
-        const keys = keyPlan.filter((k) => k.room === room);
-        const armedHere = keyScan && !keyScan.walk && keys.some((k) => k.id === keyScan.id);
-        det.open = sameRoom(keyRoomFilter, room) || Boolean(armedHere);
-        const sum = document.createElement("summary");
-        sum.addEventListener("click", (e) => {
-          if (e.target.closest("button")) return;
-          keyRoomFilter = room;
-          if (keyCatch && !caughtNamed()) {
+      body.appendChild(keyTable());
+    }
+    function postWalk(body) {
+      fetch("/runtime/desk-key-plan", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(body),
+      })
+        .then((r) => r.json())
+        .then((j) => {
+          if (!j || !j.ok) {
+            keyPlanNote = j && j.error === "need_room" ? "Выберите название комнаты." : "Не сохранил.";
             renderMark();
             return;
           }
-          const ignoreKey = keyCatch && keyCatch.ignoreKey;
-          keyCatch = null;
+          walkSite = j.site || walkSite;
+          walkRooms = Array.isArray(j.roomBook) ? j.roomBook : walkRooms;
+          if (j.room) walkRoomOpen = false;
           keyPlanNote = "";
-          startKeyScan(null, { ignoreKey });
+          renderMark();
+        })
+        .catch(() => {
+          keyPlanNote = "Щит не ответил. Попробуйте ещё раз.";
+          renderMark();
         });
-        const bound = keys.filter((k) => k.deviceTopicKey).length;
-        const head = document.createElement("span");
-        head.className = "key-room-title";
-        head.textContent = room + " · " + bound + "/" + keys.length;
-        const roomPlus = document.createElement("button");
-        roomPlus.type = "button";
-        roomPlus.className = "ghost key-room-plus";
-        roomPlus.textContent = "+";
-        roomPlus.title = "Ещё клавиша в «" + room + "»";
-        roomPlus.addEventListener("click", (e) => {
-          e.preventDefault();
-          e.stopPropagation();
-          keyRoomFilter = room;
-          postKeyPlanLabels(room, nextKeyLabelForRoom(room));
+    }
+    function roomAddCard() {
+      const card = document.createElement("div");
+      card.className = "key-plan-add glass";
+      const floorSel = document.createElement("select");
+      floorSel.className = "bind";
+      floorSel.setAttribute("aria-label", "Этаж");
+      const floors = walkSite.kind === "house" ? walkSite.floors : 1;
+      for (let n = 1; n <= floors; n += 1) {
+        const opt = document.createElement("option");
+        opt.value = String(n);
+        opt.textContent = n + " этаж";
+        floorSel.appendChild(opt);
+      }
+      if (walkRooms.length) floorSel.value = String(walkRooms[walkRooms.length - 1].floor || 1);
+      const nameSel = document.createElement("select");
+      nameSel.className = "bind";
+      nameSel.setAttribute("aria-label", "Комната");
+      const blank = document.createElement("option");
+      blank.value = "";
+      blank.textContent = "Название";
+      nameSel.appendChild(blank);
+      (walkCatalog || []).forEach((group) => {
+        const og = document.createElement("optgroup");
+        og.label = group.group;
+        (group.names || []).forEach((name) => {
+          const opt = document.createElement("option");
+          opt.value = name;
+          opt.textContent = name;
+          og.appendChild(opt);
         });
-        sum.append(head, roomPlus);
-        det.appendChild(sum);
-        const list = document.createElement("ol");
-        list.className = "key-list";
-        keys.forEach((k, i) => {
-          const li = document.createElement("li");
-          li.className = "key-row" + (k.deviceTopicKey ? " bound" : "") + (keyScan && keyScan.id === k.id ? " armed" : "");
-          const num = document.createElement("span");
-          num.className = "key-num";
-          num.textContent = String(i + 1);
-          const mid = document.createElement("div");
-          mid.className = "key-mid";
-          const ttl = document.createElement("strong");
-          ttl.textContent = k.label;
-          const sub = document.createElement("span");
-          sub.className = "meta";
-          sub.textContent = k.deviceTopicKey
-            ? (shelfLabel(k.deviceTopicKey) + " · " + prettyControlId(k.controlId))
-            : "Ещё не найдена. Три коротких нажатия";
-          mid.append(ttl, sub);
-          const act = document.createElement("div");
-          act.className = "key-act";
-          if (keyScan && keyScan.id === k.id) {
-            const stop = document.createElement("button");
-            stop.type = "button";
-            stop.className = "ghost";
-            stop.textContent = "Стоп";
-            stop.addEventListener("click", () => { stopKeyScan(); renderMark(); });
-            act.appendChild(stop);
-          } else {
-            const scan = document.createElement("button");
-            scan.type = "button";
-            scan.className = "ghost key-scan-btn";
-            scan.textContent = k.deviceTopicKey ? "Найти снова" : "Найти";
-            scan.addEventListener("click", () => startKeyScan(k));
-            act.appendChild(scan);
-          }
-          const del = document.createElement("button");
-          del.type = "button";
-          del.className = "ghost";
-          del.textContent = "×";
-          del.title = "Убрать из плана";
-          del.addEventListener("click", () => {
-            fetch("/runtime/desk-key-plan", {
-              method: "POST",
-              headers: { "content-type": "application/json" },
-              body: JSON.stringify({ delete: k.id }),
-            })
-              .then((r) => r.json())
-              .then((j) => {
-                if (j && j.ok) {
-                  keyPlan = j.keyPlan || [];
-                  if (keyScan && keyScan.id === k.id) stopKeyScan();
-                  renderMark();
-                }
-              });
-          });
-          act.appendChild(del);
-          li.append(num, mid, act);
-          list.appendChild(li);
-        });
-        det.appendChild(list);
-        body.appendChild(det);
+        nameSel.appendChild(og);
       });
+      const other = document.createElement("option");
+      other.value = "__other";
+      other.textContent = "Другое";
+      nameSel.appendChild(other);
+      const custom = document.createElement("input");
+      custom.className = "bind";
+      custom.placeholder = "Своё название";
+      custom.hidden = true;
+      nameSel.addEventListener("change", () => { custom.hidden = nameSel.value !== "__other"; });
+      const save = document.createElement("button");
+      save.type = "button";
+      save.className = "ghost key-add-all";
+      save.textContent = "Добавить";
+      save.addEventListener("click", () => {
+        const name = nameSel.value === "__other" ? custom.value : nameSel.value;
+        postWalk({ addRoom: { floor: Number(floorSel.value) || 1, name } });
+      });
+      if (walkSite.kind === "house") card.appendChild(floorSel);
+      card.append(nameSel, custom, save);
+      return card;
+    }
+    function assignCard() {
+      const card = document.createElement("div");
+      card.className = "key-plan-add glass";
+      const topic = document.createElement("p");
+      topic.className = "meta";
+      topic.textContent = "Нашёлся · " + shelfLabel(keyCatch.deviceTopicKey) + " · " + prettyControlId(keyCatch.controlId);
+      const roomSel = document.createElement("select");
+      roomSel.className = "bind";
+      roomSel.setAttribute("aria-label", "Комната");
+      (walkRooms || []).slice().sort((a, b) => String(a.code).localeCompare(String(b.code))).forEach((room) => {
+        const opt = document.createElement("option");
+        opt.value = room.code;
+        opt.textContent = room.code + " · " + room.name;
+        roomSel.appendChild(opt);
+      });
+      const purposeSel = document.createElement("select");
+      purposeSel.className = "bind";
+      purposeSel.setAttribute("aria-label", "Назначение выключателя");
+      const blank = document.createElement("option");
+      blank.value = "";
+      blank.textContent = "Назначение";
+      purposeSel.appendChild(blank);
+      (walkPurposes || []).forEach((name) => {
+        const opt = document.createElement("option");
+        opt.value = name;
+        opt.textContent = name;
+        purposeSel.appendChild(opt);
+      });
+      const other = document.createElement("option");
+      other.value = "__other";
+      other.textContent = "Другое";
+      purposeSel.appendChild(other);
+      const custom = document.createElement("input");
+      custom.className = "bind";
+      custom.placeholder = "Своё назначение";
+      custom.hidden = true;
+      purposeSel.addEventListener("change", () => { custom.hidden = purposeSel.value !== "__other"; });
+      const act = document.createElement("div");
+      act.className = "key-plan-actions";
+      const save = document.createElement("button");
+      save.type = "button";
+      save.className = "ghost key-add-all";
+      save.textContent = "Зафиксировать";
+      save.addEventListener("click", () => {
+        const purpose = purposeSel.value === "__other" ? custom.value : purposeSel.value;
+        saveCaughtKey(roomSel.value, purpose);
+      });
+      const skip = document.createElement("button");
+      skip.type = "button";
+      skip.className = "ghost";
+      skip.textContent = "Ещё раз";
+      skip.addEventListener("click", () => {
+        const ignoreKey = keyCatch && keyCatch.ignoreKey;
+        keyCatch = null;
+        startKeyScan(null, { ignoreKey });
+      });
+      act.append(save, skip);
+      card.append(topic, roomSel, purposeSel, custom, act);
+      return card;
+    }
+    function keyTable() {
+      const wrap = document.createElement("div");
+      const rows = (keyPlan || []).filter((k) => k && k.deviceTopicKey).slice().sort((a, b) => {
+        const c = String(a.code || "999").localeCompare(String(b.code || "999"));
+        return c || String(a.controlId || "").localeCompare(String(b.controlId || ""), "ru", { numeric: true });
+      });
+      if (!rows.length) {
+        const empty = document.createElement("p");
+        empty.className = "meta orphan";
+        empty.textContent = "Таблица пустая. Добавьте комнату и нажмите «Сканировать».";
+        wrap.appendChild(empty);
+        return wrap;
+      }
+      const table = document.createElement("table");
+      table.className = "key-table";
+      const head = document.createElement("tr");
+      ["Топик", "Этаж", "Код", "Комната", "Чем управляет", "Клавиша", ""].forEach((label) => {
+        const th = document.createElement("th");
+        th.textContent = label;
+        head.appendChild(th);
+      });
+      table.appendChild(head);
+      rows.forEach((k) => {
+        const tr = document.createElement("tr");
+        const mates = rows.filter((x) => x.deviceTopicKey === k.deviceTopicKey && x.code === k.code);
+        const place = mates.slice().sort((a, b) => String(a.controlId).localeCompare(String(b.controlId), "ru", { numeric: true }));
+        const idx = place.findIndex((x) => x.id === k.id) + 1;
+        const cells = [
+          shelfLabel(k.deviceTopicKey) + " · " + prettyControlId(k.controlId),
+          walkSite.kind === "house" ? String(k.floor || "") : "",
+          k.code || "",
+          k.room || "",
+          k.label || "",
+          idx + " из " + place.length,
+        ];
+        cells.forEach((text) => {
+          const td = document.createElement("td");
+          td.textContent = text;
+          tr.appendChild(td);
+        });
+        const act = document.createElement("td");
+        const del = document.createElement("button");
+        del.type = "button";
+        del.className = "ghost";
+        del.textContent = "×";
+        del.title = "Убрать строку";
+        del.addEventListener("click", () => {
+          fetch("/runtime/desk-key-plan", {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ delete: k.id }),
+          })
+            .then((r) => r.json())
+            .then((j) => {
+              if (j && j.ok) {
+                keyPlan = j.keyPlan || [];
+                renderMark();
+              }
+            });
+        });
+        act.appendChild(del);
+        tr.appendChild(act);
+        table.appendChild(tr);
+      });
+      wrap.appendChild(table);
+      return wrap;
     }
     function stopLineBeacon() {
       const cur = lineBeacon && lineBeacon.current;
@@ -5591,7 +5625,7 @@
       const intro = $("markIntro");
       if (intro) {
         intro.textContent = modFamily === "keys"
-          ? "Напишите комнату. Три коротких нажатия. Дайте кнопке имя."
+          ? "Сначала объект и комнаты. «Сканировать» — три коротких нажатия, затем комната и назначение."
           : modFamily === "lines"
             ? "Комнаты уже есть. Включите линию, посмотрите, что загорелось, и назовите светильник."
             : modFamily === "pair"

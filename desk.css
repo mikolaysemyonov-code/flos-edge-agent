@@ -1077,4 +1077,12 @@
     @media (prefers-reduced-motion: reduce) {
       .ghost, .tab .ico, input[type="text"] { box-shadow: none; }
     }
+    .walk-rooms { display: flex; flex-wrap: wrap; gap: .4rem; margin: .6rem 0 .9rem; }
+    .key-table { width: 100%; border-collapse: collapse; margin-top: .8rem; font-size: .86rem; }
+    .key-table th, .key-table td {
+      text-align: left; padding: .55rem .4rem; vertical-align: top;
+      border-bottom: 1px solid rgb(255 255 255 / .08);
+    }
+    .key-table th { color: rgb(var(--mute)); font-size: .72rem; font-weight: 560; letter-spacing: .02em; }
+    .key-plan-add select.bind, .key-plan-add input.bind { margin: .25rem .35rem .25rem 0; }
   

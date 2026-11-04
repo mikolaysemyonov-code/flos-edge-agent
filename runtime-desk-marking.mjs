@@ -23,7 +23,16 @@ export function deskMarkingPath() {
 }
 
 function emptyDoc() {
-  return { version: 3, shelves: {}, solutions: [], rooms: [], keyPlan: [], linePlan: [] };
+  return {
+    version: 3,
+    shelves: {},
+    solutions: [],
+    rooms: [],
+    keyPlan: [],
+    linePlan: [],
+    site: { kind: "", floors: 1 },
+    roomBook: [],
+  };
 }
 
 function cleanRooms(value) {
@@ -59,6 +68,8 @@ export function readDeskDocument() {
       rooms: cleanRooms(json.rooms),
       keyPlan: Array.isArray(json.keyPlan) ? json.keyPlan : [],
       linePlan: Array.isArray(json.linePlan) ? json.linePlan : [],
+      site: json.site && typeof json.site === "object" ? json.site : { kind: "", floors: 1 },
+      roomBook: Array.isArray(json.roomBook) ? json.roomBook : [],
     };
   } catch {
     return { ...emptyDoc(), unreadable: true };
@@ -173,6 +184,8 @@ export function patchDeskDocument(patch) {
       rooms: cleanRooms(json.rooms),
       keyPlan: Array.isArray(json.keyPlan) ? json.keyPlan : [],
       linePlan: Array.isArray(json.linePlan) ? json.linePlan : [],
+      site: json.site && typeof json.site === "object" ? json.site : { kind: "", floors: 1 },
+      roomBook: Array.isArray(json.roomBook) ? json.roomBook : [],
     };
   } else {
     prev = emptyDoc();
@@ -188,6 +201,8 @@ export function patchDeskDocument(patch) {
     rooms: has("rooms") ? cleanRooms(patch.rooms) : prev.rooms,
     keyPlan: has("keyPlan") ? (Array.isArray(patch.keyPlan) ? patch.keyPlan : []) : prev.keyPlan || [],
     linePlan: has("linePlan") ? (Array.isArray(patch.linePlan) ? patch.linePlan : []) : prev.linePlan || [],
+    site: has("site") ? patch.site : prev.site || { kind: "", floors: 1 },
+    roomBook: has("roomBook") ? (Array.isArray(patch.roomBook) ? patch.roomBook : []) : prev.roomBook || [],
   };
   writeDeskFile(body);
   return { ok: true, ...body };
@@ -215,6 +230,8 @@ export function replaceDeskDocument(input) {
     rooms: cleanRooms(input.rooms),
     keyPlan: collapseKeyPlan(input.keyPlan),
     linePlan: Array.isArray(input.linePlan) ? input.linePlan : [],
+    site: input.site && typeof input.site === "object" ? input.site : { kind: "", floors: 1 },
+    roomBook: Array.isArray(input.roomBook) ? input.roomBook : [],
   };
   const raw = JSON.stringify(body);
   if (raw.length > 2_000_000) return { ok: false, error: "too_large" };
@@ -239,6 +256,8 @@ function writeDoc(doc) {
   if (Array.isArray(doc?.rooms)) patch.rooms = doc.rooms;
   if (Array.isArray(doc?.keyPlan)) patch.keyPlan = doc.keyPlan;
   if (Array.isArray(doc?.linePlan)) patch.linePlan = doc.linePlan;
+  if (doc?.site && typeof doc.site === "object") patch.site = doc.site;
+  if (Array.isArray(doc?.roomBook)) patch.roomBook = doc.roomBook;
   return patchDeskDocument(patch);
 }
 

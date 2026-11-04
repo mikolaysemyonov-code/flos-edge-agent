@@ -22,6 +22,7 @@ COPY runtime-desk-pour-scenes.mjs /app/runtime-desk-pour-scenes.mjs
 COPY runtime-desk-pour-cron.mjs /app/runtime-desk-pour-cron.mjs
 COPY runtime-desk-actuate.mjs /app/runtime-desk-actuate.mjs
 COPY runtime-desk-key-scan.mjs /app/runtime-desk-key-scan.mjs
+COPY runtime-desk-walk.mjs /app/runtime-desk-walk.mjs
 COPY runtime-desk-passport.mjs /app/runtime-desk-passport.mjs
 COPY runtime-desk-line-beacon.mjs /app/runtime-desk-line-beacon.mjs
 COPY runtime-desk-audit.mjs /app/runtime-desk-audit.mjs
