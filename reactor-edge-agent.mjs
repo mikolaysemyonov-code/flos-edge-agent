@@ -34,7 +34,7 @@ import {
 } from "./wb-rules-journal-incidents.mjs";
 
 /** Одна строка в heartbeat и snapshot — иначе UI врёт версией. */
-const EDGE_AGENT_VERSION = "edge-pilot-v2.lan-desk-222";
+const EDGE_AGENT_VERSION = "edge-pilot-v2.lan-desk-223";
 
 /** Prefer `FLOS_*` (FL OS); fall back to legacy `REACTOR_*` for existing deployments. */
 function env(primary, legacy) {
@@ -1129,7 +1129,10 @@ async function runMqttTopicScanCommand(payload) {
     resynced = await resyncMqttMirrorFromBroker(scanMs);
     if (!resynced) return { ok: false, error: "Шина не ответила" };
   }
-  const mirrorWarm = preferMirror && (resynced || isMqttMirrorSettledForScan() || (instantMirror && hasMirrorNow));
+  // Свежий dump — снимок стола. preferMirror: false его не выбрасывает и не ждёт пол в 4 модуля.
+  const mirrorWarm =
+    resynced ||
+    (preferMirror && (isMqttMirrorSettledForScan() || (instantMirror && hasMirrorNow)));
   if (preferMirror && instantMirror && !mirrorWarm) {
     return {
       ok: true,
