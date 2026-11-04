@@ -223,30 +223,32 @@ export function captureDeskKeyPlanItem(input) {
   const taken = plan.find(
     (k) => k.deviceTopicKey === dk && (deskInputBaseControl(k.controlId) || k.controlId) === cid,
   );
-  if (taken) {
-    return { ok: false, error: "topic_taken", room: taken.room, label: taken.label, deviceTopicKey: dk, controlId: cid };
-  }
   const code = String(input?.code || "").trim();
   const floor = Math.round(Number(input?.floor) || 0);
   let useLabel = label;
   if (/^\d{3}$/.test(code)) {
     let n = 2;
     const takenLabel = (name) =>
-      plan.some((k) => k.code === code && k.label.toLowerCase() === name.toLowerCase());
+      plan.some(
+        (k) =>
+          k.id !== taken?.id &&
+          k.code === code &&
+          k.label.toLowerCase() === name.toLowerCase(),
+      );
     while (takenLabel(useLabel)) {
       useLabel = label + " " + n;
       n += 1;
     }
-  } else {
+  } else if (!taken) {
     const twin = plan.find(
       (k) => k.room.toLowerCase() === room.toLowerCase() && k.label.toLowerCase() === label.toLowerCase(),
     );
     if (twin) return { ok: false, error: "duplicate_label", room: twin.room, label: twin.label };
   }
-  if (plan.length >= MAX_KEYS) return { ok: false, error: "key_plan_full", cap: MAX_KEYS };
+  if (!taken && plan.length >= MAX_KEYS) return { ok: false, error: "key_plan_full", cap: MAX_KEYS };
   upsertDeskRoom(room);
   const key = {
-    id: newId("key"),
+    id: taken?.id || newId("key"),
     room,
     label: useLabel,
     deviceTopicKey: dk,
@@ -257,8 +259,10 @@ export function captureDeskKeyPlanItem(input) {
   if (floor >= 1 && floor <= 9) key.floor = floor;
   const doc = readRawDoc();
   let shelves = doc.shelves && typeof doc.shelves === "object" ? doc.shelves : {};
+  if (taken) shelves = shelvesWithoutKeyMark(shelves, taken);
   shelves = withShelfChannelName(shelves, dk, cid, deskKeyMarkName(room, useLabel, key.code));
-  const written = patchDeskDocument({ shelves, keyPlan: normalizePlan([...plan, key]) });
+  const nextPlan = taken ? plan.map((k) => (k.id === taken.id ? key : k)) : [...plan, key];
+  const written = patchDeskDocument({ shelves, keyPlan: normalizePlan(nextPlan) });
   if (written?.ok === false) return written;
   return { ok: true, key, keyPlan: listDeskKeyPlan() };
 }

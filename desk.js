@@ -4674,27 +4674,8 @@
         status.textContent = (keyPlanNote ? keyPlanNote + " " : "") + "Сканировать — три коротких нажатия, система назовёт вход.";
       }
       body.appendChild(status);
-      if (keyCatch && caughtNamed()) {
-        const card = document.createElement("div");
-        card.className = "key-plan-add glass";
-        const topic = document.createElement("p");
-        topic.className = "meta";
-        const namedCatch = caughtNamed();
-        topic.textContent = "Это уже «" + (namedCatch.code ? namedCatch.code + " " : "") + namedCatch.room + " · " + namedCatch.label + "». Нажмите другую кнопку.";
-        const again = document.createElement("button");
-        again.type = "button";
-        again.className = "ghost key-add-all";
-        again.textContent = "Другая кнопка";
-        again.addEventListener("click", () => {
-          const ignoreKey = keyCatch && keyCatch.ignoreKey;
-          keyCatch = null;
-          keyPlanNote = "";
-          startKeyScan(null, { ignoreKey });
-        });
-        card.append(topic, again);
-        body.appendChild(card);
-      } else if (keyCatch) {
-        body.appendChild(assignCard());
+      if (keyCatch) {
+        body.appendChild(assignCard(caughtNamed()));
       } else if (!keyScan) {
         const listen = document.createElement("button");
         listen.type = "button";
@@ -4715,6 +4696,17 @@
         stop.addEventListener("click", () => { stopKeyScan(); renderMark(); });
         body.appendChild(stop);
       }
+      const file = document.createElement("button");
+      file.type = "button";
+      file.className = "ghost";
+      file.textContent = "Скачать Excel";
+      file.addEventListener("click", () => {
+        const a = document.createElement("a");
+        a.href = "/runtime/desk-passport.xlsx";
+        a.download = "клавиши.xlsx";
+        a.click();
+      });
+      body.appendChild(file);
       body.appendChild(keyTable());
     }
     function postWalk(body) {
@@ -4794,12 +4786,17 @@
       card.append(nameSel, custom, save);
       return card;
     }
-    function assignCard() {
+    function assignCard(existing) {
       const card = document.createElement("div");
       card.className = "key-plan-add glass";
       const topic = document.createElement("p");
       topic.className = "meta";
-      topic.textContent = "Нашёлся · " + shelfLabel(keyCatch.deviceTopicKey) + " · " + prettyControlId(keyCatch.controlId);
+      const oldName = namedInputLabel(keyCatch.deviceTopicKey, keyCatch.controlId);
+      topic.textContent = (existing
+        ? "Уже в таблице. Можно сменить комнату и назначение. "
+        : "Нашёлся. ")
+        + shelfLabel(keyCatch.deviceTopicKey) + " · " + prettyControlId(keyCatch.controlId)
+        + (oldName && !(existing && existing.code) ? " · на канале «" + oldName + "»" : "");
       const roomSel = document.createElement("select");
       roomSel.className = "bind";
       roomSel.setAttribute("aria-label", "Комната");
@@ -4809,6 +4806,7 @@
         opt.textContent = room.code + " · " + room.name;
         roomSel.appendChild(opt);
       });
+      if (existing && existing.code) roomSel.value = existing.code;
       const purposeSel = document.createElement("select");
       purposeSel.className = "bind";
       purposeSel.setAttribute("aria-label", "Назначение выключателя");
@@ -4826,10 +4824,15 @@
       other.value = "__other";
       other.textContent = "Другое";
       purposeSel.appendChild(other);
+      if (existing && existing.label) {
+        const known = (walkPurposes || []).indexOf(existing.label) >= 0;
+        purposeSel.value = known ? existing.label : "__other";
+      }
       const custom = document.createElement("input");
       custom.className = "bind";
       custom.placeholder = "Своё назначение";
-      custom.hidden = true;
+      custom.hidden = purposeSel.value !== "__other";
+      if (existing && existing.label && purposeSel.value === "__other") custom.value = existing.label;
       purposeSel.addEventListener("change", () => { custom.hidden = purposeSel.value !== "__other"; });
       const act = document.createElement("div");
       act.className = "key-plan-actions";

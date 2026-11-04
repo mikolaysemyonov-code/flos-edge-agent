@@ -63,6 +63,8 @@ function keyRows(doc) {
     const key = dev && cid ? dev + "/" + cid : "";
     if (key) seen.add(key);
     rows.push([
+      k.code || "",
+      k.floor != null && k.floor !== "" ? String(k.floor) : "",
       k.room || "",
       k.label || "",
       dev ? moduleLabel(dev) : "",
@@ -83,6 +85,8 @@ function keyRows(doc) {
       seen.add(key);
       const split = splitRoomTitle(name);
       rows.push([
+        "",
+        "",
         split.room,
         split.title,
         moduleLabel(dev),
@@ -386,7 +390,7 @@ export function buildDeskPassportSheets(doc, now = new Date(), extra = {}) {
     },
     {
       name: "Клавиши",
-      headers: ["Комната", "Где и что включает", "Модуль щита", "Канал", "Топик входа", "Топик одиночного нажатия", "Статус"],
+      headers: ["Код", "Этаж", "Комната", "Чем управляет", "Модуль щита", "Канал", "Топик входа", "Топик одиночного нажатия", "Статус"],
       rows: keyRows(doc),
     },
     {
