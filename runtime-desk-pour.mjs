@@ -121,27 +121,29 @@ export function assessDeskCanPour(preview) {
   const p = preview || buildDeskPourPreview(readDeskMarking(), readPouredChannelMarks(), readPouredDeskSnapshot().rules || []);
   const unnamed = p.ready?.blocked || 0;
   const core = readShard("00_core.js");
+  const coreHasFlos = /defineVirtualDevice\s*\(\s*["']form_logic_os["']/.test(core);
   const hard = [];
-  if (!/defineVirtualDevice\s*\(\s*["']form_logic_os["']/.test(core)) {
+  const named = namedLoadsFromDesk();
+  const canSeed = !coreHasFlos && named.length > 0;
+  if (!coreHasFlos && !canSeed) {
     hard.push("на диске нет form_logic_os в 00_core");
   }
   const sols = listDeskSolutions();
   const unsupported = sols.filter((s) => !supportedDeskSolution(s));
   const supported = sols.filter(supportedDeskSolution);
   const diffs = (p.rows || []).filter((r) => r.status === "new_name" || r.status === "name" || r.status === "card");
-  const named = namedLoadsFromDesk();
-  const repair = /form_logic_os/.test(core)
+  const repair = coreHasFlos
     ? buildCoreRepair(core, named, { persist: false })
     : { changed: false, hiddenGhosts: 0 };
-  const canRepair = /form_logic_os/.test(core);
-  const canPourNames = hard.length === 0 && /form_logic_os/.test(core) && (diffs.length > 0 || Boolean(repair.changed));
-  const canPourRules = hard.length === 0 && /form_logic_os/.test(core) && supported.length > 0;
+  const canRepair = coreHasFlos;
+  const canPourNames = hard.length === 0 && (diffs.length > 0 || Boolean(repair.changed) || canSeed);
+  const canPourRules = hard.length === 0 && coreHasFlos && supported.length > 0;
   const hasPourWork = canPourNames || canPourRules || Boolean(repair.hiddenGhosts);
   if (!hasPourWork && !canRepair) hard.push("нечего заливать");
   if (unsupported.length && !supported.length && !diffs.length && !repair.changed && !canRepair) {
     hard.push("дим и прочие карточки — пока из облака");
   }
-  const canPour = hard.length === 0 && /form_logic_os/.test(core) && (canPourNames || canPourRules || Boolean(repair.changed || repair.hiddenGhosts));
+  const canPour = hard.length === 0 && (canPourNames || canPourRules || Boolean(repair.changed || repair.hiddenGhosts));
   const hints = [];
   if (unnamed > 0) hints.push(unnamed + " без имени — пропустим");
   if (canPourNames && canPourRules) hints.unshift("Сначала имена, потом сценарии.");

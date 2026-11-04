@@ -251,13 +251,30 @@ export function stripDuplicateTitles(src) {
   return { content: text.replace(/\n{3,}/g, "\n\n"), changed: removedIds.length > 0, removedIds };
 }
 
+export function emptyFormLogicOsSource() {
+  return [
+    'defineVirtualDevice("form_logic_os", {',
+    '  title: "FORM LOGIC OS",',
+    "  cells: {",
+    "  }",
+    "});",
+    "",
+  ].join("\n");
+}
+
 /** @param {string} coreSrc @param {{deviceTopicKey:string,controlId:string,name:string}[]} named */
 export function mergeDeskNamesIntoCore(coreSrc, named) {
   let src = String(coreSrc || "");
-  if (!/defineVirtualDevice\s*\(\s*["']form_logic_os["']/.test(src)) {
-    return { ok: false, error: "no_form_logic_os", content: src, changed: false, removedIds: [] };
-  }
   let changed = false;
+  if (!/defineVirtualDevice\s*\(\s*["']form_logic_os["']/.test(src)) {
+    const pending = (named || []).some((row) => String(row?.name || "").trim() && row?.deviceTopicKey && row?.controlId);
+    if (!pending) {
+      return { ok: false, error: "no_form_logic_os", content: src, changed: false, removedIds: [] };
+    }
+    const base = src.trimEnd();
+    src = base ? base + "\n\n" + emptyFormLogicOsSource() : emptyFormLogicOsSource();
+    changed = true;
+  }
   const addCells = [];
   const addRules = [];
   const removedIds = [];

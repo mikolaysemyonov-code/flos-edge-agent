@@ -39,9 +39,22 @@ export function deskActuatePayloads(deviceTopicKey, controlId) {
   }
   // WB-LED часто с плавным Auto-Change — короткий pulse не успевает разгореться.
   if (/led|ampled/i.test(key) || /^Channel\s+\d+/i.test(cid) || /^CCT/i.test(cid) || /^RGB/i.test(cid)) {
-    return { on: "1", off: "0", pulseMs: 2200, kind: "led_switch" };
+    return { on: "1", off: "0", pulseMs: 2200, kind: "led_switch", brightness: "100" };
   }
   return { on: "1", off: "0", pulseMs: 800, kind: "relay" };
+}
+
+/** Включение Channel без Brightness оставляет лампу на 1%. Яркость пишем первой. */
+export function deskActuateWrites(deviceTopicKey, controlId, desired) {
+  const pay = deskActuatePayloads(deviceTopicKey, controlId);
+  const base = `/devices/${deviceTopicKey}/controls/${controlId}`;
+  const off = desired === "off";
+  const writes = [];
+  if (pay.kind === "led_switch" && /^Channel\s+\d+$/i.test(String(controlId || ""))) {
+    writes.push({ topic: `${base} Brightness`, payload: off ? "0" : pay.brightness || "100" });
+  }
+  writes.push({ topic: base, payload: off ? pay.off : pay.on });
+  return writes;
 }
 
 export function isDeskInputControl(controlId, deviceTopicKey) {
@@ -128,19 +141,18 @@ export async function actuateDeskChannel(input) {
     ? String(input.desired).toLowerCase()
     : "pulse";
   const pay = deskActuatePayloads(deviceTopicKey, controlId);
-  const base = `/devices/${deviceTopicKey}/controls/${controlId}`;
   if (desired === "on") {
-    const pub = await publishWrites([{ topic: base, payload: pay.on }]);
+    const pub = await publishWrites(deskActuateWrites(deviceTopicKey, controlId, "on"));
     return { ...pub, desired: "on", kind: pay.kind, value: pay.on };
   }
   if (desired === "off") {
-    const pub = await publishWrites([{ topic: base, payload: pay.off }]);
+    const pub = await publishWrites(deskActuateWrites(deviceTopicKey, controlId, "off"));
     return { ...pub, desired: "off", kind: pay.kind, value: pay.off };
   }
-  const onPub = await publishWrites([{ topic: base, payload: pay.on }]);
+  const onPub = await publishWrites(deskActuateWrites(deviceTopicKey, controlId, "on"));
   if (!onPub.ok) return { ...onPub, desired: "pulse", kind: pay.kind };
   await sleep(pay.pulseMs);
-  const offPub = await publishWrites([{ topic: base, payload: pay.off }]);
+  const offPub = await publishWrites(deskActuateWrites(deviceTopicKey, controlId, "off"));
   return {
     ok: Boolean(offPub.ok),
     desired: "pulse",
