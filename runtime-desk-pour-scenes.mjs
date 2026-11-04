@@ -48,7 +48,7 @@ function pathOf(c) {
 
 function triggerWhen(trig) {
   const dev = liveDeskDeviceKey(trig?.deviceTopicKey);
-  const cid = deskButtonCounter(trig?.controlId, "Short");
+  const cid = deskButtonCounter(trig?.controlId, "Short", dev);
   if (!dev || !cid) return "";
   return dev + "/" + cid;
 }

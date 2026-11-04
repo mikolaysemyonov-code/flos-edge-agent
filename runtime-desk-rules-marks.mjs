@@ -130,6 +130,7 @@ export function parsePouredRuleRows(source, filename) {
       const controlId = String(c[2] ?? "")
         .trim()
         .replace(/\s+(?:Single|Shortlong|Long|Short|Double)\s+Press(?:\s+Counter)?$/i, "")
+        .replace(/\s+counter$/i, "")
         .replace(/\s+Counter$/i, "")
         .trim();
       if (!isDeskShelfChannelControl(controlId, deviceTopicKey)) continue;

@@ -39,7 +39,7 @@ function inputBase(trig) {
 
 function press(trig, kind) {
   const dev = liveDeskDeviceKey(trig?.deviceTopicKey);
-  const cid = deskButtonCounter(trig?.controlId, kind);
+  const cid = deskButtonCounter(trig?.controlId, kind, dev);
   if (!dev || !cid) return "";
   return dev + "/" + cid;
 }

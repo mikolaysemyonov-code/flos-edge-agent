@@ -29,9 +29,16 @@ function pathOf(c) {
 
 function buttonWhen(trig, kind) {
   const dev = liveDeskDeviceKey(trig?.deviceTopicKey);
-  const cid = deskButtonCounter(trig?.controlId, kind);
+  const cid = deskButtonCounter(trig?.controlId, kind, dev);
   if (!dev || !cid) return "";
   return dev + "/" + cid;
+}
+
+function lightIsOnExpr(path) {
+  if (/\/Channel \d+$/i.test(String(path || ""))) {
+    return `(Number(readValue(${esc(path + " Brightness")})) > 1)`;
+  }
+  return `wbIsOn(readValue(${esc(path)}))`;
 }
 
 function triggerWhen(trig) {
@@ -171,14 +178,15 @@ function emitToggle(sol) {
     body = loads.map((p) => actuatorBool(p, "1", id)).join("\n");
   } else {
     body = [
-      `      var next = !wbIsOn(readValue(${esc(loads[0])}));`,
+      `      if (newValue === 0 || newValue === "0") return;`,
+      `      var next = !${lightIsOnExpr(loads[0])};`,
       ...loads.map((p) => actuatorBool(p, "next", id)),
     ].join("\n");
   }
   return [
     `defineRule(${esc(id)}, {`,
     `  whenChanged: ${esc(when)},`,
-    "  then: function () {",
+    "  then: function (newValue) {",
     "    try {",
     body,
     "    } catch (e) { if (typeof wbRuleGuardCatch === 'function') wbRuleGuardCatch(" + esc(id) + ", e); }",

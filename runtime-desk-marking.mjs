@@ -272,24 +272,33 @@ function cleanCards(value) {
   return exclusiveDeskCards(value);
 }
 
-/** Input, или его Press Counter — одна и та же клавиша. */
+/** Input, или его счётчик — одна и та же клавиша. */
 export function deskInputBaseControl(controlId) {
   const c = String(controlId || "").trim();
   const m = /^(Input\s+[A-Z]?\d+)\s+(?:Single|Shortlong|Short|Long|Double) Press Counter$/i.exec(c);
   if (m) return m[1];
+  const pulse = /^(Input\s+[A-Z]?\d+)\s+counter$/i.exec(c);
+  if (pulse) return pulse[1];
   if (/^Input\s+[A-Z]?\d+$/i.test(c)) return c;
   if (/^EXT\d+_IN\d+$/i.test(c) || /^[A-D]\d+_IN\d+$/i.test(c)) return c;
   return "";
 }
 
-/** На MCM короткое нажатие — Single Press Counter. «Short» в коде стола значит это. */
+/** Жест → суффикс провода. Short в коде стола = одиночное нажатие. */
 const PRESS_ON_WIRE = { Short: "Single", Single: "Single", Long: "Long", Double: "Double", Shortlong: "Shortlong" };
 
-/** Кнопка Input, включая Input A1, слушает счётчик. EXT и A1_IN остаются уровнем. */
-export function deskButtonCounter(controlId, kind = "Short") {
+/**
+ * Кнопка Input слушает счётчик. EXT остаётся уровнем.
+ * На MCM8 «Single Press Counter» молчит, пока модуль не распознал жест и канал не опрашивается.
+ * Замыкание «Input N counter» растёт с каждым нажатием в любом режиме. Дим остаётся на Long/Shortlong.
+ */
+export function deskButtonCounter(controlId, kind = "Short", deviceTopicKey = "") {
   const base = deskInputBaseControl(controlId);
   const wire = PRESS_ON_WIRE[kind] || "Single";
-  if (base && /^Input\s+/i.test(base)) return `${base} ${wire} Press Counter`;
+  if (base && /^Input\s+/i.test(base)) {
+    if (wire === "Single" && /mcm/i.test(String(deviceTopicKey || ""))) return `${base} counter`;
+    return `${base} ${wire} Press Counter`;
+  }
   return String(controlId || "").trim();
 }
 
