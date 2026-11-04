@@ -183,7 +183,7 @@ function emitToggle(sol) {
   } else {
     body = [
       "      var anyOn = false;",
-      ...cells.map((c) => `      if (wbIsOn(dev["form_logic_os"][${esc(c)}])) anyOn = true;`),
+      ...cells.map((c) => `      if (wbIsOn(readValue(${esc("form_logic_os/" + c)}))) anyOn = true;`),
       "      var wantState = !anyOn;",
       ...cells.map((c) => virtualAssign(c, "wantState")),
     ].join("\n");
