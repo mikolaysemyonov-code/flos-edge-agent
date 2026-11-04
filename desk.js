@@ -272,7 +272,7 @@
     }
     function visibleChannels(s) {
       return (s.channels || []).filter((ch) =>
-        !isDriveClose(ch.controlId) && !/Short Press Counter$/i.test(String(ch.controlId || "")),
+        !isDriveClose(ch.controlId) && !/(?:Single|Short|Long|Shortlong|Double) Press Counter$/i.test(String(ch.controlId || "")),
       );
     }
     function pairName(s, ch) {
@@ -2012,7 +2012,7 @@
         (s.channels || []).forEach((ch) => {
           if (isDeskLoad(ch.controlId)) return;
           // Счётчики — только для скана, в типовые не тащим.
-          if (/Short Press Counter$/i.test(String(ch.controlId || ""))) return;
+          if (/(?:Single|Short|Long|Shortlong|Double) Press Counter$/i.test(String(ch.controlId || ""))) return;
           if (!isDeskInput(ch.controlId, s.deviceTopicKey)
             && !/геркон|движен|reed|motion|pir|co2|влажн|темпер/i.test(String(ch.name || ""))) {
             return;
@@ -4161,9 +4161,9 @@
       (shelves || []).forEach((s) => {
         (s.channels || []).forEach((ch) => {
           const cid = String(ch.controlId || "");
-          const m = /^(Input\s+[A-Z]?\d+)\s+(Short|Long|Double) Press Counter$/i.exec(cid);
+          const m = /^(Input\s+[A-Z]?\d+)\s+(Single|Shortlong|Short|Long|Double) Press Counter$/i.exec(cid);
           if (m) {
-            const gesture = /^long/i.test(m[2]) ? "long" : /^double/i.test(m[2]) ? "double" : "short";
+            const gesture = /^long$/i.test(m[2]) ? "long" : /^double/i.test(m[2]) ? "double" : /^shortlong/i.test(m[2]) ? "shortlong" : "short";
             const key = s.deviceTopicKey + "::" + m[1] + (gesture === "short" ? "" : "::" + gesture);
             map.set(key, {
               kind: "counter",
@@ -5325,7 +5325,7 @@
       deskSolutions.forEach((sol) => {
         const t = sol && sol.trigger;
         if (!t || t.deviceTopicKey !== deviceTopicKey) return;
-        const base = String(t.controlId || "").replace(/\s+Short Press Counter$/i, "").trim();
+        const base = String(t.controlId || "").replace(/\s+(?:Single|Shortlong|Short|Long|Double) Press Counter$/i, "").trim();
         if (base !== controlId && t.controlId !== controlId) return;
         (sol.targets || []).forEach((x) => {
           if (x) add(x.deviceTopicKey, x.controlId, "tip");

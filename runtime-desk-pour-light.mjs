@@ -34,7 +34,7 @@ function num(params, key, fallback) {
 function inputBase(trig) {
   const p = pathOf(trig);
   if (!p) return "";
-  return p.replace(/\s+(Short|Long|Shortlong|Double)\s+Press Counter$/i, "");
+  return p.replace(/\s+(Single|Shortlong|Short|Long|Double)\s+Press Counter$/i, "");
 }
 
 function press(trig, kind) {

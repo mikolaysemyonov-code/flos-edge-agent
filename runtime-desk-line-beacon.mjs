@@ -82,7 +82,7 @@ export function isDeskBeaconLoad(controlId, deviceTopicKey) {
   const c = String(controlId || "").trim();
   const key = String(deviceTopicKey || "").toLowerCase();
   if (!c) return false;
-  if (/Short Press Counter$/i.test(c)) return false;
+  if (/(?:Single|Short|Long|Shortlong|Double) Press Counter$/i.test(c)) return false;
   if (/^Input\s+/i.test(c) || /^EXT\d+_IN/i.test(c) || /^[A-D]\d+_IN/i.test(c)) return false;
   if (/^(Curtain|Actuator)\s+\d+\s+(Open|Close)$/i.test(c)) return false;
   if (/brightness|temperature|palette|error|voltage|current|power|frequency|energy|status|offline|auto-change/i.test(c)) {

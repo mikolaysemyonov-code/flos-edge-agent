@@ -129,7 +129,7 @@ export function parsePouredRuleRows(source, filename) {
       const deviceTopicKey = liveDeskDeviceKey(c[1]);
       const controlId = String(c[2] ?? "")
         .trim()
-        .replace(/\s+(?:Long|Short|Double|Shortlong)?\s*Press(?:\s+Counter)?$/i, "")
+        .replace(/\s+(?:Single|Shortlong|Long|Short|Double)\s+Press(?:\s+Counter)?$/i, "")
         .replace(/\s+Counter$/i, "")
         .trim();
       if (!isDeskShelfChannelControl(controlId, deviceTopicKey)) continue;

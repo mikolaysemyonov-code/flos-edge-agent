@@ -110,8 +110,8 @@ export function isDeskShelfChannelControl(controlId, deviceTopicKey) {
   if (/^Channel \d+$/i.test(c)) return true;
   if (/^(CCT|RGB)\d+$/i.test(c)) return true;
   if (/^Input [A-Z]?\d+$/i.test(c)) return true;
-  // Для скана клавиш — счётчик коротких нажатий MCM8.
-  if (/^Input [A-Z]?\d+ Short Press Counter$/i.test(c)) return true;
+  // Для скана клавиш — счётчики MCM8. Короткое нажатие на проводе называется Single.
+  if (/^Input [A-Z]?\d+ (?:Single|Shortlong|Short|Long|Double) Press Counter$/i.test(c)) return true;
   if (/^EXT\d+_IN/i.test(c) || /^[A-D]\d+_IN/i.test(c)) return true;
   return false;
 }

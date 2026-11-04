@@ -272,20 +272,24 @@ function cleanCards(value) {
   return exclusiveDeskCards(value);
 }
 
-/** Input, или его Short/Long/Double Press Counter — одна и та же клавиша. */
+/** Input, или его Press Counter — одна и та же клавиша. */
 export function deskInputBaseControl(controlId) {
   const c = String(controlId || "").trim();
-  const m = /^(Input\s+[A-Z]?\d+)\s+(?:Short|Long|Double) Press Counter$/i.exec(c);
+  const m = /^(Input\s+[A-Z]?\d+)\s+(?:Single|Shortlong|Short|Long|Double) Press Counter$/i.exec(c);
   if (m) return m[1];
   if (/^Input\s+[A-Z]?\d+$/i.test(c)) return c;
   if (/^EXT\d+_IN\d+$/i.test(c) || /^[A-D]\d+_IN\d+$/i.test(c)) return c;
   return "";
 }
 
+/** На MCM короткое нажатие — Single Press Counter. «Short» в коде стола значит это. */
+const PRESS_ON_WIRE = { Short: "Single", Single: "Single", Long: "Long", Double: "Double", Shortlong: "Shortlong" };
+
 /** Кнопка Input, включая Input A1, слушает счётчик. EXT и A1_IN остаются уровнем. */
 export function deskButtonCounter(controlId, kind = "Short") {
   const base = deskInputBaseControl(controlId);
-  if (base && /^Input\s+/i.test(base)) return `${base} ${kind} Press Counter`;
+  const wire = PRESS_ON_WIRE[kind] || "Single";
+  if (base && /^Input\s+/i.test(base)) return `${base} ${wire} Press Counter`;
   return String(controlId || "").trim();
 }
 

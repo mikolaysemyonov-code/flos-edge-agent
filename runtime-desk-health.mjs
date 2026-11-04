@@ -73,7 +73,7 @@ export function assessDeskHealth(shelves, ctx = {}) {
     const dk = String(s?.deviceTopicKey || "");
     for (const ch of Array.isArray(s?.channels) ? s.channels : []) {
       const cid = String(ch?.controlId || "");
-      if (/\s+(?:Short|Long|Shortlong|Double) Press Counter$/i.test(cid)) continue;
+      if (/\s+(?:Single|Short|Long|Shortlong|Double) Press Counter$/i.test(cid)) continue;
       const name = String(ch?.name || "").trim();
       byContact.set(contactKey(dk, cid), { dk, cid, name, s });
       if (name) {
@@ -127,7 +127,7 @@ export function assessDeskHealth(shelves, ctx = {}) {
     }
     const base =
       deskInputBaseControl(t.controlId) ||
-      String(t.controlId || "").replace(/\s+(?:Short|Long|Shortlong|Double) Press Counter$/i, "").trim();
+      String(t.controlId || "").replace(/\s+(?:Single|Short|Long|Shortlong|Double) Press Counter$/i, "").trim();
     const k = contactKey(t.deviceTopicKey, base);
     if (!trigUsed.has(k)) trigUsed.set(k, []);
     trigUsed.get(k).push(sol.title || sol.solutionId || sol.id);
