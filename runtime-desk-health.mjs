@@ -38,6 +38,21 @@ export function deskTimeZoneById(id) {
   return DESK_TIME_ZONES.find((zone) => zone.id === want) || null;
 }
 
+/** Первый адрес домашней сети из `hostname -I`, без петли и моста Docker. */
+export function pickControllerLanAddress(text) {
+  const parts = String(text || "").trim().split(/\s+/).filter(Boolean);
+  const rank = (ip) => {
+    if (ip.startsWith("192.168.")) return 0;
+    if (ip.startsWith("10.")) return 1;
+    if (/^172\.(1[6-9]|2\d|3[0-1])\./.test(ip) && !ip.startsWith("172.17.") && !ip.startsWith("172.18.")) return 2;
+    if (ip.startsWith("172.17.") || ip.startsWith("172.18.")) return 9;
+    return 3;
+  };
+  const v4 = parts.filter((ip) => /^\d{1,3}(\.\d{1,3}){3}$/.test(ip) && !ip.startsWith("127.") && !ip.startsWith("169.254."));
+  v4.sort((a, b) => rank(a) - rank(b));
+  return v4.find((ip) => rank(ip) < 9) || "";
+}
+
 function clockLabel(year, month, day, hh, mm) {
   const ok = year >= 2026 && year <= 2035;
   const dd = String(day).padStart(2, "0");

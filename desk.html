@@ -14,25 +14,33 @@
       <div class="top-side">
         <div class="shield-clock-row">
           <p id="shieldClock" class="shield-clock" hidden></p>
-          <button id="shieldClockEdit" class="ghost shield-clock-edit" type="button" hidden>Пояс</button>
+          <button id="settingsToggle" class="ghost gear" type="button" aria-label="Настройки" title="Настройки">
+            <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true">
+              <path fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round" d="M12 15.2a3.2 3.2 0 1 0 0-6.4 3.2 3.2 0 0 0 0 6.4Z"/>
+              <path fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round" d="M19.4 13.1a7.7 7.7 0 0 0 .1-2.2l2-1.5-2-3.4-2.4 1a7.6 7.6 0 0 0-1.9-1.1L14.8 3h-3.6l-.4 2.9a7.6 7.6 0 0 0-1.9 1.1l-2.4-1-2 3.4 2 1.5a7.7 7.7 0 0 0 .1 2.2l-2 1.5 2 3.4 2.4-1a7.6 7.6 0 0 0 1.9 1.1l.4 2.9h3.6l.4-2.9a7.6 7.6 0 0 0 1.9-1.1l2.4 1 2-3.4-2-1.5Z"/>
+            </svg>
+          </button>
         </div>
-        <div id="shieldClockSheet" class="shield-clock-sheet" hidden>
-          <select id="shieldClockZone" class="bind" aria-label="Часовой пояс"></select>
-          <button id="shieldClockSave" class="ghost" type="button">Сохранить</button>
-        </div>
-        <p id="shieldClockNote" class="meta shield-clock-note" hidden></p>
-        <div class="top-actions">
-          <button id="fieldCert" class="ghost" type="button">Готовность</button>
-          <button id="scan" class="ghost" type="button">Обновить</button>
+        <div id="settingsSheet" class="glass settings-sheet" hidden>
+          <p class="meta settings-label">Часовой пояс</p>
+          <div class="shield-clock-sheet">
+            <select id="shieldClockZone" class="bind" aria-label="Часовой пояс"></select>
+            <button id="shieldClockSave" class="ghost" type="button">Сохранить</button>
+          </div>
+          <p id="shieldClockNote" class="meta shield-clock-note" hidden></p>
+          <div class="top-actions">
+            <button id="fieldCert" class="ghost" type="button">Готовность</button>
+            <button id="scan" class="ghost" type="button">Обновить</button>
+          </div>
+          <p id="settingsVer" class="meta settings-ver"></p>
         </div>
       </div>
     </div>
-    <div id="health" class="glass status">
+    <div id="health" class="status">
       <span class="dot" aria-hidden="true"></span>
-      <div class="status-lines">
-        <p id="healthMain">Спрашиваю агента…</p>
-        <p id="healthSub" class="status-sub" hidden></p>
-      </div>
+      <p id="healthMain">…</p>
+      <p id="healthAddr" class="health-addr" hidden></p>
+      <p id="healthSub" class="status-sub" hidden></p>
     </div>
     <p id="bus" class="meta"></p>
     <p id="ritual" class="meta ritual" hidden>Сначала кнопки по комнатам. Потом свет. Запись на щит — в конце.</p>

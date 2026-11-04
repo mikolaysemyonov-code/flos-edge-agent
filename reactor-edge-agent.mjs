@@ -27,14 +27,14 @@ import {
 import { setRuntimeClockSetter, setRuntimeMqttScanHandler } from "./runtime-desk-http.mjs";
 import { isMarkShieldDiscoverableDeviceKey } from "./lib/mark-shield-discoverable-device.mjs";
 import { countOfflineDevices } from "./runtime-desk-shelves.mjs";
-import { assessControllerClock, clockFromHostText, deskTimeZoneById } from "./runtime-desk-health.mjs";
+import { assessControllerClock, clockFromHostText, deskTimeZoneById, pickControllerLanAddress } from "./runtime-desk-health.mjs";
 import {
   classifyWbRulesJournalLines,
   splitJournalText,
 } from "./wb-rules-journal-incidents.mjs";
 
 /** Одна строка в heartbeat и snapshot — иначе UI врёт версией. */
-const EDGE_AGENT_VERSION = "edge-pilot-v2.lan-desk-259";
+const EDGE_AGENT_VERSION = "edge-pilot-v2.lan-desk-260";
 
 /** Prefer `FLOS_*` (FL OS); fall back to legacy `REACTOR_*` for existing deployments. */
 function env(primary, legacy) {
@@ -621,6 +621,21 @@ function readWbRulesJournalTail(lines = 80, timeoutMs = 15_000) {
 
 let busIncidentCache = { at: 0, items: [] };
 let hostClockCache = { at: 0, clock: null };
+let hostAddrCache = { at: 0, ip: "" };
+
+function controllerAddressForDesk() {
+  const now = Date.now();
+  if (hostAddrCache.at && now - hostAddrCache.at < 60_000) return hostAddrCache.ip;
+  let text = "";
+  try {
+    text = execOnHostBash("hostname -I 2>/dev/null || true", 2_000);
+  } catch {
+    text = "";
+  }
+  const ip = pickControllerLanAddress(text);
+  hostAddrCache = { at: now, ip };
+  return ip;
+}
 
 function hostZoneLine(lines) {
   return lines.find((line) => deskTimeZoneById(line))
@@ -3385,6 +3400,7 @@ async function main() {
     agentVersion: EDGE_AGENT_VERSION,
     agentBootedAt: new Date(agentProcessStartedAtMs).toISOString(),
     controllerClock: controllerClockForDesk(),
+    controllerAddress: controllerAddressForDesk(),
     mqttMirror: mqttMirrorHealth(),
     busIncidents: busIncidentsForDesk(),
   }));

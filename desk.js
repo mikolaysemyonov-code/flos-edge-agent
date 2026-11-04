@@ -3051,16 +3051,15 @@
         const mirror = j.mqttMirror || {};
         const topics = Number(mirror.topicCount) || 0;
         const busOk = mirror.connected === true && topics > 0;
-        const cloudState = j.enrollment && j.enrollment.state;
         const ver = String(j.agentVersion || "") || "—";
         if (!j.ok) {
-          box.className = "glass status bad";
-          main.textContent = "Щит не ответил";
+          box.className = "status bad";
+          main.textContent = "Offline";
           if (sub) { sub.hidden = true; sub.textContent = ""; }
+          const gone = $("healthAddr");
+          if (gone) { gone.hidden = true; gone.textContent = ""; }
           return;
         }
-        // Локальный пуск через docker: облако не влияет на статус «ок».
-        box.className = "glass status " + (busOk ? "ok" : "bad");
         const clock = j.controllerClock || {};
         shieldClockOk = clock.ok !== false;
         shieldClockUnverified = clock.unverified === true;
@@ -3068,26 +3067,35 @@
         shieldClockSource = clock.source || "";
         shieldClockZone = clock.zone || shieldClockZone;
         paintShieldClock();
+        const verLine = $("settingsVer");
+        if (verLine) verLine.textContent = "Сборка " + ver;
         const offline = Number(mirror.offlineDeviceCount) || 0;
         const incident = Array.isArray(j.busIncidents) && j.busIncidents[0] ? j.busIncidents[0].reason : "";
         const busCalm = busOk && shieldClockOk && !shieldClockUnverified && !offline && !incident;
-        box.className = "glass status " + (busCalm ? "ok" : "bad");
-        main.textContent = busCalm ? "Щит на связи" : (busOk ? "Щит ответил не весь" : "Щит молчит");
+        box.className = "status " + (busCalm ? "ok" : "bad");
+        main.textContent = busCalm ? "Connected" : (busOk ? "Не всё" : "Offline");
         main.title = ver;
+        const addr = $("healthAddr");
+        const ip = String(j.controllerAddress || "").trim();
+        if (addr) {
+          addr.textContent = ip;
+          addr.hidden = !ip;
+        }
         if (sub) {
-          const bits = ["Сборка " + ver];
+          const bits = [];
           if (shieldClockUnverified) bits.push("Время не прочитано");
           else if (!shieldClockOk) bits.push("Часы не совпадают с телефоном");
           if (offline) bits.push(offline === 1 ? "Один модуль молчит" : ("Молчит модулей: " + offline));
           if (incident) bits.push(incident);
-          if (cloudRu(cloudState) === "Облако на связи") bits.push("Сервис видит щит");
           sub.textContent = bits.join(" · ");
           sub.hidden = bits.length === 0;
         }
       } catch (e) {
-        box.className = "glass status bad";
-        main.textContent = "Щит не ответил. Откройте эту страницу в его сети.";
+        box.className = "status bad";
+        main.textContent = "Offline";
         if (sub) { sub.hidden = true; sub.textContent = ""; }
+        const addr = $("healthAddr");
+        if (addr) { addr.hidden = true; addr.textContent = ""; }
       }
     }
     async function openFieldCert() {
@@ -5754,8 +5762,6 @@
       el.textContent = shieldClockLabel || "";
       el.title = shieldClockSource === "host" ? "Время на контроллере" : "Часы контроллера не прочитаны";
       el.hidden = !shieldClockLabel;
-      const edit = $("shieldClockEdit");
-      if (edit) edit.hidden = !shieldClockLabel;
     }
     function paintBenchReady() {
       const el = $("benchReady");
@@ -5887,12 +5893,14 @@
     }
     $("scan").onclick = () => { void scanNow(); };
     if ($("fieldCert")) $("fieldCert").onclick = () => { void openFieldCert(); };
-    if ($("shieldClockEdit")) {
-      $("shieldClockEdit").onclick = async () => {
-        const sheet = $("shieldClockSheet");
+    if ($("settingsToggle")) {
+      $("settingsToggle").onclick = async () => {
+        const sheet = $("settingsSheet");
         if (!sheet) return;
-        sheet.hidden = !sheet.hidden;
-        if (sheet.hidden) return;
+        const open = sheet.hidden;
+        sheet.hidden = !open;
+        $("settingsToggle").setAttribute("aria-expanded", open ? "true" : "false");
+        if (!open) return;
         if (!clockZones.length) {
           try {
             const j = await (await fetch("/runtime/desk-clock")).json();
@@ -5950,7 +5958,6 @@
           shieldClockOk = clock.ok !== false;
           shieldClockUnverified = clock.unverified === true;
           paintShieldClock();
-          if ($("shieldClockSheet")) $("shieldClockSheet").hidden = true;
           if (note) note.textContent = "Пояс записан. Время на щите обновлено.";
           void loadHealth();
         } catch {
@@ -5963,6 +5970,12 @@
     $("cardMask").addEventListener("click", closeCardSheet);
     document.addEventListener("keydown", (e) => {
       if (e.key !== "Escape") return;
+      const settings = $("settingsSheet");
+      if (settings && !settings.hidden) {
+        settings.hidden = true;
+        if ($("settingsToggle")) $("settingsToggle").setAttribute("aria-expanded", "false");
+        return;
+      }
       if (!$("cardSheet").hidden) {
         closeCardSheet();
         return;
