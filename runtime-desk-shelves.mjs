@@ -5,7 +5,7 @@ import { isMarkShieldDiscoverableDeviceKey } from "./lib/mark-shield-discoverabl
 
 const SKU = {
   mr6cu: "WB-MR6CU",
-  mr6c: "WB-MR6CU",
+  mr6c: "WB-MR6C",
   mr6cv3: "WB-MR6C-V3",
   "mr6c-v3": "WB-MR6C-V3",
   mr12: "WB-MR12",
