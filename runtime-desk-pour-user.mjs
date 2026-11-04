@@ -159,75 +159,35 @@ function actuatorBool(path, expr, id, priority = 50) {
   return `      wbActuatorSet(${topic}, ${on}, ${rule}, ${priority});`;
 }
 
-function isLedChannelPath(path) {
-  return /\/Channel \d+$/i.test(String(path || ""));
-}
-
-/** Как компилятор типовых на Vercel: реле — wbActuatorToggle, лента — яркость затем канал. */
-function echoCellKey(path) {
+function virtCell(path) {
   const i = String(path || "").indexOf("/");
   if (i <= 0) return "";
-  return esc(cellId(path.slice(0, i), path.slice(i + 1)));
+  return cellId(path.slice(0, i), path.slice(i + 1));
 }
 
-/** Мост form_logic_os не должен затирать запись кнопки, пока она идёт на канал. */
-function holdEcho(path, body) {
-  const key = echoCellKey(path);
-  if (!key) return body;
-  return [
-    '      if (typeof flRtEcho === "undefined") flRtEcho = {};',
-    `      flRtEcho[${key}] = 1;`,
-    body,
-    `      setTimeout(function () { flRtEcho[${key}] = 0; }, 160);`,
-  ].join("\n");
-}
-
-function compilerToggle(path, id) {
-  const rule = esc(id);
-  if (!isLedChannelPath(path)) return `      wbActuatorToggle(${esc(path)}, ${rule}, 50);`;
-  const sw = esc(path);
-  const dim = esc(path + " Brightness");
-  return [
-    "      (function () {",
-    `        var sw = ${sw};`,
-    `        var dim = ${dim};`,
-    "        var on = wbIsOn(readValue(sw));",
-    "        if (on) {",
-    `          wbActuatorSet(dim, 0, ${rule}, 50);`,
-    `          wbActuatorSet(sw, false, ${rule}, 50);`,
-    "        } else {",
-    "          var lv = Number(readValue(dim));",
-    "          if (isNaN(lv) || lv <= 0) lv = 100;",
-    `          wbActuatorSet(dim, lv, ${rule}, 50);`,
-    `          wbActuatorSet(sw, true, ${rule}, 50);`,
-    "        }",
-    "      })();",
-  ].join("\n");
-}
-
-function compilerSet(path, on, id) {
-  const rule = esc(id);
-  if (!isLedChannelPath(path)) return `      wbActuatorSet(${esc(path)}, ${on ? "true" : "false"}, ${rule}, 50);`;
-  const sw = esc(path);
-  const dim = esc(path + " Brightness");
-  if (!on) {
-    return [`      wbActuatorSet(${dim}, 0, ${rule}, 50);`, `      wbActuatorSet(${sw}, false, ${rule}, 50);`].join("\n");
-  }
-  return [`      wbActuatorSet(${dim}, 100, ${rule}, 50);`, `      wbActuatorSet(${sw}, true, ${rule}, 50);`].join("\n");
+/** Кнопка только переключает ячейку. Яркость и канал пишет мост fl_rt_cmd. */
+function virtualAssign(cell, expr) {
+  return `      dev["form_logic_os"][${esc(cell)}] = ${expr};`;
 }
 
 function emitToggle(sol) {
   const id = DESK_PREFIX + sol.id + "_toggle";
   const when = triggerWhen(sol.trigger);
   const loads = (sol.targets || []).map(pathOf).filter(Boolean);
-  if (!when || !loads.length) return "";
+  const cells = loads.map(virtCell).filter(Boolean);
+  if (!when || !cells.length) return "";
   const mode = String(sol?.params?.mode || "toggle").toLowerCase();
-  const body =
-    mode === "off"
-      ? loads.map((p) => holdEcho(p, compilerSet(p, false, id))).join("\n")
-      : mode === "on"
-        ? loads.map((p) => holdEcho(p, compilerSet(p, true, id))).join("\n")
-        : loads.map((p) => holdEcho(p, compilerToggle(p, id))).join("\n");
+  let body;
+  if (mode === "off" || mode === "on") {
+    body = cells.map((c) => virtualAssign(c, mode === "on" ? "true" : "false")).join("\n");
+  } else {
+    body = [
+      "      var anyOn = false;",
+      ...cells.map((c) => `      if (wbIsOn(dev["form_logic_os"][${esc(c)}])) anyOn = true;`),
+      "      var wantState = !anyOn;",
+      ...cells.map((c) => virtualAssign(c, "wantState")),
+    ].join("\n");
+  }
   return [
     `defineRule(${esc(id)}, {`,
     `  whenChanged: ${esc(when)},`,
