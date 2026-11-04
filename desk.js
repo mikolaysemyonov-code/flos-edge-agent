@@ -475,16 +475,20 @@
       });
       const ritual = $("ritual");
       const busLine = $("bus");
-      if (busLine) busLine.hidden = tab === "intro";
+      const pageTitle = $("pageTitle");
+      const kicker = document.querySelector(".kicker");
+      if (pageTitle) {
+        pageTitle.textContent = tab === "mark" ? "Комнаты" : tab === "cards" ? "Сцены" : tab === "poured" ? "На щит" : "Обход";
+      }
+      if (kicker) kicker.hidden = tab !== "intro";
+      if (busLine) busLine.hidden = tab === "intro" || tab === "poured";
       if (ritual) {
-        ritual.hidden = tab === "intro";
-        ritual.textContent = tab === "intro"
-          ? ""
-          : tab === "mark"
-            ? "Одна комната за раз. Три коротких нажатия, затем имя."
-            : tab === "cards"
-              ? "Правило — когда кнопка и свет уже названы."
-              : "Сначала имена. Потом сценарии. Один раз.";
+        ritual.hidden = tab === "intro" || tab === "poured";
+        ritual.textContent = tab === "mark"
+          ? "Одна комната. Сначала кнопка, потом свет."
+          : tab === "cards"
+            ? "Кнопка уже знает комнату. Здесь она получает дело."
+            : "";
       }
       if (tab === "mark") renderMark();
       if (tab === "cards") {
@@ -501,11 +505,11 @@
       if (location.hash.replace("#", "") !== tab) history.replaceState(null, "", "#" + tab);
     }
     function previewStatusRu(s) {
-      if (s === "blocked") return "без имени — не зальём";
+      if (s === "blocked") return "без имени";
       if (s === "name") return "имя";
       if (s === "new_name") return "новое имя";
-      if (s === "card") return "карточка";
-      if (s === "no_card") return "нет карточки";
+      if (s === "card") return "сценарий";
+      if (s === "no_card") return "без сценария";
       return s;
     }
     function shelfLabel(key) {
@@ -603,13 +607,13 @@
       const bus = $("bus");
       if (!bus) return;
       const base = bus.dataset.base;
-      if (!base || !/модулей/.test(base)) return;
+      if (!base || !/модул/.test(base)) return;
       bus.replaceChildren(base);
       if (!lastGapCount) return;
       const go = document.createElement("button");
       go.type = "button";
       go.className = "gapjump";
-      go.textContent = lastGapCount + " без карточки";
+      go.textContent = lastGapCount + " без сценария";
       go.addEventListener("click", () => {
         setTab("poured");
         requestAnimationFrame(() => {
@@ -1058,7 +1062,7 @@
     }
     function laneRu(item) {
       if (item && item.status === "blocked") return "блок";
-      return isNewItem(item) ? "новое" : "на контроллере";
+      return isNewItem(item) ? "" : "на щите";
     }
     function collectReadyItems() {
       const items = [];
@@ -1149,7 +1153,7 @@
         openPourMod = "";
         renderReady();
       });
-      back.querySelector("span").textContent = "К новому";
+      back.hidden = true;
       box.appendChild(back);
       if (!lastReleases.length) {
         const empty = document.createElement("p");
@@ -1170,27 +1174,16 @@
         const ttl = document.createElement("div");
         ttl.className = "ttl";
         // f36878e3 · 13.10 — коротко; полный fnv1a32:… в title для отладки
-        const short =
-          rel.label ||
-          [rel.shortId || String(rel.revisionId || "").replace(/^(?:fnv1a32:|sha256:)/i, "").slice(0, 8), rel.dayLabel]
-            .filter(Boolean)
-            .join(" · ") ||
-          String(rel.revisionId || "");
-        ttl.textContent = short;
+        ttl.textContent = relWhen(rel.savedAt) || "Запись";
         ttl.title = String(rel.revisionId || "");
         const hint = document.createElement("span");
         hint.className = "hint";
-        const parent = lastReleases.find((p) => p.revisionId === rel.parentId);
-        const parentShort = rel.parentShortId || (parent && (parent.shortId || parent.label)) || "";
-        const caret = rel.current && (parentShort || rel.parentId) ? "^ " + (parentShort || rel.parentId) : "";
-        const when = relWhen(rel.savedAt);
-        const timeOnly = when.includes(" ") ? when.split(" ").slice(1).join(" ") : when;
-        const sameWhen = rel.current && parent && relWhen(rel.savedAt) === relWhen(parent.savedAt);
-        hint.textContent = [sameWhen ? "" : timeOnly, caret, releaseWhatRu(rel)].filter(Boolean).join(" · ");
+        hint.textContent = releaseWhatRu(rel);
         left.append(ttl, hint);
         const st = document.createElement("span");
         st.className = "st" + (rel.current ? " ok" : "");
-        st.textContent = rel.current ? "Сейчас" : "Было";
+        st.textContent = rel.current ? "эта" : "";
+        if (!st.textContent) st.hidden = true;
         top.append(left, st);
         cap.appendChild(top);
         li.appendChild(cap);
@@ -1289,15 +1282,17 @@
       ico.innerHTML = MOD_ICO[moduleKind(shelf || { deviceTopicKey: key })] || MOD_ICO.led;
       const cat = document.createElement("span");
       cat.className = "cat on";
-      cat.textContent = n + (n === 1 ? " линия" : " линии");
+      cat.hidden = true;
       top.append(ico, cat);
       const vt = document.createElement("span");
       vt.className = "vt";
-      vt.textContent = sku || key;
+      const rooms = [...new Set(chunk.map((i) => i.room).filter(Boolean))];
+      const names = chunk.map((i) => i.title).filter(Boolean);
+      vt.textContent = rooms.length ? rooms.join(" · ") : (names[0] || "Свет");
+      vt.title = sku || key;
       const vs = document.createElement("span");
       vs.className = "vs";
-      const rooms = [...new Set(chunk.map((i) => i.room).filter(Boolean))];
-      vs.textContent = rooms.length ? rooms.join(" · ") : "имена / карточки";
+      vs.textContent = names.slice(0, 4).join(" · ");
       const bars = document.createElement("div");
       bars.className = "ch-bars";
       bars.setAttribute("aria-hidden", "true");
@@ -1314,10 +1309,11 @@
       foot.className = "mod-foot";
       const open = document.createElement("span");
       open.className = "mod-open";
-      open.textContent = "Открыть";
+      open.hidden = true;
       const badge = document.createElement("span");
       badge.className = "mod-badge" + (lit ? " lit" : "");
-      badge.textContent = lit ? ("Горит " + lit) : "Новое";
+      badge.textContent = lit ? ("горит " + lit) : "";
+      if (!badge.textContent) badge.hidden = true;
       foot.append(open, badge);
       btn.append(top, vt, vs, bars, foot);
       btn.addEventListener("click", () => {
@@ -1339,7 +1335,7 @@
         const back = document.createElement("button");
         back.type = "button";
         back.className = "back ghost-back";
-        back.innerHTML = "<svg viewBox='0 0 24 24'><path d='M15 18l-6-6 6-6'/></svg><span>Все модули</span>";
+        back.innerHTML = "<svg viewBox='0 0 24 24'><path d='M15 18l-6-6 6-6'/></svg><span>Назад</span>";
         back.addEventListener("click", closePourMod);
         const head = document.createElement("div");
         head.className = "vcard sky on";
@@ -1374,18 +1370,19 @@
         pills.className = "mod-pills";
         const occ = document.createElement("span");
         occ.className = "mod-pill";
-        occ.textContent = chunk.length + " новое";
+        occ.hidden = true;
         const bus = document.createElement("span");
         bus.className = "mod-pill" + (lit ? " lit" : " on");
-        bus.textContent = lit ? ("Горит " + lit) : "На шине";
+        bus.textContent = lit ? ("горит " + lit) : "";
+        if (!bus.textContent) bus.hidden = true;
         pills.append(occ, bus);
         head.append(top, vt, vs, bars, pills);
         const tip = document.createElement("p");
         tip.className = "meta";
         const blocked = chunk.filter((i) => i.status === "blocked").length;
         tip.textContent = blocked
-          ? ("Блок · " + blocked + " без имени — дайте имя в «Разметить» или «Снять».")
-          : (chunk.length ? "Проверьте линии, затем «Записать на щит»." : "В этом модуле нового нет.");
+          ? (blocked + " без имени. Назовите в «Комнаты».")
+          : "";
         const ul = document.createElement("ul");
         ul.className = "channels drill-list";
         chunk.slice().sort(byContact).forEach((i) => ul.appendChild(readyCard(i, i.room)));
@@ -1543,9 +1540,9 @@
       const diskN = all.filter((i) => pourLane(i) === "disk").length;
       // Как Vercel: новое → залить; сценарии на щите; журнал откатов. Без лишней «Разметки».
       const tabs = [
-        { id: "send", ru: "Новое" + (sendN ? " · " + sendN : "") },
+        { id: "send", ru: "Сейчас" },
         { id: "rules", ru: "Сценарии" },
-        { id: "hist", ru: "Журнал" + (lastReleases.length ? " · " + lastReleases.length : "") },
+        { id: "hist", ru: "Раньше" },
       ];
       if (!tabs.some((t) => t.id === pouredPane)) pouredPane = "send";
       bar.hidden = pouredOpen();
@@ -1575,18 +1572,16 @@
       const show = (pouredPane === "send" || pouredPane === "hist") && !pouredOpen();
       wrap.hidden = !show;
       const sendN = collectReadyItems().filter((i) => pourLane(i) === "send").length;
-      const solN = deskSolutions.length;
+      const canWrite = canPourNamesDesk || canPourRulesDesk;
       if (sum) {
         if (show && pouredPane === "send") {
           sum.hidden = false;
-          const parts = [];
-          if (canPourNamesDesk) parts.push("имена");
-          if (canPourRulesDesk) parts.push("сценарии" + (solN ? " · " + solN : ""));
-          if (sendN) parts.push(sendN + " новое");
-          sum.textContent = parts.length ? parts.join(" · ") : "Нечего лить — стол как на щите";
+          sum.textContent = !canWrite && !sendN
+            ? "На щите уже то, что вы назвали."
+            : (sendN ? ("Ещё не на щите: " + sendN + ".") : "Можно записать.");
         } else if (show && pouredPane === "hist") {
           sum.hidden = false;
-          sum.textContent = "Откат — «Вернуть». История не стирается.";
+          sum.textContent = "Прошлые записи. Текущая не сотрётся из списка.";
         } else {
           sum.hidden = true;
           sum.textContent = "";
@@ -1600,15 +1595,20 @@
       const namesBtn = $("pourNames");
       const rulesBtn = $("pourRules");
       const repairBtn = $("pour");
-      const canWrite = canPourNamesDesk || canPourRulesDesk;
       if (allBtn) {
         allBtn.hidden = pouredPane === "hist";
         allBtn.disabled = !canWrite;
         allBtn.textContent = "Записать на щит";
         allBtn.title = canWrite ? "Имена и сценарии одним разом" : "На щите уже то же, что на столе";
       }
-      if (namesBtn) namesBtn.hidden = true;
-      if (rulesBtn) rulesBtn.hidden = true;
+      if (namesBtn) {
+        namesBtn.hidden = true;
+        namesBtn.textContent = "Залить имена";
+      }
+      if (rulesBtn) {
+        rulesBtn.hidden = true;
+        rulesBtn.textContent = "Залить сценарии";
+      }
       if (repairBtn) {
         const showRepair = pouredPane === "hist" && canRepairDesk && !canPourNamesDesk;
         repairBtn.hidden = !showRepair;
@@ -1814,7 +1814,7 @@
             const headEl = $("previewHead");
             if (headEl) {
               headEl.style.color = "";
-              headEl.textContent = "На столе. Дальше: «Залить сценарии».";
+              headEl.textContent = "На столе. Когда закончите обход — «На щит».";
             }
             loadPreview();
             paintPourButtons();
@@ -1921,9 +1921,8 @@
       if (!items.length) {
         const empty = document.createElement("p");
         empty.className = "empty";
-        empty.textContent = pouredPane === "send"
-          ? "Нового нет — стол совпадает с контроллером."
-          : "Сценариев на контроллере пока нет.";
+        empty.textContent = pouredPane === "send" ? "" : "Сценариев на щите пока нет.";
+        if (!empty.textContent) empty.hidden = true;
         box.appendChild(empty);
       }
       const head = $("previewHead");
@@ -2404,8 +2403,8 @@
     function stampDiskScenes() {
       const n = (pouredRules || []).filter((r) => r.kind === "user").length;
       $("diskScenes").textContent = n
-        ? n + " на щите — правьте здесь или в «Залить · Сценарии»."
-        : "Соберите карточку ниже → «На стол» → «Залить».";
+        ? (n === 1 ? "Один сценарий уже на щите." : (n + " сценария уже на щите."))
+        : "Соберите сцену. На щит она уйдёт вместе с именами.";
     }
     let cardSheetDispose = null;
     function closeCardSheet() {
@@ -2814,9 +2813,7 @@
             const head = $("previewHead");
             if (head) {
               head.style.color = "";
-              head.textContent = canPourNamesDesk
-                ? "На столе. Сначала «1 · Залить имена», потом сценарии."
-                : "На столе. Можно «2 · Залить сценарии».";
+              head.textContent = "Сцена на столе. Запишите на щит, когда обход закончен.";
             }
             paintPourButtons();
             renderReady();
@@ -3016,7 +3013,7 @@
         }
       } catch (e) {
         box.className = "glass status bad";
-        main.textContent = "Нет /runtime/health — откройте стол с сети щита.";
+        main.textContent = "Щит не ответил. Откройте эту страницу в его сети.";
         if (sub) { sub.hidden = true; sub.textContent = ""; }
       }
     }
@@ -3027,7 +3024,7 @@
       mask.hidden = false;
       box.replaceChildren();
       const h = document.createElement("h3");
-      h.textContent = "Полевой сертификат";
+      h.textContent = "Готовность";
       const p = document.createElement("p");
       p.className = "meta";
       p.textContent = "Спрашиваю щит…";
@@ -3287,7 +3284,7 @@
         loadLast().then(() => {
           const head = $("previewHead");
           if (head && (canPourNamesDesk || canPourDesk)) {
-            head.textContent = "Имя на столе → шаг 3 «Залить» → «Залить имена».";
+            head.textContent = "Имя на столе. На щит оно уйдёт одной записью.";
           }
         });
       }).catch(() => {});
@@ -5477,15 +5474,18 @@
       const el = $("benchReady");
       if (!el) return;
       if (markingUnreadable) {
-        el.textContent = "Файл стола не читается. На диске он не стёрт, на экране плана нет.";
+        el.hidden = false;
+        el.textContent = "Черновик не читается. На диске он цел, на экране его нет.";
         return;
       }
       if (shieldClockUnverified) {
-        el.textContent = "Время щита не прочитано. Сверьте часы контроллера с телефоном.";
+        el.hidden = false;
+        el.textContent = "Время щита не прочитано. Сверьте с телефоном.";
         return;
       }
       if (shieldClockOk === false) {
-        el.textContent = "Часы щита неверные. Сценарии по времени заработают не в тот час.";
+        el.hidden = false;
+        el.textContent = "Часы щита не совпадают с телефоном. Вечерний свет включится не в тот час.";
         return;
       }
       const keys = keyPlan.length;
@@ -5511,8 +5511,10 @@
         && keys > 0 && keysBound === keys
         && (lines === 0 || linesBound === lines);
       const clockBit = shieldClockLabel ? "часы " + shieldClockLabel : "";
-      el.textContent = (ready ? "К стенду готово: " : "К стенду ещё: ")
-        + [busText, keyText, lineText, clockBit].filter(Boolean).join(" · ");
+      el.hidden = ready;
+      el.textContent = ready
+        ? ""
+        : [!scan ? "Сначала обновите шину." : "", busText === "шина спокойна" ? "" : busText, keyText, lineText, clockBit].filter(Boolean).join(" · ");
     }
     function renderMark() {
       paintBenchReady();
@@ -5536,7 +5538,7 @@
             ? "Комнаты уже есть. Включите линию, посмотрите, что загорелось, и назовите светильник."
             : modFamily === "pair"
               ? "1 · Прозвон: нажмите физ. кнопку — увидите имя и импульс связанных линий."
-              : "1 · Модуль → канал: комната и тип. Или «Клавиши» / «Линии» / «Прозвон».";
+              : "Назовите комнату и то, что в ней включается.";
       }
       const body = $("mark-body");
       if (!body) return;
@@ -5623,12 +5625,11 @@
         return n + (s.channels || []).filter(function (c) { return c.source === "rules" && c.name; }).length;
       }, 0);
       lastBusScan = j.scan || null;
-      let line = shelves.length + " модулей" +
-        (named ? " · " + named + " имён из разметки" : "");
-      if (j.scan && j.scan.truncated) line += " · скан обрезан";
-      else if (j.scan && j.scan.shortScan) line += " · " + gapScanText(j.scan);
-      else if (j.scan && j.scan.settled === false) line += " · шина ещё дописывается";
-      else if (j.scan && Number(j.scan.offlineDeviceCount) > 0) line += " · молчит " + j.scan.offlineDeviceCount;
+      let line = "На шине " + shelves.length + (shelves.length === 1 ? " модуль" : " модулей");
+      if (j.scan && j.scan.truncated) line += ". Список обрезан";
+      else if (j.scan && j.scan.shortScan) line += ". " + gapScanText(j.scan);
+      else if (j.scan && j.scan.settled === false) line += ". Ещё дописывается";
+      else if (j.scan && Number(j.scan.offlineDeviceCount) > 0) line += ". Молчит " + j.scan.offlineDeviceCount;
       $("bus").dataset.base = line;
       $("bus").textContent = line;
       $("bus").title = j.brokerLabel ? ("Шина " + j.brokerLabel) : "";

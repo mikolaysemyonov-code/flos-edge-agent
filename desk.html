@@ -10,9 +10,9 @@
   <main>
     <p class="kicker">Сегодня</p>
     <div class="top">
-      <h1>Обход дома</h1>
+      <h1 id="pageTitle">Обход</h1>
       <div class="top-actions">
-        <button id="fieldCert" class="ghost" type="button">Сертификат</button>
+        <button id="fieldCert" class="ghost" type="button">Готовность</button>
         <button id="scan" class="ghost" type="button">Обновить</button>
       </div>
     </div>
@@ -74,16 +74,19 @@
     </section>
 
     <section id="panel-mark" class="panel glass" hidden data-tab="mark">
-      <p class="meta" id="markIntro">1 · Модуль → канал: комната и тип. Или «Клавиши» / «Линии» — план и скан.</p>
-      <div class="mark-actions">
-        <button id="passportXlsx" class="ghost" type="button" title="Комнаты, клавиши, нагрузки, топики и связи. На флешку заказчику и в архив проекта.">Таблица Excel</button>
-        <button id="passportJson" class="ghost" type="button" title="Черновик стола. Класть обратно, если файл стола порвался. Не заливает правила.">JSON стола</button>
-        <button id="passportJsonRestore" class="ghost" type="button" title="Положить сохранённый JSON на место черновика. Правила на щите не меняются.">Вернуть JSON</button>
-        <input id="passportJsonFile" type="file" accept="application/json,.json" hidden>
-        <p id="benchReady" class="meta">К стенду: шину ещё не снимали.</p>
-        <button id="clearMarks" class="ghost mark-clear" type="button" title="Убрать имена со стола. Типовые и комнаты останутся. Щит не трогаем.">Снять разметку</button>
-        <button id="clearProject" class="ghost mark-clear mark-wipe" type="button" title="Стереть разметку, планы клавиш/линий, типовые и комнаты. Можно сразу снять desk_sol со щита.">Очистить проект</button>
-      </div>
+      <p class="meta" id="markIntro">Назовите комнату и то, что в ней включается.</p>
+      <p id="benchReady" class="meta" hidden></p>
+      <details class="more">
+        <summary>Файлы</summary>
+        <div class="mark-actions">
+          <button id="passportXlsx" class="ghost" type="button">Таблица для заказчика</button>
+          <button id="passportJson" class="ghost" type="button">Сохранить черновик</button>
+          <button id="passportJsonRestore" class="ghost" type="button">Вернуть черновик</button>
+          <input id="passportJsonFile" type="file" accept="application/json,.json" hidden>
+          <button id="clearMarks" class="ghost mark-clear" type="button">Снять имена</button>
+          <button id="clearProject" class="ghost mark-clear mark-wipe" type="button">Начать заново</button>
+        </div>
+      </details>
       <div class="filters" id="modFamily" role="tablist" aria-label="Семейство">
         <button type="button" data-fam="all" aria-pressed="true">Все</button>
         <button type="button" data-fam="light" aria-pressed="false">Свет</button>
@@ -108,7 +111,7 @@
     <div id="cardSheet" class="sheet" hidden></div>
 
     <section id="panel-poured" class="panel glass" hidden data-tab="poured">
-      <p class="meta">Одна кнопка. Имена и сценарии записываются на щит вместе.</p>
+      <p class="meta" hidden>Запись на щит.</p>
       <div id="pourDock" class="pour-dock">
         <p id="pourSummary" class="pour-summary" hidden></p>
         <p id="pouredHead" class="pour-disk meta" hidden></p>
@@ -147,19 +150,19 @@
   <nav class="dock" role="tablist" aria-label="Ритуал пуска">
     <button class="tab" type="button" role="tab" data-tab="intro" aria-selected="true">
       <span class="ico"><svg viewBox="0 0 24 24"><path d="M12 3v18"/><path d="M5 8h14"/><path d="M5 16h14"/></svg></span>
-      <span>Начало</span>
+      <span>Обход</span>
     </button>
     <button class="tab" type="button" role="tab" data-tab="mark" aria-selected="false">
       <span class="ico"><svg viewBox="0 0 24 24"><path d="M3 7h18M3 12h18M3 17h12"/></svg></span>
-      <span>Разметить <span class="n" id="n-mark"></span></span>
+      <span>Комнаты <span class="n" id="n-mark"></span></span>
     </button>
     <button class="tab" type="button" role="tab" data-tab="cards" aria-selected="false">
       <span class="ico"><svg viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg></span>
-      <span>Типовые <span class="n" id="n-cards"></span></span>
+      <span>Сцены <span class="n" id="n-cards"></span></span>
     </button>
     <button class="tab" type="button" role="tab" data-tab="poured" aria-selected="false">
       <span class="ico"><svg viewBox="0 0 24 24"><path d="M12 20V8"/><path d="m6 14 6 6 6-6"/><path d="M4 4h16"/></svg></span>
-      <span>Залить <span class="n" id="n-poured"></span></span>
+      <span>На щит <span class="n" id="n-poured"></span></span>
     </button>
   </nav>
   <script src="/desk.js" defer></script>

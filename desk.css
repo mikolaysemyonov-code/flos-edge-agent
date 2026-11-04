@@ -11,9 +11,7 @@
     html, body { margin: 0; min-height: 100%; }
     body {
       font: 15px/1.45 -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", system-ui, sans-serif;
-      background:
-        radial-gradient(1200px 480px at 50% -80px, rgb(var(--sky) / .14), transparent 60%),
-        #000;
+      background: #000;
       color: var(--ink);
       -webkit-font-smoothing: antialiased;
     }
@@ -58,13 +56,17 @@
       box-shadow: inset 0 1px 0 rgb(255 255 255 / .14), 0 12px 40px -18px rgb(0 0 0 / .55);
       backdrop-filter: blur(24px);
     }
-    .status { display: flex; align-items: flex-start; gap: .65rem; padding: .7rem .95rem; margin-bottom: 1rem; }
+    .status, .glass.status {
+      display: flex; align-items: flex-start; gap: .55rem;
+      padding: 0 0 1.1rem; margin: 0;
+      background: none; border: 0; box-shadow: none; backdrop-filter: none;
+    }
     .status-lines { min-width: 0; flex: 1; }
-    .dot { width: .55rem; height: .55rem; border-radius: 99px; background: #52525b; flex: none; margin-top: .35rem; }
-    .ok .dot { background: rgb(var(--ok)); box-shadow: 0 0 12px rgb(var(--ok) / .7); }
-    .warn .dot { background: #eab308; box-shadow: 0 0 12px rgb(234 179 8 / .55); }
-    .bad .dot { background: rgb(var(--bad)); box-shadow: 0 0 12px rgb(var(--bad) / .55); }
-    .status p { margin: 0; font-size: .82rem; color: var(--mute); }
+    .dot { width: .45rem; height: .45rem; border-radius: 99px; background: #3a3a3c; flex: none; margin-top: .28rem; }
+    .ok .dot { background: rgb(var(--ok)); box-shadow: none; }
+    .warn .dot { background: #eab308; box-shadow: none; }
+    .bad .dot { background: rgb(var(--bad)); box-shadow: none; }
+    .status p { margin: 0; font-size: .95rem; color: rgb(235 235 245 / .6); letter-spacing: -.01em; }
     .status .status-sub { margin-top: .2rem; font-size: .72rem; opacity: .85; }
     .ok #healthMain { color: rgb(var(--ok)); }
     .warn #healthMain { color: #facc15; }
@@ -306,34 +308,26 @@
     details.more summary { color: var(--mute); font-size: .8rem; cursor: pointer; }
     details.more p.meta { margin: .35rem 0 .2rem; white-space: pre-line; }
     .empty { margin: 2.5rem 1rem; text-align: center; color: var(--mute); }
-    #panel-intro.panel {
+    #panel-intro.panel,
+    .panel.glass {
       background: transparent; border: 0; box-shadow: none;
       backdrop-filter: none; padding-left: 0; padding-right: 0;
     }
-    .walk { list-style: none; margin: .15rem 0 0; padding: 0; display: flex; flex-direction: column; gap: .7rem; }
+    .walk {
+      list-style: none; margin: .15rem 0 0; padding: 0;
+      display: flex; flex-direction: column; gap: 0;
+      background: #1c1c1e; border-radius: 16px; overflow: hidden;
+    }
     .walk li {
-      display: flex; flex-direction: column; align-items: flex-start; gap: .28rem;
-      padding: 1rem 1.05rem 1.05rem;
-      border-radius: 1.35rem;
-      background: linear-gradient(180deg, rgb(255 255 255 / .11), rgb(255 255 255 / .035));
-      border: 1px solid rgb(255 255 255 / .14);
-      box-shadow: inset 0 1px 0 rgb(255 255 255 / .2), 0 18px 40px -26px rgb(0 0 0 / .85);
-      backdrop-filter: blur(22px) saturate(1.4);
-      -webkit-backdrop-filter: blur(22px) saturate(1.4);
-      transition: box-shadow .22s ease, transform .22s ease, border-color .22s ease;
+      display: flex; flex-direction: column; align-items: flex-start; gap: .2rem;
+      padding: .95rem 1rem 1rem;
+      background: transparent; border: 0; border-radius: 0;
+      box-shadow: none; backdrop-filter: none;
+      border-bottom: .5px solid rgb(84 84 88 / .65);
     }
-    .walk li:active {
-      transform: scale(.985);
-      border-color: rgb(var(--sky) / .45);
-      box-shadow:
-        inset 0 1px 0 rgb(255 255 255 / .28),
-        0 0 0 1px rgb(var(--sky) / .35),
-        0 0 28px rgb(var(--sky) / .38);
-    }
-    .walk .step {
-      color: rgb(186 230 253);
-      font-size: .68rem; font-weight: 650; letter-spacing: .16em;
-    }
+    .walk li:last-child { border-bottom: 0; }
+    .walk li:active { background: #2c2c2e; }
+    .walk .step { display: none; }
     .walk strong { font-size: 1.12rem; font-weight: 650; letter-spacing: -.03em; }
     .walk li > span:not(.step) { color: rgb(228 228 231 / .78); font-size: .86rem; line-height: 1.4; }
     .walk .ghost {
@@ -370,11 +364,9 @@
     .tab svg { width: 15px; height: 15px; stroke: currentColor; fill: none; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
     .tab .n { font-variant-numeric: tabular-nums; }
     .tab[aria-selected="true"] { color: #fff; }
-    .tab[aria-selected="true"] .ico {
-      color: rgb(186 230 253);
-      border-color: rgb(var(--sky) / .45);
-      box-shadow: inset 0 1px 0 rgb(255 255 255 / .3), 0 0 16px rgb(var(--sky) / .35);
-    }
+    .tab .ico { background: none; border: 0; box-shadow: none; width: auto; height: auto; }
+    .tab[aria-selected="true"] { color: #fff; }
+    .tab[aria-selected="true"] .ico { color: #fff; box-shadow: none; border: 0; }
     .pair { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.15fr); gap: .35rem; margin-top: .15rem; }
     .pair select.bind { margin-top: 0; }
     .namebtn {
@@ -465,17 +457,21 @@
       display: flex; flex-wrap: wrap; gap: .55rem; margin: .35rem 0 0;
     }
     .pour-strip .pour-primary {
-      min-height: 2.55rem; padding: .55rem 1rem; font-weight: 700;
-      flex: 1 1 8rem;
+      width: 100%; min-height: 3.15rem; padding: .7rem 1rem;
+      border-radius: 14px; font-size: 1.05rem; font-weight: 600;
+      color: #fff; background: #0A84FF; box-shadow: none; flex: 1 1 100%;
     }
+    .pour-strip .pour-primary:disabled { background: #2c2c2e; color: #8e8e93; opacity: 1; }
     .pour-summary {
-      margin: 0;
+      margin: 0 0 .85rem;
       padding: 0;
       border: 0;
       background: none;
-      color: rgb(186 230 253);
-      font-size: .82rem;
-      font-weight: 650;
+      color: rgb(235 235 245 / .6);
+      font-size: 1.02rem;
+      font-weight: 400;
+      letter-spacing: -.015em;
+      line-height: 1.35;
     }
     .pour-disk {
       margin: .25rem 0 0;
@@ -725,7 +721,7 @@
       padding: .22rem .65rem; border-radius: 999px; cursor: pointer;
     }
     .filters button[aria-pressed="true"] {
-      color: rgb(186 230 253); border-color: rgb(var(--sky) / .4); background: rgb(var(--sky) / .12);
+      color: #fff; border-color: transparent; background: #3a3a3c;
     }
     .modopen { display: block; }
     .back {
@@ -747,26 +743,16 @@
     .vitrine { display: grid; gap: .65rem; }
     @media (min-width: 640px) { .vitrine { grid-template-columns: 1fr 1fr; } }
     button.vcard, div.vcard {
-      appearance: none; border: 1px solid rgb(255 255 255 / .12);
-      background: linear-gradient(180deg, rgb(255 255 255 / .06), transparent);
+      appearance: none; border: 0;
+      background: #1c1c1e;
       color: inherit; font: inherit; text-align: left;
-      min-height: 0; border-radius: 1rem; padding: .7rem .8rem .75rem;
-      display: flex; flex-direction: column; gap: .35rem;
+      min-height: 0; border-radius: 16px; padding: 1rem 1rem .95rem;
+      display: flex; flex-direction: column; gap: .28rem;
     }
     button.vcard { cursor: pointer; }
-    button.vcard:hover {
-      border-color: rgb(var(--sky) / .4);
-      background: linear-gradient(180deg, rgb(var(--sky) / .1), transparent);
-    }
-    button.vcard.on, div.vcard.on {
-      border-color: rgb(var(--sky) / .45);
-      box-shadow: inset 0 0 0 1px rgb(var(--sky) / .14);
-    }
-    /* Янтарь только когда канал реально горит (MQTT lastValue), не от типа LED. */
-    button.vcard.lit, div.vcard.lit {
-      border-color: rgb(251 191 36 / .4);
-      box-shadow: inset 0 0 0 1px rgb(251 191 36 / .12);
-    }
+    button.vcard:hover { background: #2c2c2e; }
+    button.vcard.on, div.vcard.on { border: 0; box-shadow: none; }
+    button.vcard.lit, div.vcard.lit { border: 0; box-shadow: none; }
     div.vcard { margin: 0 0 .85rem; cursor: default; }
     .vcard .cat.on { color: rgb(186 230 253); }
     .vcard .vtop { display: flex; align-items: center; justify-content: space-between; gap: .5rem; }
