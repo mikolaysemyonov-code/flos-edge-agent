@@ -288,18 +288,29 @@ export function deskInputBaseControl(controlId) {
 const PRESS_ON_WIRE = { Short: "Single", Single: "Single", Long: "Long", Double: "Double", Shortlong: "Shortlong" };
 
 /**
- * Кнопка Input слушает счётчик. EXT остаётся уровнем.
- * На MCM8 «Single Press Counter» молчит, пока модуль не распознал жест и канал не опрашивается.
- * Замыкание «Input N counter» растёт с каждым нажатием в любом режиме. Дим остаётся на Long/Shortlong.
+ * Кнопка Input. EXT остаётся уровнем.
+ * Короткое на MCM8 — сам Input: он точно меняется при нажатии.
+ * Счётчики жеста на этом щите не будят правило. Отпускание отсекает правило (wbIsOn).
+ * Дим по-прежнему Long / Shortlong Press Counter.
  */
 export function deskButtonCounter(controlId, kind = "Short", deviceTopicKey = "") {
   const base = deskInputBaseControl(controlId);
   const wire = PRESS_ON_WIRE[kind] || "Single";
   if (base && /^Input\s+/i.test(base)) {
-    if (wire === "Single" && /mcm/i.test(String(deviceTopicKey || ""))) return `${base} counter`;
+    if (wire === "Single" && /mcm/i.test(String(deviceTopicKey || ""))) return base;
     return `${base} ${wire} Press Counter`;
   }
   return String(controlId || "").trim();
+}
+
+/** Строка в then: на уровне входа действуем только в момент нажатия, не на отпускании. */
+export function deskPressEdgeLine(whenPath) {
+  const when = String(whenPath || "");
+  if (/\/Input\s+[A-Z]?\d+$/i.test(when)) return "      if (!wbIsOn(newValue)) return;";
+  if (/\scounter$/i.test(when) || /Press Counter$/i.test(when)) {
+    return '      if (newValue === 0 || newValue === "0") return;';
+  }
+  return "";
 }
 
 export function isDeskDeviceKey(key) {

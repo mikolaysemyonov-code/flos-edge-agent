@@ -22,8 +22,8 @@ function planControlBase(controlId) {
 export function pressTopic(deviceTopicKey, controlId) {
   const base = deskInputBaseControl(controlId);
   if (base && /^Input\s+/i.test(base)) {
-    const suffix = /mcm/i.test(String(deviceTopicKey || "")) ? " counter" : " Single Press Counter";
-    return mqttControlTopic(deviceTopicKey, base + suffix);
+    if (/mcm/i.test(String(deviceTopicKey || ""))) return mqttControlTopic(deviceTopicKey, base);
+    return mqttControlTopic(deviceTopicKey, base + " Single Press Counter");
   }
   return mqttControlTopic(deviceTopicKey, controlId);
 }

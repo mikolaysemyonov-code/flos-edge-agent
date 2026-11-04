@@ -1,7 +1,7 @@
 /**
  * Сцены / шторы / охрана со стола → defineRule (кнопка → уровни на линиях).
  */
-import { deskButtonCounter } from "./runtime-desk-marking.mjs";
+import { deskButtonCounter, deskPressEdgeLine } from "./runtime-desk-marking.mjs";
 import { wbActuatorSetLines } from "./runtime-desk-pour-light.mjs";
 import { liveDeskDeviceKey } from "./runtime-desk-rules-marks.mjs";
 
@@ -85,8 +85,9 @@ function emitLevels(sol, level) {
   return [
     `defineRule(${esc(id)}, {`,
     `  whenChanged: ${esc(when)},`,
-    "  then: function () {",
+    "  then: function (newValue) {",
     "    try {",
+    deskPressEdgeLine(when),
     sets,
     "    } catch (e) { if (typeof wbRuleGuardCatch === 'function') wbRuleGuardCatch(" + esc(id) + ", e); }",
     "  }",
@@ -110,8 +111,9 @@ function emitCurtain(sol, kind) {
   return [
     `defineRule(${esc(id)}, {`,
     `  whenChanged: ${esc(when)},`,
-    "  then: function () {",
+    "  then: function (newValue) {",
     "    try {",
+    deskPressEdgeLine(when),
     lines.join("\n"),
     "    } catch (e) { if (typeof wbRuleGuardCatch === 'function') wbRuleGuardCatch(" + esc(id) + ", e); }",
     "  }",

@@ -1,7 +1,7 @@
 /**
  * Типовые со стола → defineRule в 40_rules_user.
  */
-import { deskButtonCounter } from "./runtime-desk-marking.mjs";
+import { deskButtonCounter, deskPressEdgeLine } from "./runtime-desk-marking.mjs";
 import { liveDeskDeviceKey } from "./runtime-desk-rules-marks.mjs";
 import { emitDeskClimate, isDeskClimateSolution } from "./runtime-desk-pour-climate.mjs";
 import { emitDeskCron, isDeskCronSolution } from "./runtime-desk-pour-cron.mjs";
@@ -157,10 +157,10 @@ function actuatorBool(path, expr, id, priority = 50) {
   const on = expr === "0" || expr === "1" ? expr : `${expr} ? 1 : 0`;
   const bri = expr === "0" ? "0" : expr === "1" ? "100" : `${expr} ? 100 : 0`;
   if (/\/Channel \d+$/i.test(String(path || ""))) {
-    return [
-      `      wbActuatorSet(${esc(path + " Brightness")}, ${bri}, ${rule}, ${priority});`,
-      `      wbActuatorSet(${topic}, ${on}, ${rule}, ${priority});`,
-    ].join("\n");
+    const briLine = `      wbActuatorSet(${esc(path + " Brightness")}, ${bri}, ${rule}, ${priority});`;
+    const swLine = `      wbActuatorSet(${topic}, ${on}, ${rule}, ${priority});`;
+    // Канал последним оставляет лампу на 1%. Яркость — до и после ключа.
+    return [briLine, swLine, briLine].join("\n");
   }
   return `      wbActuatorSet(${topic}, ${on}, ${rule}, ${priority});`;
 }
@@ -178,10 +178,12 @@ function emitToggle(sol) {
     body = loads.map((p) => actuatorBool(p, "1", id)).join("\n");
   } else {
     body = [
-      `      if (newValue === 0 || newValue === "0") return;`,
+      deskPressEdgeLine(when),
       `      var next = !${lightIsOnExpr(loads[0])};`,
       ...loads.map((p) => actuatorBool(p, "next", id)),
-    ].join("\n");
+    ]
+      .filter(Boolean)
+      .join("\n");
   }
   return [
     `defineRule(${esc(id)}, {`,
@@ -234,8 +236,9 @@ function emitMasterOffRestore(sol) {
     `var ${snap} = {};`,
     `defineRule(${esc(id)}, {`,
     `  whenChanged: ${esc(when)},`,
-    "  then: function () {",
+    "  then: function (newValue) {",
     "    try {",
+    deskPressEdgeLine(when),
     `      if (!${flag}) {`,
     save,
     off,
@@ -263,8 +266,9 @@ function emitCustomSet(sol) {
   return [
     `defineRule(${esc(id)}, {`,
     `  whenChanged: ${esc(when)},`,
-    "  then: function () {",
+    "  then: function (newValue) {",
     "    try {",
+    deskPressEdgeLine(when),
     sets,
     "    } catch (e) { if (typeof wbRuleGuardCatch === 'function') wbRuleGuardCatch(" + esc(id) + ", e); }",
     "  }",

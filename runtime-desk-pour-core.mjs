@@ -88,6 +88,7 @@ function emitBridge(deviceTopicKey, controlId, name) {
       "      var wantBr = on ? (bri > 0 ? bri : 80) : 0;",
       `      wbActuatorSet(${esc(bri)}, wantBr, ${esc("fl_rt_cmd_" + id)}, 40);`,
       `      wbActuatorSet(${esc(path)}, on, ${esc("fl_rt_cmd_" + id)}, 40);`,
+      `      wbActuatorSet(${esc(bri)}, wantBr, ${esc("fl_rt_cmd_" + id)}, 40);`,
       `    } catch (e) { if (typeof wbRuleGuardCatch === "function") wbRuleGuardCatch(${esc("fl_rt_cmd_" + id)}, e); }`,
       "  }",
       "});",

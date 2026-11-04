@@ -44,16 +44,17 @@ export function deskActuatePayloads(deviceTopicKey, controlId) {
   return { on: "1", off: "0", pulseMs: 800, kind: "relay" };
 }
 
-/** Включение Channel без Brightness оставляет лампу на 1%. Яркость пишем первой. */
+/** Канал без яркости зажигает лампу на 1%. Яркость пишем до ключа и ещё раз после. */
 export function deskActuateWrites(deviceTopicKey, controlId, desired) {
   const pay = deskActuatePayloads(deviceTopicKey, controlId);
   const base = `/devices/${deviceTopicKey}/controls/${controlId}`;
   const off = desired === "off";
   const writes = [];
-  if (pay.kind === "led_switch" && /^Channel\s+\d+$/i.test(String(controlId || ""))) {
-    writes.push({ topic: `${base} Brightness`, payload: off ? "0" : pay.brightness || "100" });
-  }
+  const level = { topic: `${base} Brightness`, payload: off ? "0" : pay.brightness || "100" };
+  const led = pay.kind === "led_switch" && /^Channel\s+\d+$/i.test(String(controlId || ""));
+  if (led) writes.push(level);
   writes.push({ topic: base, payload: off ? pay.off : pay.on });
+  if (led) writes.push(level);
   return writes;
 }
 
