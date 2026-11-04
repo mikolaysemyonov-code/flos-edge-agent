@@ -57,7 +57,7 @@ import {
   upsertDeskLinePlanBatch,
   upsertDeskLinePlanItem,
 } from "./runtime-desk-line-beacon.mjs";
-import { assessDeskHealth } from "./runtime-desk-health.mjs";
+import { assessDeskHealth, DESK_TIME_ZONES, deskTimeZoneById } from "./runtime-desk-health.mjs";
 import {
   deskAuditTargets,
   listDeskAuditRuns,
@@ -67,9 +67,14 @@ import {
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 
 let mqttScanHandler = null;
+let clockSetter = null;
 
 export function setRuntimeMqttScanHandler(fn) {
   mqttScanHandler = typeof fn === "function" ? fn : null;
+}
+
+export function setRuntimeClockSetter(fn) {
+  clockSetter = typeof fn === "function" ? fn : null;
 }
 
 export function serveCommissionDesk(_req, res) {
@@ -482,6 +487,43 @@ export async function handleRuntimeDeskLinePlan(req, res) {
   }
   const out = upsertDeskLinePlanItem(body);
   jsonEnd(res, out.ok ? 200 : 400, out);
+}
+
+export async function handleRuntimeDeskClock(req, res) {
+  const method = (req.method ?? "GET").toUpperCase();
+  if (method === "GET") {
+    jsonEnd(res, 200, { ok: true, zones: DESK_TIME_ZONES });
+    return;
+  }
+  if (method !== "POST") {
+    jsonEnd(res, 405, { ok: false, error: "method" });
+    return;
+  }
+  const chunks = [];
+  for await (const c of req) chunks.push(c);
+  let body = {};
+  try {
+    const raw = Buffer.concat(chunks).toString("utf8");
+    if (raw.trim()) body = JSON.parse(raw);
+  } catch {
+    jsonEnd(res, 400, { ok: false, error: "invalid_json" });
+    return;
+  }
+  const zone = deskTimeZoneById(body?.zone);
+  if (!zone) {
+    jsonEnd(res, 400, { ok: false, error: "unknown_zone" });
+    return;
+  }
+  if (!clockSetter) {
+    jsonEnd(res, 503, { ok: false, error: "clock_unavailable" });
+    return;
+  }
+  try {
+    const clock = await clockSetter(zone.id);
+    jsonEnd(res, 200, { ok: true, zone: zone.id, clock: clock || null });
+  } catch {
+    jsonEnd(res, 502, { ok: false, error: "clock_set_failed" });
+  }
 }
 
 export async function handleRuntimeDeskHealth(req, res) {

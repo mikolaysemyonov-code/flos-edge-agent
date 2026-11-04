@@ -33,6 +33,7 @@ import {
   handleRuntimeDeskKeyPlan,
   handleRuntimeDeskLinePlan,
   handleRuntimeDeskHealth,
+  handleRuntimeDeskClock,
   handleRuntimeDeskAudit,
   handleRuntimeDeskMarking,
   handleRuntimeDeskPourPreview,
@@ -876,6 +877,7 @@ function deskWriteLocked(method, urlPath) {
     urlPath === "/runtime/desk-key-plan" ||
     urlPath === "/runtime/desk-line-plan" ||
     urlPath === "/runtime/desk-audit" ||
+    urlPath === "/runtime/desk-clock" ||
     urlPath === "/runtime/mqtt-scan"
   );
 }
@@ -1019,6 +1021,17 @@ export function runtimeHttpPathHandler(req, res) {
   if ((method === "GET" || method === "PUT" || method === "POST" || method === "DELETE") && urlPath === "/runtime/desk-line-plan") {
     void handleRuntimeDeskLinePlan(req, res).catch((err) => {
       console.error("[runtime-control-plane] desk-line-plan:", err?.message ?? err);
+      if (!res.headersSent) {
+        res.statusCode = 500;
+        res.setHeader("content-type", "application/json; charset=utf-8");
+        res.end(JSON.stringify({ ok: false, error: "INTERNAL" }));
+      }
+    });
+    return true;
+  }
+  if ((method === "GET" || method === "POST") && urlPath === "/runtime/desk-clock") {
+    void handleRuntimeDeskClock(req, res).catch((err) => {
+      console.error("[runtime-control-plane] desk-clock:", err?.message ?? err);
       if (!res.headersSent) {
         res.statusCode = 500;
         res.setHeader("content-type", "application/json; charset=utf-8");

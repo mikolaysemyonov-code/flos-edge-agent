@@ -19,6 +19,7 @@
     .kicker { margin: 0; color: var(--mute); font-size: .78rem; letter-spacing: .01em; font-weight: 500; }
     .top { display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; margin: .35rem 0 1rem; }
     .top-side { display: flex; flex-direction: column; align-items: flex-end; gap: .35rem; }
+    .shield-clock-row { display: flex; align-items: center; gap: .4rem; }
     .shield-clock {
       margin: 0;
       color: rgb(var(--mute));
@@ -26,6 +27,9 @@
       font-variant-numeric: tabular-nums;
       letter-spacing: .01em;
     }
+    .shield-clock-edit { padding: .15rem .55rem; font-size: .78rem; }
+    .shield-clock-sheet { display: flex; gap: .4rem; align-items: center; }
+    .shield-clock-note { margin: 0; text-align: right; }
     .top-actions { display: flex; flex-wrap: wrap; gap: .4rem; justify-content: flex-end; }
     .cert-list { list-style: none; margin: 0; padding: 0; display: grid; gap: .4rem; }
     .cert-list li {

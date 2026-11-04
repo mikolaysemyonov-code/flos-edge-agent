@@ -19,6 +19,25 @@ function isLoad(cid) {
   return /^Channel\s+\d+$/i.test(c) || /^K\d+$/i.test(c) || /^CCT\d+$/i.test(c);
 }
 
+export const DESK_TIME_ZONES = [
+  { id: "Europe/Kaliningrad", label: "Калининград", offset: "UTC+2" },
+  { id: "Europe/Moscow", label: "Москва", offset: "UTC+3" },
+  { id: "Europe/Samara", label: "Самара", offset: "UTC+4" },
+  { id: "Asia/Yekaterinburg", label: "Екатеринбург", offset: "UTC+5" },
+  { id: "Asia/Omsk", label: "Омск", offset: "UTC+6" },
+  { id: "Asia/Krasnoyarsk", label: "Красноярск", offset: "UTC+7" },
+  { id: "Asia/Irkutsk", label: "Иркутск", offset: "UTC+8" },
+  { id: "Asia/Yakutsk", label: "Якутск", offset: "UTC+9" },
+  { id: "Asia/Vladivostok", label: "Владивосток", offset: "UTC+10" },
+  { id: "Asia/Magadan", label: "Магадан", offset: "UTC+11" },
+  { id: "Asia/Kamchatka", label: "Камчатка", offset: "UTC+12" },
+];
+
+export function deskTimeZoneById(id) {
+  const want = String(id || "").trim();
+  return DESK_TIME_ZONES.find((zone) => zone.id === want) || null;
+}
+
 function clockLabel(year, month, day, hh, mm) {
   const ok = year >= 2026 && year <= 2035;
   const dd = String(day).padStart(2, "0");

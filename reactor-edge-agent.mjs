@@ -24,17 +24,17 @@ import {
   restartWbRules,
   setRuntimeHealthExtraProvider,
 } from "./runtime-control-plane-http.mjs";
-import { setRuntimeMqttScanHandler } from "./runtime-desk-http.mjs";
+import { setRuntimeClockSetter, setRuntimeMqttScanHandler } from "./runtime-desk-http.mjs";
 import { isMarkShieldDiscoverableDeviceKey } from "./lib/mark-shield-discoverable-device.mjs";
 import { countOfflineDevices } from "./runtime-desk-shelves.mjs";
-import { assessControllerClock, clockFromHostText } from "./runtime-desk-health.mjs";
+import { assessControllerClock, clockFromHostText, deskTimeZoneById } from "./runtime-desk-health.mjs";
 import {
   classifyWbRulesJournalLines,
   splitJournalText,
 } from "./wb-rules-journal-incidents.mjs";
 
 /** Одна строка в heartbeat и snapshot — иначе UI врёт версией. */
-const EDGE_AGENT_VERSION = "edge-pilot-v2.lan-desk-258";
+const EDGE_AGENT_VERSION = "edge-pilot-v2.lan-desk-259";
 
 /** Prefer `FLOS_*` (FL OS); fall back to legacy `REACTOR_*` for existing deployments. */
 function env(primary, legacy) {
@@ -622,23 +622,45 @@ function readWbRulesJournalTail(lines = 80, timeoutMs = 15_000) {
 let busIncidentCache = { at: 0, items: [] };
 let hostClockCache = { at: 0, clock: null };
 
+function hostZoneLine(lines) {
+  return lines.find((line) => deskTimeZoneById(line))
+    || lines.find((line) => /^[A-Za-z]+\/[A-Za-z0-9_+-]+$/.test(line))
+    || "";
+}
+
 function controllerClockForDesk() {
   const now = Date.now();
   if (hostClockCache.clock && now - hostClockCache.at < 60_000) return hostClockCache.clock;
   let text = "";
   try {
-    text = execSync("nsenter --target 1 --mount --uts --ipc --net --pid -- date -Iseconds", {
-      encoding: "utf8",
-      timeout: 1_500,
-    });
+    text = execOnHostBash(
+      "date -Iseconds; timedatectl show -p Timezone --value 2>/dev/null || cat /etc/timezone 2>/dev/null || true",
+      2_000,
+    );
   } catch {
     text = "";
   }
-  const host = clockFromHostText(text);
-  const clock = host || assessControllerClock();
+  const lines = String(text || "").split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+  const host = clockFromHostText(lines[0] || "");
+  const zone = hostZoneLine(lines.slice(1));
+  const clock = host ? { ...host, zone } : { ...assessControllerClock(), zone };
   hostClockCache = { at: now, clock };
   return clock;
 }
+
+setRuntimeClockSetter((zone) => {
+  const known = deskTimeZoneById(zone);
+  if (!known) throw new Error("zone");
+  const quoted = shellQuoteSingle(known.id);
+  execOnHostBash(
+    "timedatectl set-timezone " + quoted
+      + " || { ln -sfn /usr/share/zoneinfo/" + known.id + " /etc/localtime && printf '%s\\n' " + quoted + " > /etc/timezone; }",
+    8_000,
+  );
+  try { restartWbRules(); } catch { /* пояс уже записан */ }
+  hostClockCache = { at: 0, clock: null };
+  return controllerClockForDesk();
+});
 
 function busIncidentsForDesk() {
   const now = Date.now();

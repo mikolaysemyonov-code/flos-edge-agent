@@ -47,6 +47,8 @@
     let shieldClockUnverified = false;
     let shieldClockLabel = "";
     let shieldClockSource = "";
+    let shieldClockZone = "";
+    let clockZones = [];
     let keyRoomFilter = "";
     let keyPlanFocus = false; /* после «+» вернуть фокус в поле подписей */
     let linePlan = [];
@@ -3064,6 +3066,7 @@
         shieldClockUnverified = clock.unverified === true;
         shieldClockLabel = clock.label || "";
         shieldClockSource = clock.source || "";
+        shieldClockZone = clock.zone || shieldClockZone;
         paintShieldClock();
         const offline = Number(mirror.offlineDeviceCount) || 0;
         const incident = Array.isArray(j.busIncidents) && j.busIncidents[0] ? j.busIncidents[0].reason : "";
@@ -5751,6 +5754,8 @@
       el.textContent = shieldClockLabel || "";
       el.title = shieldClockSource === "host" ? "Время на контроллере" : "Часы контроллера не прочитаны";
       el.hidden = !shieldClockLabel;
+      const edit = $("shieldClockEdit");
+      if (edit) edit.hidden = !shieldClockLabel;
     }
     function paintBenchReady() {
       const el = $("benchReady");
@@ -5882,6 +5887,79 @@
     }
     $("scan").onclick = () => { void scanNow(); };
     if ($("fieldCert")) $("fieldCert").onclick = () => { void openFieldCert(); };
+    if ($("shieldClockEdit")) {
+      $("shieldClockEdit").onclick = async () => {
+        const sheet = $("shieldClockSheet");
+        if (!sheet) return;
+        sheet.hidden = !sheet.hidden;
+        if (sheet.hidden) return;
+        if (!clockZones.length) {
+          try {
+            const j = await (await fetch("/runtime/desk-clock")).json();
+            clockZones = Array.isArray(j.zones) ? j.zones : [];
+          } catch { clockZones = []; }
+        }
+        const sel = $("shieldClockZone");
+        if (!sel) return;
+        sel.replaceChildren();
+        if (shieldClockZone && !clockZones.some((z) => z.id === shieldClockZone)) {
+          const current = document.createElement("option");
+          current.value = "";
+          current.textContent = "Сейчас " + shieldClockZone;
+          current.disabled = true;
+          current.selected = true;
+          sel.appendChild(current);
+        }
+        clockZones.forEach((z) => {
+          const opt = document.createElement("option");
+          opt.value = z.id;
+          opt.textContent = z.label + " · " + z.offset;
+          sel.appendChild(opt);
+        });
+        if (shieldClockZone && clockZones.some((z) => z.id === shieldClockZone)) sel.value = shieldClockZone;
+        const note = $("shieldClockNote");
+        if (note) { note.hidden = true; note.textContent = ""; }
+      };
+    }
+    if ($("shieldClockSave")) {
+      $("shieldClockSave").onclick = async () => {
+        const sel = $("shieldClockZone");
+        const note = $("shieldClockNote");
+        const zone = sel ? sel.value : "";
+        if (!zone) return;
+        if (note) {
+          note.hidden = false;
+          note.textContent = "Записываю пояс на щит…";
+        }
+        $("shieldClockSave").disabled = true;
+        try {
+          const r = await fetch("/runtime/desk-clock", {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ zone }),
+          });
+          const j = await r.json();
+          if (!j || !j.ok) {
+            if (note) note.textContent = "Пояс не записался.";
+            return;
+          }
+          const clock = j.clock || {};
+          shieldClockLabel = clock.label || shieldClockLabel;
+          shieldClockSource = clock.source || shieldClockSource;
+          shieldClockZone = clock.zone || zone;
+          shieldClockOk = clock.ok !== false;
+          shieldClockUnverified = clock.unverified === true;
+          paintShieldClock();
+          if ($("shieldClockSheet")) $("shieldClockSheet").hidden = true;
+          if (note) note.textContent = "Пояс записан. Время на щите обновлено.";
+          void loadHealth();
+        } catch {
+          if (note) note.textContent = "Щит не ответил.";
+        } finally {
+          $("shieldClockSave").disabled = false;
+        }
+      };
+    }
     $("cardMask").addEventListener("click", closeCardSheet);
     document.addEventListener("keydown", (e) => {
       if (e.key !== "Escape") return;
