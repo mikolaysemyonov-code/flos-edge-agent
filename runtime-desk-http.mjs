@@ -59,6 +59,16 @@ import {
 } from "./runtime-desk-line-beacon.mjs";
 import { assessDeskHealth, DESK_TIME_ZONES, deskTimeZoneById } from "./runtime-desk-health.mjs";
 import {
+  cleanDeskPassword,
+  deskGateAllows,
+  deskSessionCookie,
+  hashDeskPassword,
+  openDeskSession,
+  readDeskGate,
+  verifyDeskPassword,
+  writeDeskGate,
+} from "./runtime-desk-gate.mjs";
+import {
   deskAuditTargets,
   listDeskAuditRuns,
   saveDeskAuditRun,
@@ -68,6 +78,7 @@ const HERE = path.dirname(fileURLToPath(import.meta.url));
 
 let mqttScanHandler = null;
 let clockSetter = null;
+let rootSetter = null;
 
 export function setRuntimeMqttScanHandler(fn) {
   mqttScanHandler = typeof fn === "function" ? fn : null;
@@ -75,6 +86,10 @@ export function setRuntimeMqttScanHandler(fn) {
 
 export function setRuntimeClockSetter(fn) {
   clockSetter = typeof fn === "function" ? fn : null;
+}
+
+export function setRuntimeRootSetter(fn) {
+  rootSetter = typeof fn === "function" ? fn : null;
 }
 
 export function serveCommissionDesk(_req, res) {
@@ -86,7 +101,7 @@ export function serveCommissionDesk(_req, res) {
       process.env.REACTOR_RUNTIME_HTTP_AUTH_TOKEN ||
       ""
     ).trim();
-    if (token) {
+    if (token && !readDeskGate()) {
       const safe = token.replace(/&/g, "&amp;").replace(/"/g, "&quot;");
       html = html.replace(
         "<head>",
@@ -487,6 +502,101 @@ export async function handleRuntimeDeskLinePlan(req, res) {
   }
   const out = upsertDeskLinePlanItem(body);
   jsonEnd(res, out.ok ? 200 : 400, out);
+}
+
+function gateView(req) {
+  const locked = Boolean(readDeskGate());
+  const open = deskGateAllows(req?.headers?.cookie, false);
+  return { ok: true, locked, open: locked ? open : true };
+}
+
+export async function handleRuntimeDeskGate(req, res) {
+  const method = (req.method ?? "GET").toUpperCase();
+  if (method === "GET") {
+    jsonEnd(res, 200, gateView(req));
+    return;
+  }
+  if (method !== "POST") {
+    jsonEnd(res, 405, { ok: false, error: "method" });
+    return;
+  }
+  const chunks = [];
+  for await (const c of req) chunks.push(c);
+  let body = {};
+  try {
+    const raw = Buffer.concat(chunks).toString("utf8");
+    if (raw.trim()) body = JSON.parse(raw);
+  } catch {
+    jsonEnd(res, 400, { ok: false, error: "invalid_json" });
+    return;
+  }
+  const action = body?.action === "open" ? "open" : "set";
+  const password = cleanDeskPassword(body?.password);
+  const again = String(body?.again ?? "");
+  const existing = readDeskGate();
+  if (action === "open") {
+    if (!existing || !password || !verifyDeskPassword(password, existing)) {
+      jsonEnd(res, 401, { ok: false, error: "password" });
+      return;
+    }
+  } else {
+    if (!password || again !== password) {
+      jsonEnd(res, 400, { ok: false, error: "password_mismatch" });
+      return;
+    }
+    if (existing) {
+      const session = deskGateAllows(req?.headers?.cookie, false);
+      const currentOk = verifyDeskPassword(String(body?.current ?? ""), existing);
+      if (!session && !currentOk) {
+        jsonEnd(res, 401, { ok: false, error: "desk_locked" });
+        return;
+      }
+    }
+    writeDeskGate(hashDeskPassword(password));
+  }
+  const token = openDeskSession();
+  res.setHeader("set-cookie", deskSessionCookie(token));
+  jsonEnd(res, 200, { ok: true, locked: true, open: true });
+}
+
+export async function handleRuntimeDeskRoot(req, res) {
+  if ((req.method ?? "GET").toUpperCase() !== "POST") {
+    jsonEnd(res, 405, { ok: false, error: "method" });
+    return;
+  }
+  if (!readDeskGate()) {
+    jsonEnd(res, 409, { ok: false, error: "need_interface_password" });
+    return;
+  }
+  if (!deskGateAllows(req?.headers?.cookie, false)) {
+    jsonEnd(res, 401, { ok: false, error: "desk_locked" });
+    return;
+  }
+  const chunks = [];
+  for await (const c of req) chunks.push(c);
+  let body = {};
+  try {
+    const raw = Buffer.concat(chunks).toString("utf8");
+    if (raw.trim()) body = JSON.parse(raw);
+  } catch {
+    jsonEnd(res, 400, { ok: false, error: "invalid_json" });
+    return;
+  }
+  const password = cleanDeskPassword(body?.password);
+  if (!password || String(body?.again ?? "") !== password) {
+    jsonEnd(res, 400, { ok: false, error: "password_mismatch" });
+    return;
+  }
+  if (!rootSetter) {
+    jsonEnd(res, 503, { ok: false, error: "root_unavailable" });
+    return;
+  }
+  try {
+    await rootSetter(password);
+    jsonEnd(res, 200, { ok: true });
+  } catch {
+    jsonEnd(res, 502, { ok: false, error: "root_set_failed" });
+  }
 }
 
 export async function handleRuntimeDeskClock(req, res) {

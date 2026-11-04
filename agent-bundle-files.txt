@@ -24,6 +24,7 @@ runtime-desk-walk.mjs
 runtime-desk-passport.mjs
 runtime-desk-line-beacon.mjs
 runtime-desk-health.mjs
+runtime-desk-gate.mjs
 runtime-desk-audit.mjs
 runtime-desk-pour-vav.mjs
 runtime-desk-field-cert.mjs

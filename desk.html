@@ -7,6 +7,14 @@
   <link rel="stylesheet" href="/desk.css" />
 </head>
 <body>
+  <div id="deskLock" class="desk-lock" hidden>
+    <form id="deskLockForm">
+      <h1>Стол закрыт</h1>
+      <input id="deskLockPassword" type="password" autocomplete="current-password" aria-label="Пароль" />
+      <button type="submit">Открыть</button>
+      <p id="deskLockNote" class="meta"></p>
+    </form>
+  </div>
   <main>
     <p class="kicker">Сегодня</p>
     <div class="top">
@@ -32,6 +40,17 @@
             <button id="fieldCert" class="ghost" type="button">Готовность</button>
             <button id="scan" class="ghost" type="button">Обновить</button>
           </div>
+          <p class="meta settings-label">Пароль интерфейса</p>
+          <input id="gatePass" class="bind" type="password" autocomplete="new-password" placeholder="Новый" />
+          <input id="gatePass2" class="bind" type="password" autocomplete="new-password" placeholder="Ещё раз" />
+          <button id="gateSave" class="ghost" type="button">Сохранить</button>
+          <p id="gateNote" class="meta" hidden></p>
+          <p class="meta settings-label">Пароль root</p>
+          <input id="rootPass" class="bind" type="password" autocomplete="new-password" placeholder="Новый" />
+          <input id="rootPass2" class="bind" type="password" autocomplete="new-password" placeholder="Ещё раз" />
+          <button id="rootSave" class="ghost" type="button">Сохранить</button>
+          <p id="rootNote" class="meta" hidden></p>
+          <p class="meta settings-hint">От 8 знаков. В проект не пишется.</p>
           <p id="settingsVer" class="meta settings-ver"></p>
         </div>
       </div>

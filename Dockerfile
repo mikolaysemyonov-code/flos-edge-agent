@@ -27,6 +27,7 @@ COPY runtime-desk-passport.mjs /app/runtime-desk-passport.mjs
 COPY runtime-desk-line-beacon.mjs /app/runtime-desk-line-beacon.mjs
 COPY runtime-desk-audit.mjs /app/runtime-desk-audit.mjs
 COPY runtime-desk-health.mjs /app/runtime-desk-health.mjs
+COPY runtime-desk-gate.mjs /app/runtime-desk-gate.mjs
 COPY runtime-desk-pour-vav.mjs /app/runtime-desk-pour-vav.mjs
 COPY runtime-desk-field-cert.mjs /app/runtime-desk-field-cert.mjs
 COPY runtime-desk-pour-stale.mjs /app/runtime-desk-pour-stale.mjs

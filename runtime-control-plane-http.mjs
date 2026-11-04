@@ -4,6 +4,7 @@
  */
 
 import { execSync } from "node:child_process";
+import { deskGateAllows, readDeskGate } from "./runtime-desk-gate.mjs";
 import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
@@ -34,6 +35,8 @@ import {
   handleRuntimeDeskLinePlan,
   handleRuntimeDeskHealth,
   handleRuntimeDeskClock,
+  handleRuntimeDeskGate,
+  handleRuntimeDeskRoot,
   handleRuntimeDeskAudit,
   handleRuntimeDeskMarking,
   handleRuntimeDeskPourPreview,
@@ -882,9 +885,31 @@ function deskWriteLocked(method, urlPath) {
   );
 }
 
+function deskBearerUnlocks(req) {
+  const expected = runtimeAuthToken();
+  if (!expected) return false;
+  return authorizeRuntimeRequest(req);
+}
+
+function deskPathOpenWithoutGate(urlPath) {
+  return urlPath === "/"
+    || urlPath === "/desk"
+    || urlPath === "/desk.js"
+    || urlPath === "/desk.css"
+    || urlPath === "/runtime/desk-gate";
+}
+
 export function runtimeHttpPathHandler(req, res) {
   const method = (req.method ?? "GET").toUpperCase();
   const urlPath = (req.url ?? "/").split("?")[0];
+  if (
+    readDeskGate()
+    && !deskPathOpenWithoutGate(urlPath)
+    && !deskGateAllows(req.headers?.cookie, deskBearerUnlocks(req))
+  ) {
+    jsonWrite(res, 401, { ok: false, error: "desk_locked" });
+    return true;
+  }
   if (deskWriteLocked(method, urlPath) && !authorizeRuntimeRequest(req)) {
     jsonWrite(res, 401, { ok: false, error: "AUTH: invalid or missing bearer token" });
     return true;
@@ -1026,6 +1051,20 @@ export function runtimeHttpPathHandler(req, res) {
         res.setHeader("content-type", "application/json; charset=utf-8");
         res.end(JSON.stringify({ ok: false, error: "INTERNAL" }));
       }
+    });
+    return true;
+  }
+  if ((method === "GET" || method === "POST") && urlPath === "/runtime/desk-gate") {
+    void handleRuntimeDeskGate(req, res).catch((err) => {
+      console.error("[runtime-control-plane] desk-gate:", err?.message ?? err);
+      if (!res.headersSent) jsonWrite(res, 500, { ok: false, error: "INTERNAL" });
+    });
+    return true;
+  }
+  if (method === "POST" && urlPath === "/runtime/desk-root") {
+    void handleRuntimeDeskRoot(req, res).catch((err) => {
+      console.error("[runtime-control-plane] desk-root:", err?.message ?? err);
+      if (!res.headersSent) jsonWrite(res, 500, { ok: false, error: "INTERNAL" });
     });
     return true;
   }

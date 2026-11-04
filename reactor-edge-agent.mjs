@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-import { execSync } from "node:child_process";
+import { execSync, spawnSync } from "node:child_process";
 import crypto from "node:crypto";
 import dns from "node:dns";
 import fs from "node:fs";
@@ -24,9 +24,10 @@ import {
   restartWbRules,
   setRuntimeHealthExtraProvider,
 } from "./runtime-control-plane-http.mjs";
-import { setRuntimeClockSetter, setRuntimeMqttScanHandler } from "./runtime-desk-http.mjs";
+import { setRuntimeClockSetter, setRuntimeMqttScanHandler, setRuntimeRootSetter } from "./runtime-desk-http.mjs";
 import { isMarkShieldDiscoverableDeviceKey } from "./lib/mark-shield-discoverable-device.mjs";
 import { countOfflineDevices } from "./runtime-desk-shelves.mjs";
+import { cleanDeskPassword } from "./runtime-desk-gate.mjs";
 import { assessControllerClock, clockFromHostText, deskTimeZoneById, pickControllerLanAddress } from "./runtime-desk-health.mjs";
 import {
   classifyWbRulesJournalLines,
@@ -34,7 +35,7 @@ import {
 } from "./wb-rules-journal-incidents.mjs";
 
 /** Одна строка в heartbeat и snapshot — иначе UI врёт версией. */
-const EDGE_AGENT_VERSION = "edge-pilot-v2.lan-desk-260";
+const EDGE_AGENT_VERSION = "edge-pilot-v2.lan-desk-261";
 
 /** Prefer `FLOS_*` (FL OS); fall back to legacy `REACTOR_*` for existing deployments. */
 function env(primary, legacy) {
@@ -675,6 +676,20 @@ setRuntimeClockSetter((zone) => {
   try { restartWbRules(); } catch { /* пояс уже записан */ }
   hostClockCache = { at: 0, clock: null };
   return controllerClockForDesk();
+});
+
+setRuntimeRootSetter((password) => {
+  const clean = cleanDeskPassword(password);
+  if (!clean) throw new Error("password");
+  const attempts = [
+    ["nsenter", ["--target", "1", "--mount", "--uts", "--ipc", "--net", "--pid", "--", "chpasswd"]],
+    ["chpasswd", []],
+  ];
+  for (const [cmd, args] of attempts) {
+    const result = spawnSync(cmd, args, { input: "root:" + clean + "\n", encoding: "utf8", timeout: 8_000 });
+    if (result.status === 0) return { ok: true };
+  }
+  throw new Error("root_set_failed");
 });
 
 function busIncidentsForDesk() {

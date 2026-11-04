@@ -5756,6 +5756,89 @@
         "bad",
       );
     }
+    async function ensureDeskOpen() {
+      let gate = {};
+      try {
+        gate = await (await fetch("/runtime/desk-gate")).json();
+      } catch {
+        gate = {};
+      }
+      if (!gate.locked || gate.open) return true;
+      const lock = $("deskLock");
+      if (lock) lock.hidden = false;
+      const form = $("deskLockForm");
+      if (form) {
+        form.onsubmit = async (event) => {
+          event.preventDefault();
+          const note = $("deskLockNote");
+          if (note) note.textContent = "";
+          try {
+            const r = await fetch("/runtime/desk-gate", {
+              method: "POST",
+              headers: { "content-type": "application/json" },
+              body: JSON.stringify({ action: "open", password: $("deskLockPassword").value }),
+            });
+            const j = await r.json();
+            if (!j || !j.ok) {
+              if (note) note.textContent = "Пароль не подошёл.";
+              return;
+            }
+            location.reload();
+          } catch {
+            if (note) note.textContent = "Щит не ответил.";
+          }
+        };
+      }
+      return false;
+    }
+    function saveDeskSecret(kind) {
+      const first = $(kind === "root" ? "rootPass" : "gatePass");
+      const second = $(kind === "root" ? "rootPass2" : "gatePass2");
+      const note = $(kind === "root" ? "rootNote" : "gateNote");
+      const button = $(kind === "root" ? "rootSave" : "gateSave");
+      const password = first ? first.value : "";
+      const again = second ? second.value : "";
+      if (note) note.hidden = false;
+      if (password.length < 8 || password !== again) {
+        if (note) note.textContent = password.length < 8 ? "Нужно от 8 знаков." : "Пароли не совпали.";
+        return;
+      }
+      if (button) button.disabled = true;
+      if (note) note.textContent = "Записываю…";
+      const url = kind === "root" ? "/runtime/desk-root" : "/runtime/desk-gate";
+      const body = kind === "root"
+        ? { password, again }
+        : { action: "set", password, again };
+      fetch(url, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(body),
+      })
+        .then((r) => r.json().then((j) => ({ okHttp: r.ok, j })))
+        .then(({ j }) => {
+          if (!j || !j.ok) {
+            if (note) {
+              note.textContent = j && j.error === "need_interface_password"
+                ? "Сначала закройте интерфейс."
+                : "Не записался.";
+            }
+            return;
+          }
+          if (first) first.value = "";
+          if (second) second.value = "";
+          if (kind === "root") {
+            if (note) note.textContent = "Пароль root записан. Им открываются контроллер и его веб.";
+            return;
+          }
+          location.reload();
+        })
+        .catch(() => {
+          if (note) note.textContent = "Щит не ответил.";
+        })
+        .finally(() => {
+          if (button) button.disabled = false;
+        });
+    }
     function paintShieldClock() {
       const el = $("shieldClock");
       if (!el) return;
@@ -5929,6 +6012,8 @@
         if (note) { note.hidden = true; note.textContent = ""; }
       };
     }
+    if ($("gateSave")) $("gateSave").onclick = () => saveDeskSecret("gate");
+    if ($("rootSave")) $("rootSave").onclick = () => saveDeskSecret("root");
     if ($("shieldClockSave")) {
       $("shieldClockSave").onclick = async () => {
         const sel = $("shieldClockZone");
@@ -6601,10 +6686,13 @@
       : fromHash === "cards" ? "scenes"
       : fromHash === "poured" ? "board"
       : fromHash;
-    openNav(NAV[hashNav] ? hashNav : "guide");
-    loadHealth();
-    loadPoured();
-    loadRooms();
-    loadLast();
-    loadSolutions();
+    void (async () => {
+      if (!(await ensureDeskOpen())) return;
+      openNav(NAV[hashNav] ? hashNav : "guide");
+      loadHealth();
+      loadPoured();
+      loadRooms();
+      loadLast();
+      loadSolutions();
+    })();
  

@@ -34,7 +34,23 @@
       width: 18rem; padding: .75rem .8rem; display: flex; flex-direction: column; gap: .45rem;
     }
     .settings-sheet[hidden] { display: none; }
-    .settings-label, .settings-ver, .shield-clock-note { margin: 0; }
+    .settings-label, .settings-ver, .settings-hint, .shield-clock-note { margin: 0; }
+    .settings-sheet input.bind {
+      width: 100%; margin: 0; padding: .4rem .55rem; border-radius: .7rem;
+      border: 1px solid rgb(255 255 255 / .12); background: rgb(0 0 0 / .35); color: inherit;
+    }
+    .desk-lock {
+      position: fixed; inset: 0; z-index: 40; background: #000;
+      display: flex; align-items: center; justify-content: center;
+    }
+    .desk-lock[hidden] { display: none; }
+    .desk-lock form { width: 16rem; display: flex; flex-direction: column; gap: .65rem; }
+    .desk-lock h1 { margin: 0; font-size: 1.6rem; letter-spacing: -.03em; }
+    .desk-lock input {
+      padding: .55rem .7rem; border-radius: .8rem; border: 1px solid rgb(255 255 255 / .14);
+      background: rgb(255 255 255 / .04); color: inherit; font: inherit;
+    }
+    .desk-lock .meta { margin: 0; }
     .shield-clock-sheet { display: flex; gap: .4rem; align-items: center; }
     #health { flex-wrap: wrap; }
     #health .status-sub { flex-basis: 100%; margin: .15rem 0 0 .9rem; }
