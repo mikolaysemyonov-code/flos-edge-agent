@@ -234,15 +234,7 @@ export function markDeskBeaconChannel(input) {
     (k) => !k.deviceTopicKey && k.room.toLowerCase() === room.toLowerCase() && k.label.toLowerCase() === label.toLowerCase(),
   );
   const id = taken?.id || unbound?.id || newId("line");
-  const clash = (text) => plan.some(
-    (k) => k.id !== id && k.room.toLowerCase() === room.toLowerCase() && k.label.toLowerCase() === text.toLowerCase(),
-  );
-  let useLabel = label;
-  if (clash(useLabel)) {
-    let n = 2;
-    while (clash(label + " " + n) && n < 20) n += 1;
-    useLabel = label + " " + n;
-  }
+  const useLabel = label;
   const doc = readRawDoc();
   let shelves = doc.shelves && typeof doc.shelves === "object" ? doc.shelves : {};
   const prev = plan.find((k) => k.id === id);

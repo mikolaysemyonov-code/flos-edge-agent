@@ -34,6 +34,7 @@
     let walkRooms = [];
     let walkCatalog = [];
     let walkPurposes = [];
+    let walkLightPurposes = { led: [], relay: [] };
     let walkRoomOpen = false;
     let keyScan = null; /* { id, need, count, hitKey, baseline, prevClosed } */
     let keyCatch = null; /* топик пойман, ждёт комнату и подпись */
@@ -4213,6 +4214,9 @@
           walkRooms = Array.isArray(j.roomBook) ? j.roomBook : [];
           walkCatalog = Array.isArray(j.roomCatalog) ? j.roomCatalog : [];
           walkPurposes = Array.isArray(j.purposes) ? j.purposes : [];
+          walkLightPurposes = j.lightPurposes && typeof j.lightPurposes === "object"
+            ? { led: Array.isArray(j.lightPurposes.led) ? j.lightPurposes.led : [], relay: Array.isArray(j.lightPurposes.relay) ? j.lightPurposes.relay : [] }
+            : walkLightPurposes;
         }
       } catch {
         keyPlan = [];
@@ -4996,6 +5000,36 @@
         return [];
       }
     }
+    function lightPurposeGroups(kind) {
+      const picked = kind === "relay" ? walkLightPurposes.relay : walkLightPurposes.led;
+      if (picked && picked.length) return picked;
+      if (kind === "relay") {
+        return [{ group: "Реле", names: ["Основное освещение", "Люстра", "Бра", "Ночник", "Розетка", "Вытяжка"] }];
+      }
+      return [
+        { group: "Свет", names: ["Основное освещение", "Световая линия", "Светодиодная лента", "Треки", "Точечные", "Люстра", "Бра", "Подвес", "Ночник", "Рабочий свет", "Свет у зеркала", "Дежурный свет"] },
+        { group: "Подсветка", names: ["Подсветка плинтуса", "Подсветка штор", "Подсветка ниш", "Подсветка ТВ-зоны", "Подсветка потолка", "Подсветка пола", "Подсветка лестницы", "Подсветка полок", "Подсветка зеркала", "Подсветка карниза", "Контурный свет", "Парящий потолок"] },
+        { group: "Улица", names: ["Улица", "Фасад", "Дорожка", "Крыльцо"] },
+      ];
+    }
+    function lightPurposeNames(kind) {
+      const names = [];
+      lightPurposeGroups(kind).forEach((group) => {
+        (group.names || []).forEach((name) => { if (names.indexOf(name) < 0) names.push(name); });
+      });
+      return names;
+    }
+    function matchLightPurpose(label, kind) {
+      const names = lightPurposeNames(kind);
+      const text = String(label || "").trim();
+      if (names.indexOf(text) >= 0) return text;
+      const base = text.replace(/\s+\d+$/, "");
+      if (names.indexOf(base) >= 0) return base;
+      if ((base === "Основной свет" || text === "Основной свет") && names.indexOf("Основное освещение") >= 0) {
+        return "Основное освещение";
+      }
+      return "";
+    }
     function beaconDotLabel(controlId) {
       const ch = /^Channel\s+(\d+)$/i.exec(String(controlId || "").trim());
       return ch ? ch[1] : String(controlId || "");
@@ -5160,8 +5194,11 @@
           circle.type = "button";
           circle.className = "line-beacon-circle sm" + (on ? " on" : "") + (row || ch.name ? " marked" : "");
           circle.title = on ? "Погасить" : "Зажечь только этот канал";
+          const shown = row
+            ? (matchLightPurpose(row.label, ch.kind || "led") || row.label)
+            : "";
           const cap = row
-            ? ((row.code ? row.code + " " : "") + row.label)
+            ? ((row.code ? row.code + " " : "") + shown)
             : (ch.name || "");
           circle.innerHTML = "<span></span><span class=\"cap\"></span>";
           circle.querySelector("span").textContent = beaconDotLabel(ch.controlId);
@@ -5236,29 +5273,32 @@
         const plain = "room:" + existing.room;
         roomSel.value = byCode ? "code:" + byCode.code : ([...roomSel.options].some((o) => o.value === plain) ? plain : "");
       }
-      const purposes = (walkPurposes || []).length
-        ? walkPurposes
-        : ["Основной свет", "Люстра", "Бра", "Подсветка", "Ночник", "Рабочий свет", "Свет у зеркала"];
+      const lightKind = lit && lit.kind === "relay" ? "relay" : (lineBeaconFamily === "relay" ? "relay" : "led");
       const purposeSel = document.createElement("select");
       purposeSel.className = "bind";
       purposeSel.setAttribute("aria-label", "Что за свет");
       const purposeBlank = document.createElement("option");
       purposeBlank.value = "";
-      purposeBlank.textContent = "Что за свет";
+      purposeBlank.textContent = lightKind === "relay" ? "Что включает" : "Что за свет";
       purposeSel.appendChild(purposeBlank);
-      purposes.forEach((name) => {
-        const opt = document.createElement("option");
-        opt.value = name;
-        opt.textContent = name;
-        purposeSel.appendChild(opt);
+      lightPurposeGroups(lightKind).forEach((group) => {
+        const og = document.createElement("optgroup");
+        og.label = group.group || "Свет";
+        (group.names || []).forEach((name) => {
+          const opt = document.createElement("option");
+          opt.value = name;
+          opt.textContent = name;
+          og.appendChild(opt);
+        });
+        purposeSel.appendChild(og);
       });
       const other = document.createElement("option");
       other.value = "__other";
       other.textContent = "Другое";
       purposeSel.appendChild(other);
-      if (existing && existing.label) {
-        purposeSel.value = purposes.indexOf(existing.label) >= 0 ? existing.label : "__other";
-      }
+      const matchedPurpose = existing ? matchLightPurpose(existing.label, lightKind) : "";
+      if (matchedPurpose) purposeSel.value = matchedPurpose;
+      else if (existing && existing.label) purposeSel.value = "__other";
       const custom = document.createElement("input");
       custom.className = "bind";
       custom.placeholder = "Своё название света";

@@ -640,11 +640,11 @@
       border-color: rgb(167 243 208 / .65);
     }
     .line-beacon-circle .cap {
-      display: block;
       max-width: 4.1rem;
       overflow: hidden;
-      text-overflow: ellipsis;
-      white-space: nowrap;
+      display: -webkit-box;
+      -webkit-line-clamp: 2;
+      -webkit-box-orient: vertical;
       font-size: .58rem;
       font-weight: 650;
       opacity: .8;
