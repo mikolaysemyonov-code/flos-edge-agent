@@ -288,18 +288,16 @@ export function deskInputBaseControl(controlId) {
 const PRESS_ON_WIRE = { Short: "Single", Single: "Single", Long: "Long", Double: "Double", Shortlong: "Shortlong" };
 
 /**
- * Кнопка Input. EXT остаётся уровнем.
- * Короткое на MCM8 — сам Input: он точно меняется при нажатии.
- * Счётчики жеста на этом щите не будят правило. Отпускание отсекает правило (wbIsOn).
- * Дим по-прежнему Long / Shortlong Press Counter.
+ * Кнопка Input N слушает счётчик жеста. EXT и Input A1 остаются уровнем.
+ * Короткое нажатие — Single Press Counter: значение 2, 3, 28…, не 0/1.
+ * wbIsOn(newValue) на таком числе всегда ложь, правило выходит и ничего не делает.
+ * Сам Input N между опросами часто не успевает стать 1. Дим — Long / Shortlong.
  */
-export function deskButtonCounter(controlId, kind = "Short", deviceTopicKey = "") {
+export function deskButtonCounter(controlId, kind = "Short", _deviceTopicKey = "") {
   const base = deskInputBaseControl(controlId);
   const wire = PRESS_ON_WIRE[kind] || "Single";
-  if (base && /^Input\s+/i.test(base)) {
-    if (wire === "Single" && /mcm/i.test(String(deviceTopicKey || ""))) return base;
-    return `${base} ${wire} Press Counter`;
-  }
+  if (base && /^Input\s+\d+$/i.test(base)) return `${base} ${wire} Press Counter`;
+  if (base) return base;
   return String(controlId || "").trim();
 }
 

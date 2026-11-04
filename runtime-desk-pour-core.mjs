@@ -86,9 +86,14 @@ function emitBridge(deviceTopicKey, controlId, name) {
       `      var bri = Number(readValue(${esc("form_logic_os/" + briId)}));`,
       "      if (isNaN(bri) || bri < 0) bri = 0; if (bri > 100) bri = 100;",
       "      var wantBr = on ? (bri > 0 ? bri : 80) : 0;",
-      `      wbActuatorSet(${esc(bri)}, wantBr, ${esc("fl_rt_cmd_" + id)}, 40);`,
       `      wbActuatorSet(${esc(path)}, on, ${esc("fl_rt_cmd_" + id)}, 40);`,
-      `      wbActuatorSet(${esc(bri)}, wantBr, ${esc("fl_rt_cmd_" + id)}, 40);`,
+      "      if (on) {",
+      "        var kick = wantBr > 1 ? wantBr - 1 : 2;",
+      `        wbActuatorSet(${esc(bri)}, kick, ${esc("fl_rt_cmd_" + id)}, 40);`,
+      `        wbActuatorSet(${esc(bri)}, wantBr, ${esc("fl_rt_cmd_" + id)}, 40);`,
+      "      } else {",
+      `        wbActuatorSet(${esc(bri)}, 0, ${esc("fl_rt_cmd_" + id)}, 40);`,
+      "      }",
       `    } catch (e) { if (typeof wbRuleGuardCatch === "function") wbRuleGuardCatch(${esc("fl_rt_cmd_" + id)}, e); }`,
       "  }",
       "});",
@@ -97,9 +102,9 @@ function emitBridge(deviceTopicKey, controlId, name) {
       "  then: function () {",
       "    try {",
       `      var br = Number(readValue(${esc(bri)})); if (isNaN(br)) br = 0;`,
-      "      var on = br > 0;",
-      `      if (wbIsOn(readValue(${esc("form_logic_os/" + id)})) !== on) dev[${esc("form_logic_os/" + id)}] = on;`,
+      "      var on = br > 1;",
       `      if (Number(readValue(${esc("form_logic_os/" + briId)})) !== br) dev[${esc("form_logic_os/" + briId)}] = br;`,
+      `      if (wbIsOn(readValue(${esc("form_logic_os/" + id)})) !== on) dev[${esc("form_logic_os/" + id)}] = on;`,
       `    } catch (e) { if (typeof wbRuleGuardCatch === "function") wbRuleGuardCatch(${esc("fl_rt_mir_" + id)}, e); }`,
       "  }",
       "});",
@@ -252,6 +257,35 @@ export function stripDuplicateTitles(src) {
   return { content: text.replace(/\n{3,}/g, "\n\n"), changed: removedIds.length > 0, removedIds };
 }
 
+function bridgeBlocks(ruleLines) {
+  return ruleLines
+    .join("\n")
+    .split(/\n(?=defineRule\()/)
+    .map((s) => s.trim())
+    .filter(Boolean);
+}
+
+/** Ячейка уже есть — тело fl_rt_cmd/fl_rt_mir всё равно меняем. Иначе на щите остаётся старая запись яркости. */
+function upsertBridgeRules(src, ruleLines) {
+  let text = String(src || "");
+  let changed = false;
+  for (const block of bridgeBlocks(ruleLines)) {
+    const name = /defineRule\s*\(\s*["']([^"']+)["']/.exec(block)?.[1];
+    if (!name) continue;
+    const nameEsc = name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const re = new RegExp(`defineRule\\s*\\(\\s*["']${nameEsc}["'][\\s\\S]*?\\n\\}\\);`);
+    if (re.test(text)) {
+      const next = text.replace(re, block);
+      if (next !== text) changed = true;
+      text = next;
+    } else {
+      text = `${text.trimEnd()}\n\n${block}\n`;
+      changed = true;
+    }
+  }
+  return { src: text, changed };
+}
+
 export function emptyFormLogicOsSource() {
   return [
     'defineVirtualDevice("form_logic_os", {',
@@ -288,6 +322,10 @@ export function mergeDeskNamesIntoCore(coreSrc, named) {
       const next = patchCellTitle(src, id, name);
       src = next.src;
       if (next.changed) changed = true;
+      const emit = emitBridge(row.deviceTopicKey, row.controlId, name);
+      const rules = upsertBridgeRules(src, emit.ruleLines);
+      src = rules.src;
+      if (rules.changed) changed = true;
       continue;
     }
     if (pathAlreadyInCore(src, row.deviceTopicKey, row.controlId)) {
