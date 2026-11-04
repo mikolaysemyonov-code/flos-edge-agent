@@ -345,8 +345,8 @@
       if (!mirror) return "Шина: —";
       const n = Number(mirror.topicCount) || 0;
       if (mirror.connected && n > 0) return "Шина ок · " + n + " топиков";
-      if (mirror.connected) return "Шина: ждёт топики";
-      return "Шина: нет MQTT";
+      if (mirror.connected) return "Щит ещё просыпается";
+      return "Щит молчит";
     }
     function cloudRu(state) {
       const s = String(state || "");
@@ -357,37 +357,24 @@
     }
     function humanPourError(raw) {
       const s = String(raw || "").trim();
-      if (!s) return "Не залил";
-      if (/AUTH:|invalid or missing bearer/i.test(s)) {
-        return "Порт закрыт токеном — тот же ключ, что у заливки из облака.";
+      if (!s) return "Не записалось";
+      if (/AUTH:|invalid or missing bearer/i.test(s)) return "Щит не пустил запись. Обновите страницу и повторите.";
+      if (/Failed to fetch|NetworkError|ECONNREFUSED|fetch failed/i.test(s)) return "Нет связи со щитом.";
+      if (/need_trigger/i.test(s)) return "Нужна кнопка.";
+      if (/need_target|need_load/i.test(s)) return "Нужен свет.";
+      if (/disk_mismatch/i.test(s)) return "Запись не совпала. Повторите.";
+      if (/engine_syntax|engine_not_active|not_restarted|wb.?rules|restart|pending_restart/i.test(s)) {
+        return "Запись легла, щит её ещё не включил.";
       }
-      if (/Failed to fetch|NetworkError|ECONNREFUSED|fetch failed/i.test(s)) {
-        return "Нет связи с агентом на этом адресе.";
-      }
-      if (/need_trigger/i.test(s)) return "В карточке нужна кнопка или датчик с шины.";
-      if (/need_target|need_load/i.test(s)) return "В карточке нужна линия из разметки.";
-      if (/disk_mismatch/i.test(s)) return "Диск не совпал — заливку не считаем готовой.";
-      if (/engine_syntax/i.test(s)) return "Движок не принял файл: синтаксическая ошибка в журнале wb-rules.";
-      if (/engine_not_active|not_restarted/i.test(s)) return "Файлы записаны, движок их не принял. Таймеры не подтверждаем.";
-      if (/marking_unreadable/i.test(s)) return "Файл стола не читается. Он не стёрт, на экране плана нет.";
-      if (/solution_ids_over_cap/i.test(s)) return "Слишком много карточек за один раз — залейте пачкой до 480.";
-      if (/output_schedule/i.test(s)) return "Расписание и постоянное правило на одном выходе. Щит не трогал.";
-      if (/output_schedule/i.test(s)) return "Расписание и постоянное правило на одном выходе. Щит не трогал.";
-      if (/output_busy/i.test(s)) return "Два постоянных правила на один выход. Щит не трогал.";
-      if (/body_too_large|bad_json/i.test(s)) return "Запрос заливки не разобран — щит не трогал.";
-      if (/EACCES|EROFS|EPERM|permission denied/i.test(s)) {
-        return "Нет записи на диск щита (/etc/wb-rules).";
-      }
-      if (/wb.?rules|restart|pending_restart/i.test(s)) {
-        return "Файлы записаны, но wb-rules не перезапустился — смотрите журнал на щите.";
-      }
-      if (/debounce|boot grace|self.update/i.test(s)) {
-        return "Агент ещё стартует — подождите минуту и повторите.";
-      }
-      if (/tip|cloud pull|GitHub/i.test(s)) {
-        return "Не скачал обновление с tip — проверьте интернет щита до сервиса (IPv4).";
-      }
-      if (s.length > 140) return s.slice(0, 137) + "…";
+      if (/marking_unreadable/i.test(s)) return "Имена не читаются. Они на месте, на экране их нет.";
+      if (/solution_ids_over_cap/i.test(s)) return "Слишком много сцен за один раз.";
+      if (/output_schedule/i.test(s)) return "Расписание и постоянный свет спорят на одной линии.";
+      if (/output_busy/i.test(s)) return "Две сцены держат одну линию.";
+      if (/body_too_large|bad_json/i.test(s)) return "Запись не разобрана. Щит не трогал.";
+      if (/EACCES|EROFS|EPERM|permission denied/i.test(s)) return "Щит не дал записать.";
+      if (/debounce|boot grace|self.update/i.test(s)) return "Щит ещё просыпается. Подождите минуту.";
+      if (/tip|cloud pull|GitHub/i.test(s)) return "Щит не скачал обновление. Проверьте интернет.";
+      if (s.length > 140 || /mqtt|wb-|token|errno/i.test(s)) return "Не записалось. Повторите.";
       return s;
     }
     function enrollRu(s, topics) {
@@ -1146,8 +1133,8 @@
       const back = document.createElement("button");
       back.type = "button";
       back.className = "back";
-      back.setAttribute("aria-label", "К разметке");
-      back.innerHTML = "<svg viewBox='0 0 24 24'><path d='M15 18l-6-6 6-6'/></svg><span>К разметке</span>";
+      back.setAttribute("aria-label", "К записи");
+      back.innerHTML = "<svg viewBox='0 0 24 24'><path d='M15 18l-6-6 6-6'/></svg><span>К записи</span>";
       back.addEventListener("click", () => {
         pouredPane = "send";
         openPourMod = "";
@@ -1194,12 +1181,12 @@
           go.textContent = rollingBack ? "Ждите…" : "Вернуть";
           go.disabled = rollingBack;
           go.title = rollingBack
-            ? "Идёт откат — подождите"
-            : "Вернуть правила на щит к этому состоянию. История журнала не стирается.";
+            ? "Возвращаю…"
+            : "Вернуть дом к этой записи.";
           go.addEventListener("click", () => {
             if (rollingBack) return;
             const label = short || rel.revisionId || "эту заливку";
-            if (!window.confirm("Вернуть на щит состояние «" + label + "»?\nТекущие правила с диска будут заменены. Журнал останется.")) {
+            if (!window.confirm("Вернуть дом к этой записи? То, что на щите сейчас, сменится.")) {
               return;
             }
             rollingBack = true;
@@ -1225,7 +1212,7 @@
                 const head = $("previewHead");
                 if (head) {
                   head.style.color = "";
-                  head.textContent = "Откат выполнен · " + label;
+                  head.textContent = "Вернули как было";
                 }
                 loadPoured();
                 loadReleases().then(() => renderReady());
@@ -1327,6 +1314,24 @@
     function paintSendByModule(box, items) {
       const loads = items.filter((i) => !i.scene);
       const scenes = items.filter((i) => i.scene);
+      if (String(openPourMod || "").startsWith("room:")) {
+        const room = openPourMod.slice(5);
+        const chunk = loads.filter((i) => (i.room || "Без имени") === room);
+        box.className = "";
+        const back = document.createElement("button");
+        back.type = "button";
+        back.className = "back ghost-back";
+        back.innerHTML = "<svg viewBox='0 0 24 24'><path d='M15 18l-6-6 6-6'/></svg><span>Назад</span>";
+        back.addEventListener("click", closePourMod);
+        const h = document.createElement("h2");
+        h.className = "vt";
+        h.textContent = room;
+        const ul = document.createElement("ul");
+        ul.className = "channels";
+        chunk.slice().sort(byContact).forEach((i) => ul.appendChild(readyCard(i, "")));
+        box.append(back, h, ul);
+        return;
+      }
       if (openPourMod) {
         const chunk = loads.filter((i) => i.deviceTopicKey === openPourMod);
         const shelf = lastShelvesRows.find((s) => s.deviceTopicKey === openPourMod);
@@ -1390,33 +1395,45 @@
         return;
       }
       box.className = "vitrine";
-      const byMod = new Map();
+      const byRoom = new Map();
       loads.forEach((i) => {
-        const k = i.deviceTopicKey || "";
-        if (!byMod.has(k)) byMod.set(k, []);
-        byMod.get(k).push(i);
+        const k = i.room || "Без имени";
+        if (!byRoom.has(k)) byRoom.set(k, []);
+        byRoom.get(k).push(i);
       });
-      const keys = [...byMod.keys()].sort((a, b) => {
-        const sa = lastShelvesRows.find((s) => s.deviceTopicKey === a);
-        const sb = lastShelvesRows.find((s) => s.deviceTopicKey === b);
-        return moduleSlaveOf(sa || { deviceTopicKey: a }) - moduleSlaveOf(sb || { deviceTopicKey: b })
-          || String(a).localeCompare(String(b));
+      const rooms = [...byRoom.keys()].sort((a, b) => {
+        if (a === "Без имени") return 1;
+        if (b === "Без имени") return -1;
+        return a.localeCompare(b, "ru");
       });
-      keys.forEach((k) => {
-        const chunk = byMod.get(k) || [];
-        const sku = (chunk[0] && chunk[0].sku) || k;
-        box.appendChild(pourModuleTile(sku, k, chunk));
-      });
+      rooms.forEach((room) => box.appendChild(pourRoomTile(room, byRoom.get(room) || [])));
       if (scenes.length) {
-        const h = document.createElement("p");
-        h.className = "sech";
-        h.textContent = "Сценарии · " + scenes.length;
-        box.appendChild(h);
-        const ul = document.createElement("ul");
-        ul.className = "channels";
-        scenes.slice().sort(byContact).forEach((i) => ul.appendChild(readyCard(i, i.room)));
-        box.appendChild(ul);
+        const note = document.createElement("p");
+        note.className = "meta";
+        note.textContent = "Сцены запишутся вместе с именами.";
+        box.appendChild(note);
       }
+    }
+    function pourRoomTile(room, chunk) {
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "vcard on";
+      const lit = chunk.some((i) => channelIsOn(pourLiveCh(i.deviceTopicKey, i.controlId)));
+      if (lit) btn.classList.add("amber", "lit");
+      const vt = document.createElement("span");
+      vt.className = "vt";
+      vt.textContent = room;
+      const vs = document.createElement("span");
+      vs.className = "vs";
+      vs.textContent = chunk.map((i) => i.title).filter(Boolean).slice(0, 4).join(" · ");
+      btn.append(vt, vs);
+      btn.addEventListener("click", () => {
+        openPourMod = "room:" + room;
+        openContact = "";
+        openSceneId = "";
+        renderReady();
+      });
+      return btn;
     }
     function readyCard(item, room) {
       const li = document.createElement("li");
@@ -1474,7 +1491,7 @@
         const skuBit = (cid && ttlText && ttlText.includes(cid)) ? (item.sku || "") : item.sub;
         const bits = [skuBit];
         if (item.pouredName && item.title && prettyContactName(item.pouredName) !== prettyContactName(item.title)) {
-          bits.push("на контроллере " + prettyContactName(item.pouredName));
+          bits.push("на щите " + prettyContactName(item.pouredName));
         }
         if (item.status === "blocked") hint.classList.add("orphan");
         hint.textContent = bits.filter(Boolean).join(" · ");
@@ -1510,7 +1527,7 @@
         drop.textContent = item.scene ? "Снять" : (item.pouredName ? "Как на щите" : "Снять");
         drop.title = item.scene
           ? "Убрать сценарий со стола"
-          : (item.pouredName ? "Вернуть имя с контроллера" : "Убрать имя со стола");
+          : (item.pouredName ? "Вернуть имя со щита" : "Убрать имя");
         drop.addEventListener("click", (e) => {
           e.stopPropagation();
           drop.disabled = true;
@@ -1537,30 +1554,35 @@
       if (!bar) return;
       const all = collectReadyItems();
       const sendN = all.filter((i) => pourLane(i) === "send").length;
-      const diskN = all.filter((i) => pourLane(i) === "disk").length;
-      // Как Vercel: новое → залить; сценарии на щите; журнал откатов. Без лишней «Разметки».
       const tabs = [
         { id: "send", ru: "Сейчас" },
-        { id: "rules", ru: "Сценарии" },
         { id: "hist", ru: "Раньше" },
       ];
-      if (!tabs.some((t) => t.id === pouredPane)) pouredPane = "send";
-      bar.hidden = pouredOpen();
+      if (!tabs.some((t) => t.id === pouredPane) && pouredPane !== "rules") pouredPane = "send";
+      bar.className = "footlink";
+      bar.hidden = pouredOpen() || (!lastReleases.length && pouredPane !== "hist");
       bar.replaceChildren();
-      tabs.forEach((t) => {
-        const b = document.createElement("button");
-        b.type = "button";
-        b.textContent = t.ru;
-        b.setAttribute("aria-pressed", pouredPane === t.id ? "true" : "false");
+      const b = document.createElement("button");
+      b.type = "button";
+      b.className = "textlink";
+      if (pouredPane === "hist") {
+        b.textContent = "К записи";
         b.addEventListener("click", () => {
-          if (t.id !== "rules") openSceneId = "";
-          openContact = "";
+          pouredPane = "send";
           openPourMod = "";
-          pouredPane = t.id;
           renderReady();
         });
-        bar.appendChild(b);
-      });
+      } else {
+        b.textContent = "Раньше";
+        b.addEventListener("click", () => {
+          openSceneId = "";
+          openContact = "";
+          openPourMod = "";
+          pouredPane = "hist";
+          renderReady();
+        });
+      }
+      bar.appendChild(b);
       paintPourButtons();
       $("n-poured").textContent = sendN || "";
     }
@@ -1748,7 +1770,7 @@
       if (!loads.length) {
         const empty = document.createElement("p");
         empty.className = "meta";
-        empty.textContent = "Сначала имя линии в «Разметить».";
+        empty.textContent = "Сначала назовите линию в «Комнатах».";
         picks.appendChild(empty);
       }
       let lastRoom = "\0";
@@ -1820,7 +1842,7 @@
             paintPourButtons();
             renderReady();
           });
-        }).catch(() => { err.textContent = "Нет связи с агентом"; });
+        }).catch(() => { err.textContent = "Нет связи со щитом"; });
       });
       const actions = document.createElement("div");
       actions.className = "scene-foot";
@@ -1834,7 +1856,7 @@
       const back = document.createElement("button");
       back.type = "button";
       back.className = "back";
-      const backRu = pouredPane === "send" ? "К новому" : "К разметке";
+      const backRu = "Назад";
       back.setAttribute("aria-label", backRu);
       back.innerHTML = "<svg viewBox='0 0 24 24'><path d='M15 18l-6-6 6-6'/></svg><span></span>";
       back.querySelector("span").textContent = backRu;
@@ -1844,7 +1866,7 @@
       if (!s || !ch) {
         const empty = document.createElement("p");
         empty.className = "empty";
-        empty.textContent = "Контакт не на шине.";
+        empty.textContent = "Этой кнопки сейчас нет.";
         box.append(back, empty);
         return;
       }
@@ -1912,7 +1934,7 @@
         if (neu.length && onCtl.length) {
           const h = document.createElement("li");
           h.className = "roomh";
-          h.textContent = "Новое со стола";
+          h.textContent = "Ещё не записано";
           ul.appendChild(h);
         }
         neu.slice().sort(byContact).forEach((i) => ul.appendChild(readyCard(i, i.room)));
@@ -2639,7 +2661,7 @@
         trigLab.textContent = "Расписание";
         const note = document.createElement("p");
         note.className = "meta";
-        note.textContent = "Срабатывает по часам контроллера (cron). Выберите "
+        note.textContent = "Срабатывает по часам щита. Выберите "
           + sheetTgtLab(card).toLowerCase()
           + " и время ниже.";
         trig = note;
@@ -2818,7 +2840,7 @@
             paintPourButtons();
             renderReady();
           });
-        }).catch(() => { err.textContent = "Нет связи с агентом"; });
+        }).catch(() => { err.textContent = "Нет связи со щитом"; });
       });
       refreshSave();
       const cancel = document.createElement("button");
@@ -2985,7 +3007,7 @@
         const ver = String(j.agentVersion || "").replace(/^.*\./, "") || "—";
         if (!j.ok) {
           box.className = "glass status bad";
-          main.textContent = "Агент не ответил";
+          main.textContent = "Щит не ответил";
           if (sub) { sub.hidden = true; sub.textContent = ""; }
           return;
         }
@@ -3632,16 +3654,25 @@
       ico.innerHTML = MOD_ICO[kind] || MOD_ICO.led;
       const cat = document.createElement("span");
       cat.className = "cat" + (named ? " on" : "");
-      cat.textContent = named + "/" + n + " занято";
+      cat.hidden = true;
       top.append(ico, cat);
+      const rooms = [];
+      const lineNames = [];
+      visibleChannels(s).forEach((ch) => {
+        const nm = pairName(s, ch);
+        const room = nameRoom(nm);
+        if (room && rooms.indexOf(room) < 0) rooms.push(room);
+        if (nm) lineNames.push(String(nm).trim());
+      });
       const vt = document.createElement("span");
       vt.className = "vt";
-      vt.textContent = s.label || s.deviceTopicKey;
+      vt.textContent = rooms.length ? rooms.join(" · ") : "Без имени";
+      vt.title = s.label || s.deviceTopicKey;
       const vs = document.createElement("span");
       vs.className = "vs";
-      vs.textContent = drill
-        ? "Дальше: комната → тип нагрузки"
-        : "Клеммы модуля · комната → тип";
+      vs.textContent = lineNames.length
+        ? lineNames.slice(0, 3).join(" · ")
+        : "Назовите комнату и линию";
       const bars = document.createElement("div");
       bars.className = "ch-bars";
       bars.setAttribute("aria-hidden", "true");
@@ -3663,13 +3694,15 @@
         foot.className = "mod-foot";
         const open = document.createElement("span");
         open.className = "mod-open";
-        open.textContent = "Открыть";
+        open.hidden = true;
         const freeEl = document.createElement("span");
         freeEl.className = "mod-free";
-        freeEl.textContent = free ? "свободно " + free : "все заняты";
+        freeEl.textContent = free ? (free + " без имени") : "";
+        if (!freeEl.textContent) freeEl.hidden = true;
         const badge = document.createElement("span");
         badge.className = "mod-badge" + (lit ? " lit" : "");
-        badge.textContent = lit ? ("Горит " + lit) : "На шине";
+        badge.textContent = lit ? ("горит " + lit) : "";
+        if (!badge.textContent) badge.hidden = true;
         foot.append(open, freeEl, badge);
         el.appendChild(foot);
       } else {
@@ -3677,10 +3710,11 @@
         pills.className = "mod-pills";
         const occ = document.createElement("span");
         occ.className = "mod-pill";
-        occ.textContent = named + "/" + n + " занято";
+        occ.hidden = true;
         const bus = document.createElement("span");
         bus.className = "mod-pill" + (lit ? " lit" : " on");
-        bus.textContent = lit ? ("Горит " + lit) : "На шине";
+        bus.textContent = lit ? ("горит " + lit) : "";
+        if (!bus.textContent) bus.hidden = true;
         pills.append(occ, bus);
         el.appendChild(pills);
       }
@@ -3928,7 +3962,29 @@
         return;
       }
       box.className = "vitrine";
-      filtered.forEach((s) => box.appendChild(moduleTile(s)));
+      const grouped = new Map();
+      filtered.forEach((s) => {
+        const rooms = [];
+        visibleChannels(s).forEach((ch) => {
+          const room = nameRoom(pairName(s, ch));
+          if (room && rooms.indexOf(room) < 0) rooms.push(room);
+        });
+        const key = rooms.length ? rooms.join(" · ") : "Без имени";
+        if (!grouped.has(key)) grouped.set(key, []);
+        grouped.get(key).push(s);
+      });
+      const order = [...grouped.keys()].sort((a, b) => {
+        if (a === "Без имени") return 1;
+        if (b === "Без имени") return -1;
+        return a.localeCompare(b, "ru");
+      });
+      order.forEach((room) => {
+        const h = document.createElement("p");
+        h.className = "sech";
+        h.textContent = room;
+        box.appendChild(h);
+        grouped.get(room).forEach((s) => box.appendChild(moduleTile(s)));
+      });
     }
     function appendRoomSection(box, title, rows) {
       const wrap = document.createElement("div");
@@ -5514,7 +5570,9 @@
       el.hidden = ready;
       el.textContent = ready
         ? ""
-        : [!scan ? "Сначала обновите шину." : "", busText === "шина спокойна" ? "" : busText, keyText, lineText, clockBit].filter(Boolean).join(" · ");
+        : (!scan
+          ? "Обновите щит. Затем встаньте в комнате и нажмите кнопку три раза."
+          : [busText === "шина спокойна" ? "" : busText, keyText, lineText, clockBit].filter(Boolean).join(" · "));
     }
     function renderMark() {
       paintBenchReady();
@@ -5559,12 +5617,12 @@
         ? sortModules([].concat(split.light || [], split.buttons || [], split.relays || []))
         : (split[modFamily] || []);
       const empty = modFamily === "buttons"
-        ? "Кнопок на шине нет."
+        ? "Встаньте у кнопки и нажмите её три раза."
         : modFamily === "relays"
-          ? "Реле на шине нет."
+          ? "Реле появятся после обновления щита."
           : modFamily === "light"
-            ? "Света на шине нет."
-            : "На шине модулей нет.";
+            ? "Включите линию и назовите то, что загорелось."
+            : "Встаньте в комнате и нажмите кнопку три раза.";
       fillModuleVitrine(body, famRows, empty);
     }
     function renderShelves(rows) {
@@ -5574,7 +5632,7 @@
     async function scanNow() {
       $("scan").disabled = true;
       try {
-        $("bus").textContent = "Снимаю шину…";
+        $("bus").textContent = "Смотрю дом…";
         const r = await fetch("/runtime/mqtt-scan", {
           method: "POST",
           headers: { "content-type": "application/json" },
@@ -5625,11 +5683,11 @@
         return n + (s.channels || []).filter(function (c) { return c.source === "rules" && c.name; }).length;
       }, 0);
       lastBusScan = j.scan || null;
-      let line = "На шине " + shelves.length + (shelves.length === 1 ? " модуль" : " модулей");
-      if (j.scan && j.scan.truncated) line += ". Список обрезан";
-      else if (j.scan && j.scan.shortScan) line += ". " + gapScanText(j.scan);
-      else if (j.scan && j.scan.settled === false) line += ". Ещё дописывается";
-      else if (j.scan && Number(j.scan.offlineDeviceCount) > 0) line += ". Молчит " + j.scan.offlineDeviceCount;
+      let line = "";
+      if (j.scan && j.scan.truncated) line = "Список ещё не весь. Обновите ещё раз.";
+      else if (j.scan && j.scan.shortScan) line = gapScanText(j.scan);
+      else if (j.scan && j.scan.settled === false) line = "Дом ещё дописывается.";
+      else if (j.scan && Number(j.scan.offlineDeviceCount) > 0) line = "Молчит " + j.scan.offlineDeviceCount;
       $("bus").dataset.base = line;
       $("bus").textContent = line;
       $("bus").title = j.brokerLabel ? ("Шина " + j.brokerLabel) : "";
