@@ -152,6 +152,7 @@ export function completeDeskModuleChannels(shelves) {
     if (!expect.length) return shelf;
     const channels = Array.isArray(shelf.channels) ? shelf.channels.slice() : [];
     const have = new Set(channels.map((ch) => String(ch?.controlId || "")));
+    if (!expect.some((id) => have.has(id))) return shelf;
     let added = false;
     for (const controlId of expect) {
       if (have.has(controlId)) continue;

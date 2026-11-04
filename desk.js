@@ -5787,11 +5787,10 @@
       paintMarkPath();
       const intro = $("markIntro");
       if (intro) {
-        intro.textContent = modFamily === "keys"
-          ? "Сначала объект и комнаты. «Сканировать» — три коротких нажатия, затем комната и назначение."
-          : modFamily === "lines"
-            ? "Комнаты уже есть. Включите линию, посмотрите, что загорелось, и назовите светильник."
-            : modFamily === "pair"
+        intro.hidden = modFamily === "keys" || modFamily === "lines";
+        intro.textContent = modFamily === "keys" || modFamily === "lines"
+          ? ""
+          : modFamily === "pair"
               ? "1 · Прозвон: нажмите физ. кнопку — увидите имя и импульс связанных линий."
               : "Назовите комнату и то, что в ней включается.";
       }
