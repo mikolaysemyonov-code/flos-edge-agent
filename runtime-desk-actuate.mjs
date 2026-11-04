@@ -3,6 +3,8 @@
  * Локальный MQTT на щите — без облака.
  */
 import mqtt from "mqtt";
+import { readDeskDocument } from "./runtime-desk-marking.mjs";
+import { cellId } from "./runtime-desk-pour-core.mjs";
 
 function brokerUrl() {
   const host = (
@@ -42,6 +44,18 @@ export function deskActuatePayloads(deviceTopicKey, controlId) {
     return { on: "1", off: "0", pulseMs: 2200, kind: "led_switch", brightness: "100" };
   }
   return { on: "1", off: "0", pulseMs: 800, kind: "relay" };
+}
+
+/** Имя уже залито в form_logic_os — тумблер пишет туда, мост сам включает лампу. */
+export function namedVirtualCell(deviceTopicKey, controlId) {
+  try {
+    const shelf = readDeskDocument()?.shelves?.[deviceTopicKey];
+    const ch = shelf?.channels?.[controlId];
+    if (!ch || !String(ch.name || "").trim()) return "";
+    return cellId(deviceTopicKey, controlId);
+  } catch {
+    return "";
+  }
 }
 
 /** Канал без яркости зажигает лампу на 1%. Яркость пишем до ключа и ещё раз после. */
@@ -142,18 +156,23 @@ export async function actuateDeskChannel(input) {
     ? String(input.desired).toLowerCase()
     : "pulse";
   const pay = deskActuatePayloads(deviceTopicKey, controlId);
+  const virtualCell = namedVirtualCell(deviceTopicKey, controlId);
+  const writesFor = (want) =>
+    virtualCell
+      ? [{ topic: `/devices/form_logic_os/controls/${virtualCell}/on`, payload: want === "off" ? "0" : "1" }]
+      : deskActuateWrites(deviceTopicKey, controlId, want);
   if (desired === "on") {
-    const pub = await publishWrites(deskActuateWrites(deviceTopicKey, controlId, "on"));
+    const pub = await publishWrites(writesFor("on"));
     return { ...pub, desired: "on", kind: pay.kind, value: pay.on };
   }
   if (desired === "off") {
-    const pub = await publishWrites(deskActuateWrites(deviceTopicKey, controlId, "off"));
+    const pub = await publishWrites(writesFor("off"));
     return { ...pub, desired: "off", kind: pay.kind, value: pay.off };
   }
-  const onPub = await publishWrites(deskActuateWrites(deviceTopicKey, controlId, "on"));
+  const onPub = await publishWrites(writesFor("on"));
   if (!onPub.ok) return { ...onPub, desired: "pulse", kind: pay.kind };
   await sleep(pay.pulseMs);
-  const offPub = await publishWrites(deskActuateWrites(deviceTopicKey, controlId, "off"));
+  const offPub = await publishWrites(writesFor("off"));
   return {
     ok: Boolean(offPub.ok),
     desired: "pulse",

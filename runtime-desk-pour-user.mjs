@@ -1,6 +1,7 @@
 /**
  * Типовые со стола → defineRule в 40_rules_user.
  */
+import { cellId } from "./runtime-desk-pour-core.mjs";
 import { deskButtonCounter, deskPressEdgeLine } from "./runtime-desk-marking.mjs";
 import { liveDeskDeviceKey } from "./runtime-desk-rules-marks.mjs";
 import { emitDeskClimate, isDeskClimateSolution } from "./runtime-desk-pour-climate.mjs";
@@ -34,11 +35,10 @@ function buttonWhen(trig, kind) {
   return dev + "/" + cid;
 }
 
-function lightIsOnExpr(path) {
-  if (/\/Channel \d+$/i.test(String(path || ""))) {
-    return `(Number(readValue(${esc(path + " Brightness")})) > 1)`;
-  }
-  return `wbIsOn(readValue(${esc(path)}))`;
+function virtualOf(path) {
+  const i = String(path || "").indexOf("/");
+  if (i <= 0) return "";
+  return "form_logic_os/" + cellId(path.slice(0, i), path.slice(i + 1));
 }
 
 function triggerWhen(trig) {
@@ -170,17 +170,19 @@ function emitToggle(sol) {
   const when = triggerWhen(sol.trigger);
   const loads = (sol.targets || []).map(pathOf).filter(Boolean);
   if (!when || !loads.length) return "";
+  const cells = loads.map(virtualOf).filter(Boolean);
+  if (!cells.length) return "";
   const mode = String(sol?.params?.mode || "toggle").toLowerCase();
   let body;
   if (mode === "off") {
-    body = loads.map((p) => actuatorBool(p, "0", id)).join("\n");
+    body = cells.map((c) => `      dev[${esc(c)}] = false;`).join("\n");
   } else if (mode === "on") {
-    body = loads.map((p) => actuatorBool(p, "1", id)).join("\n");
+    body = cells.map((c) => `      dev[${esc(c)}] = true;`).join("\n");
   } else {
     body = [
       deskPressEdgeLine(when),
-      `      var next = !${lightIsOnExpr(loads[0])};`,
-      ...loads.map((p) => actuatorBool(p, "next", id)),
+      `      var next = !wbIsOn(readValue(${esc(cells[0])}));`,
+      ...cells.map((c) => `      dev[${esc(c)}] = next;`),
     ]
       .filter(Boolean)
       .join("\n");
