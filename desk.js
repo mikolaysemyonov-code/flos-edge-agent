@@ -5040,19 +5040,18 @@
         if (ticket === beaconPick) renderMark();
       }
     }
-    function saveLitLine(code, purpose) {
+    function saveLitLine(room, purpose) {
       const cur = lineBeacon && lineBeacon.current;
-      const room = (walkRooms || []).find((r) => String(r.code) === String(code));
       const label = String(purpose || "").trim();
-      if (!cur || !room || !label) return;
+      if (!cur || !room || !room.name || !label) return;
       fetch("/runtime/desk-line-plan", {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
           mark: true,
           room: room.name,
-          code: room.code,
-          floor: room.floor,
+          code: room.code || "",
+          floor: room.floor || 1,
           label,
           deviceTopicKey: cur.deviceTopicKey,
           controlId: cur.controlId,
@@ -5175,127 +5174,170 @@
       });
       body.appendChild(grid);
       if (lit) {
-        const card = document.createElement("div");
-        card.className = "key-plan-add glass";
+        const live = document.createElement("div");
+        live.className = "key-plan-add glass";
         const topic = document.createElement("p");
         topic.className = "meta";
         topic.textContent = "Горит · " + shelfLabel(lit.deviceTopicKey) + " · " + prettyControlId(lit.controlId);
-        const existing = beaconLineFor(lit);
-        const roomSel = document.createElement("select");
-        roomSel.className = "bind";
-        roomSel.setAttribute("aria-label", "Комната");
-        (walkRooms || []).slice().sort((a, b) => String(a.code).localeCompare(String(b.code))).forEach((room) => {
-          const opt = document.createElement("option");
-          opt.value = room.code;
-          opt.textContent = room.code + " · " + room.name;
-          roomSel.appendChild(opt);
-        });
-        if (existing && existing.code) roomSel.value = existing.code;
-        else if (existing) {
-          const byName = (walkRooms || []).find((r) => r.name === existing.room);
-          if (byName) roomSel.value = byName.code;
-        }
-        const purposeSel = document.createElement("select");
-        purposeSel.className = "bind";
-        purposeSel.setAttribute("aria-label", "Назначение света");
-        const blank = document.createElement("option");
-        blank.value = "";
-        blank.textContent = "Назначение";
-        purposeSel.appendChild(blank);
-        (walkPurposes || []).forEach((name) => {
-          const opt = document.createElement("option");
-          opt.value = name;
-          opt.textContent = name;
-          purposeSel.appendChild(opt);
-        });
-        const other = document.createElement("option");
-        other.value = "__other";
-        other.textContent = "Другое";
-        purposeSel.appendChild(other);
-        if (existing && existing.label) {
-          const known = (walkPurposes || []).indexOf(existing.label) >= 0;
-          purposeSel.value = known ? existing.label : "__other";
-        }
-        const custom = document.createElement("input");
-        custom.className = "bind";
-        custom.placeholder = "Своё назначение";
-        custom.hidden = purposeSel.value !== "__other";
-        if (existing && existing.label && purposeSel.value === "__other") custom.value = existing.label;
-        purposeSel.addEventListener("change", () => { custom.hidden = purposeSel.value !== "__other"; });
-        const act = document.createElement("div");
-        act.className = "key-plan-actions";
-        const save = document.createElement("button");
-        save.type = "button";
-        save.className = "ghost key-add-all";
-        save.textContent = "Зафиксировать";
-        save.disabled = !(walkRooms || []).length;
-        save.addEventListener("click", () => {
-          const purpose = purposeSel.value === "__other" ? custom.value : purposeSel.value;
-          saveLitLine(roomSel.value, purpose);
-        });
         const off = document.createElement("button");
         off.type = "button";
         off.className = "ghost";
         off.textContent = "Погасить";
         off.addEventListener("click", () => { stopLineBeacon(); renderMark(); });
-        act.append(save, off);
-        if (!(walkRooms || []).length) {
-          const need = document.createElement("p");
-          need.className = "meta orphan";
-          need.textContent = "Сначала комнаты на вкладке «Клавиши».";
-          card.append(topic, need, act);
-        } else {
-          card.append(topic, roomSel, purposeSel, custom, act);
-        }
-        body.appendChild(card);
+        live.append(topic, off);
+        body.appendChild(live);
       }
       const addBox = document.createElement("div");
       addBox.className = "key-plan-add glass";
-      const roomInp = document.createElement("input");
-      roomInp.className = "bind";
-      roomInp.placeholder = "Комната (Спальня)";
-      roomInp.value = lineRoomFilter || "";
-      const labInp = document.createElement("textarea");
-      labInp.className = "bind key-labels";
-      labInp.rows = 4;
-      labInp.placeholder = "Линии — по одной на строку\nсветовая у кровати\nтреки\nбра";
-      const addRow = document.createElement("div");
-      addRow.className = "key-plan-actions";
-      const addBtn = document.createElement("button");
-      addBtn.type = "button";
-      addBtn.className = "ghost key-add-all";
-      addBtn.textContent = "+ Добавить все";
-      const plusOne = document.createElement("button");
-      plusOne.type = "button";
-      plusOne.className = "ghost";
-      plusOne.textContent = "+1";
-      const submit = () => {
-        postLinePlanLabels(roomInp.value, labInp.value, () => { labInp.value = ""; });
-      };
-      addBtn.addEventListener("click", submit);
-      plusOne.addEventListener("click", () => {
-        const room = String(roomInp.value || "").trim();
-        if (!room) { roomInp.focus(); return; }
-        postLinePlanLabels(room, nextLineLabelForRoom(room), () => { labInp.value = ""; });
+      const existing = lit ? beaconLineFor(lit) : null;
+      const roomSel = document.createElement("select");
+      roomSel.className = "bind";
+      roomSel.setAttribute("aria-label", "Комната");
+      const roomBlank = document.createElement("option");
+      roomBlank.value = "";
+      roomBlank.textContent = "Комната";
+      roomSel.appendChild(roomBlank);
+      const knownNames = new Set();
+      (walkRooms || []).slice().sort((a, b) => String(a.code).localeCompare(String(b.code))).forEach((room) => {
+        knownNames.add(String(room.name || "").toLowerCase());
+        const opt = document.createElement("option");
+        opt.value = "code:" + room.code;
+        opt.textContent = room.code + " · " + room.name;
+        roomSel.appendChild(opt);
       });
-      labInp.addEventListener("keydown", (e) => {
-        if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
-          e.preventDefault();
-          submit();
+      [...new Set((linePlan || []).map((k) => k.room).filter(Boolean))].sort((a, b) => a.localeCompare(b, "ru")).forEach((name) => {
+        if (knownNames.has(String(name).toLowerCase())) return;
+        knownNames.add(String(name).toLowerCase());
+        const opt = document.createElement("option");
+        opt.value = "room:" + name;
+        opt.textContent = name;
+        roomSel.appendChild(opt);
+      });
+      const catalog = (walkCatalog || []).length
+        ? walkCatalog
+        : [{ group: "Комнаты", names: ["Спальня", "Кухня", "Гостиная", "Детская", "Ванная", "Прихожая", "Коридор", "Кабинет"] }];
+      catalog.forEach((group) => {
+        const names = (group.names || []).filter((name) => !knownNames.has(String(name).toLowerCase()));
+        if (!names.length) return;
+        const og = document.createElement("optgroup");
+        og.label = group.group || "Комната";
+        names.forEach((name) => {
+          const opt = document.createElement("option");
+          opt.value = "new:" + name;
+          opt.textContent = name;
+          og.appendChild(opt);
+        });
+        roomSel.appendChild(og);
+      });
+      if (existing && existing.code && [...roomSel.options].some((o) => o.value === "code:" + existing.code)) {
+        roomSel.value = "code:" + existing.code;
+      } else if (existing && existing.room) {
+        const byCode = (walkRooms || []).find((r) => r.name === existing.room);
+        const plain = "room:" + existing.room;
+        roomSel.value = byCode ? "code:" + byCode.code : ([...roomSel.options].some((o) => o.value === plain) ? plain : "");
+      }
+      const purposes = (walkPurposes || []).length
+        ? walkPurposes
+        : ["Основной свет", "Люстра", "Бра", "Подсветка", "Ночник", "Рабочий свет", "Свет у зеркала"];
+      const purposeSel = document.createElement("select");
+      purposeSel.className = "bind";
+      purposeSel.setAttribute("aria-label", "Что за свет");
+      const purposeBlank = document.createElement("option");
+      purposeBlank.value = "";
+      purposeBlank.textContent = "Что за свет";
+      purposeSel.appendChild(purposeBlank);
+      purposes.forEach((name) => {
+        const opt = document.createElement("option");
+        opt.value = name;
+        opt.textContent = name;
+        purposeSel.appendChild(opt);
+      });
+      const other = document.createElement("option");
+      other.value = "__other";
+      other.textContent = "Другое";
+      purposeSel.appendChild(other);
+      if (existing && existing.label) {
+        purposeSel.value = purposes.indexOf(existing.label) >= 0 ? existing.label : "__other";
+      }
+      const custom = document.createElement("input");
+      custom.className = "bind";
+      custom.placeholder = "Своё название света";
+      custom.hidden = purposeSel.value !== "__other";
+      if (existing && existing.label && purposeSel.value === "__other") custom.value = existing.label;
+      purposeSel.addEventListener("change", () => { custom.hidden = purposeSel.value !== "__other"; });
+      const act = document.createElement("div");
+      act.className = "key-plan-actions";
+      const save = document.createElement("button");
+      save.type = "button";
+      save.className = "ghost key-add-all";
+      save.textContent = "Зафиксировать";
+      save.disabled = !lit;
+      save.addEventListener("click", () => {
+        if (!lit) return;
+        const purpose = purposeSel.value === "__other" ? custom.value : purposeSel.value;
+        const pick = roomSel.value;
+        if (!pick || !purpose) return;
+        if (pick.indexOf("code:") === 0) {
+          const room = (walkRooms || []).find((r) => r.code === pick.slice(5));
+          if (room) saveLitLine(room, purpose);
+          return;
+        }
+        if (pick.indexOf("room:") === 0) {
+          saveLitLine({ name: pick.slice(5) }, purpose);
+          return;
+        }
+        if (pick.indexOf("new:") === 0) {
+          const name = pick.slice(4);
+          const addRoom = () => {
+            fetch("/runtime/desk-key-plan", {
+              method: "POST",
+              headers: { "content-type": "application/json" },
+              body: JSON.stringify({ addRoom: { floor: 1, name } }),
+            })
+              .then((r) => r.json())
+              .then((j) => {
+                if (!j || !j.ok || !j.room) {
+                  linePlanNote = "Не сохранил комнату.";
+                  renderMark();
+                  return;
+                }
+                walkSite = j.site || walkSite;
+                walkRooms = Array.isArray(j.roomBook) ? j.roomBook : walkRooms;
+                saveLitLine(j.room, purpose);
+              })
+              .catch(() => renderMark());
+          };
+          if (walkSite && walkSite.kind) addRoom();
+          else {
+            fetch("/runtime/desk-key-plan", {
+              method: "POST",
+              headers: { "content-type": "application/json" },
+              body: JSON.stringify({ site: { kind: "flat", floors: 1 } }),
+            })
+              .then((r) => r.json())
+              .then((j) => {
+                if (j && j.ok) walkSite = j.site || { kind: "flat", floors: 1 };
+                addRoom();
+              })
+              .catch(() => renderMark());
+          }
         }
       });
-      addRow.append(addBtn, plusOne);
-      addBox.append(roomInp, labInp, addRow);
-      body.appendChild(addBox);
-      if (linePlanFocus) {
-        linePlanFocus = false;
-        setTimeout(() => labInp.focus(), 30);
+      act.appendChild(save);
+      if (!lit) {
+        const hint = document.createElement("p");
+        hint.className = "meta";
+        hint.textContent = "Нажмите кружок. Здесь выберете комнату и что за свет.";
+        addBox.append(hint, roomSel, purposeSel, custom, act);
+      } else {
+        addBox.append(roomSel, purposeSel, custom, act);
       }
+      body.appendChild(addBox);
       const rooms = [...new Set(linePlan.map((k) => k.room))].sort((a, b) => a.localeCompare(b, "ru"));
       if (!rooms.length) {
         const empty = document.createElement("p");
         empty.className = "meta orphan";
-        empty.textContent = "План пуст — впишите комнату и линии списком, затем «+ Добавить все».";
+        empty.textContent = "Пока пусто. Нажмите кружок и выберите комнату и свет.";
         body.appendChild(empty);
         return;
       }
@@ -5309,18 +5351,7 @@
         const head = document.createElement("span");
         head.className = "key-room-title";
         head.textContent = room + " · " + bound + "/" + lines.length;
-        const roomPlus = document.createElement("button");
-        roomPlus.type = "button";
-        roomPlus.className = "ghost key-room-plus";
-        roomPlus.textContent = "+";
-        roomPlus.title = "Ещё линия в «" + room + "»";
-        roomPlus.addEventListener("click", (e) => {
-          e.preventDefault();
-          e.stopPropagation();
-          lineRoomFilter = room;
-          postLinePlanLabels(room, nextLineLabelForRoom(room));
-        });
-        sum.append(head, roomPlus);
+        sum.appendChild(head);
         det.appendChild(sum);
         const list = document.createElement("ol");
         list.className = "key-list";
