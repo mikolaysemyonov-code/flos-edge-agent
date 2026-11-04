@@ -1,6 +1,7 @@
 /**
  * Типовые со стола → defineRule в 40_rules_user.
  */
+import { cellId } from "./runtime-desk-pour-core.mjs";
 import { deskButtonCounter, deskPressEdgeLine } from "./runtime-desk-marking.mjs";
 import { liveDeskDeviceKey } from "./runtime-desk-rules-marks.mjs";
 import { emitDeskClimate, isDeskClimateSolution } from "./runtime-desk-pour-climate.mjs";
@@ -163,6 +164,24 @@ function isLedChannelPath(path) {
 }
 
 /** Как компилятор типовых на Vercel: реле — wbActuatorToggle, лента — яркость затем канал. */
+function echoCellKey(path) {
+  const i = String(path || "").indexOf("/");
+  if (i <= 0) return "";
+  return esc(cellId(path.slice(0, i), path.slice(i + 1)));
+}
+
+/** Мост form_logic_os не должен затирать запись кнопки, пока она идёт на канал. */
+function holdEcho(path, body) {
+  const key = echoCellKey(path);
+  if (!key) return body;
+  return [
+    '      if (typeof flRtEcho === "undefined") flRtEcho = {};',
+    `      flRtEcho[${key}] = 1;`,
+    body,
+    `      setTimeout(function () { flRtEcho[${key}] = 0; }, 160);`,
+  ].join("\n");
+}
+
 function compilerToggle(path, id) {
   const rule = esc(id);
   if (!isLedChannelPath(path)) return `      wbActuatorToggle(${esc(path)}, ${rule}, 50);`;
@@ -205,10 +224,10 @@ function emitToggle(sol) {
   const mode = String(sol?.params?.mode || "toggle").toLowerCase();
   const body =
     mode === "off"
-      ? loads.map((p) => compilerSet(p, false, id)).join("\n")
+      ? loads.map((p) => holdEcho(p, compilerSet(p, false, id))).join("\n")
       : mode === "on"
-        ? loads.map((p) => compilerSet(p, true, id)).join("\n")
-        : loads.map((p) => compilerToggle(p, id)).join("\n");
+        ? loads.map((p) => holdEcho(p, compilerSet(p, true, id))).join("\n")
+        : loads.map((p) => holdEcho(p, compilerToggle(p, id))).join("\n");
   return [
     `defineRule(${esc(id)}, {`,
     `  whenChanged: ${esc(when)},`,

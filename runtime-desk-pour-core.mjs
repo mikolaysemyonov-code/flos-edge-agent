@@ -85,15 +85,32 @@ function emitBridge(deviceTopicKey, controlId, name) {
       `      var on = wbIsOn(readValue(${esc("form_logic_os/" + id)}));`,
       `      var bri = Number(readValue(${esc("form_logic_os/" + briId)}));`,
       "      if (isNaN(bri) || bri < 0) bri = 0; if (bri > 100) bri = 100;",
-      "      var wantBr = on ? (bri > 0 ? bri : 80) : 0;",
-      `      wbActuatorSet(${esc(path)}, on, ${esc("fl_rt_cmd_" + id)}, 40);`,
+      "      var wantSw = on ? 1 : 0;",
+      "      var wantBr = on ? (bri > 0 ? bri : 100) : 0;",
+      `      var curSw = wbIsOn(readValue(${esc(path)})) ? 1 : 0;`,
+      `      var curBr = Number(readValue(${esc(bri)})); if (isNaN(curBr)) curBr = 0;`,
+      "      if (curSw === wantSw && curBr === wantBr) return;",
+      `      flRtEcho[${esc(id)}] = 1;`,
       "      if (on) {",
-      "        var kick = wantBr > 1 ? wantBr - 1 : 2;",
-      `        wbActuatorSet(${esc(bri)}, kick, ${esc("fl_rt_cmd_" + id)}, 40);`,
-      `        wbActuatorSet(${esc(bri)}, wantBr, ${esc("fl_rt_cmd_" + id)}, 40);`,
+      "        if (bri <= 0) {",
+      `          var lastBr = Number(flRtLastBri[${esc(id)}]);`,
+      "          if (!isNaN(lastBr) && lastBr > 0) { bri = lastBr; wantBr = lastBr; } else { bri = 100; wantBr = 100; }",
+      `          dev[${esc("form_logic_os/" + briId)}] = bri;`,
+      "        } else {",
+      `          flRtLastBri[${esc(id)}] = bri;`,
+      "        }",
+      `        wbActuatorSet(${esc(bri)}, wantBr, ${esc("fl_rt_cmd_" + id)}, 50);`,
+      `        wbActuatorSet(${esc(path)}, true, ${esc("fl_rt_cmd_" + id)}, 50);`,
       "      } else {",
-      `        wbActuatorSet(${esc(bri)}, 0, ${esc("fl_rt_cmd_" + id)}, 40);`,
+      "        if (bri > 0) {",
+      `          flRtLastBri[${esc(id)}] = bri;`,
+      "        } else if (curBr > 0) {",
+      `          flRtLastBri[${esc(id)}] = curBr;`,
+      "        }",
+      `        wbActuatorSet(${esc(bri)}, 0, ${esc("fl_rt_cmd_" + id)}, 50);`,
+      `        wbActuatorSet(${esc(path)}, false, ${esc("fl_rt_cmd_" + id)}, 50);`,
       "      }",
+      `      setTimeout(function () { flRtEcho[${esc(id)}] = 0; }, 160);`,
       `    } catch (e) { if (typeof wbRuleGuardCatch === "function") wbRuleGuardCatch(${esc("fl_rt_cmd_" + id)}, e); }`,
       "  }",
       "});",
@@ -101,10 +118,13 @@ function emitBridge(deviceTopicKey, controlId, name) {
       `  whenChanged: [${esc(path)}, ${esc(bri)}],`,
       "  then: function () {",
       "    try {",
-      `      var br = Number(readValue(${esc(bri)})); if (isNaN(br)) br = 0;`,
-      "      var on = br > 1;",
-      `      if (Number(readValue(${esc("form_logic_os/" + briId)})) !== br) dev[${esc("form_logic_os/" + briId)}] = br;`,
-      `      if (wbIsOn(readValue(${esc("form_logic_os/" + id)})) !== on) dev[${esc("form_logic_os/" + id)}] = on;`,
+      `      if (flRtEcho[${esc(id)}]) return;`,
+      `      var brNow = Number(readValue(${esc(bri)})); if (isNaN(brNow)) brNow = 0;`,
+      "      var physOn = brNow > 0;",
+      `      if (wbIsOn(readValue(${esc("form_logic_os/" + id)})) !== physOn) dev[${esc("form_logic_os/" + id)}] = physOn;`,
+      "      var br = brNow; if (br < 0) br = 0; if (br > 100) br = 100;",
+      `      var curBr = Number(readValue(${esc("form_logic_os/" + briId)}));`,
+      `      if (isNaN(curBr) || curBr !== br) dev[${esc("form_logic_os/" + briId)}] = br;`,
       `    } catch (e) { if (typeof wbRuleGuardCatch === "function") wbRuleGuardCatch(${esc("fl_rt_mir_" + id)}, e); }`,
       "  }",
       "});",
@@ -118,7 +138,9 @@ function emitBridge(deviceTopicKey, controlId, name) {
       "    try {",
       `      var want = wbIsOn(readValue(${esc("form_logic_os/" + id)}));`,
       `      if (wbIsOn(readValue(${esc(path)})) === want) return;`,
-      `      wbActuatorSet(${esc(path)}, want, ${esc("fl_rt_cmd_" + id)}, 40);`,
+      `      flRtEcho[${esc(id)}] = 1;`,
+      `      wbActuatorSet(${esc(path)}, want, ${esc("fl_rt_cmd_" + id)}, 50);`,
+      `      setTimeout(function () { flRtEcho[${esc(id)}] = 0; }, 120);`,
       `    } catch (e) { if (typeof wbRuleGuardCatch === "function") wbRuleGuardCatch(${esc("fl_rt_cmd_" + id)}, e); }`,
       "  }",
       "});",
@@ -126,6 +148,7 @@ function emitBridge(deviceTopicKey, controlId, name) {
       `  whenChanged: ${esc(path)},`,
       "  then: function () {",
       "    try {",
+      `      if (flRtEcho[${esc(id)}]) return;`,
       `      var on = wbIsOn(readValue(${esc(path)}));`,
       `      if (wbIsOn(readValue(${esc("form_logic_os/" + id)})) !== on) dev[${esc("form_logic_os/" + id)}] = on;`,
       `    } catch (e) { if (typeof wbRuleGuardCatch === "function") wbRuleGuardCatch(${esc("fl_rt_mir_" + id)}, e); }`,
@@ -360,5 +383,23 @@ export function mergeDeskNamesIntoCore(coreSrc, named) {
       changed = true;
     }
   }
+  const echo = ensureFlRtStores(src);
+  src = echo.src;
+  if (echo.changed) changed = true;
   return { ok: true, content: src, changed, removedIds };
+}
+
+function ensureFlRtStores(src) {
+  const text = String(src || "");
+  if (!/fl_rt_(?:cmd|mir)_/.test(text) || text.includes("var flRtEcho")) {
+    return { src: text, changed: false };
+  }
+  const banner = [
+    'var flRtEcho = typeof flRtEcho !== "undefined" ? flRtEcho : {};',
+    'var flRtLastBri = typeof flRtLastBri !== "undefined" ? flRtLastBri : {};',
+    "",
+  ].join("\n");
+  const at = text.search(/defineRule\s*\(\s*["']fl_rt_/);
+  if (at < 0) return { src: text.trimEnd() + "\n\n" + banner, changed: true };
+  return { src: text.slice(0, at) + banner + text.slice(at), changed: true };
 }
