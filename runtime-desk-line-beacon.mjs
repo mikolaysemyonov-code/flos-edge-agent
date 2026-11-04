@@ -11,7 +11,7 @@ import {
   upsertDeskRoom,
   withShelfChannelName,
 } from "./runtime-desk-marking.mjs";
-import { completeDeskModuleChannels } from "./runtime-desk-shelves.mjs";
+import { completeDeskModuleChannels, parseDeskDeviceKey } from "./runtime-desk-shelves.mjs";
 
 const MAX_LINES = 480;
 const MAX_LABEL = 160;
@@ -301,14 +301,33 @@ export function clearDeskLinePlan() {
   return { ok: true, linePlan: [] };
 }
 
-/** led | relay — для фильтра маяка и разного времени удержания. */
+/** dimmer | mr. Тип модуля, не имя канала: Channel на реле не делает его лентой. */
+export function deskBeaconGroup(deviceTopicKey) {
+  const type = String(parseDeskDeviceKey(deviceTopicKey)?.type || "");
+  if (type === "led" || type === "ampled") return "led";
+  if (type === "dali" || /^mdali/.test(type)) return "dali";
+  if (type === "mdm3") return "mdm";
+  if (/^mr/.test(type)) return "mr";
+  return "";
+}
+
+export function deskBeaconFamilyMatch(family, deviceTopicKey) {
+  const want = String(family || "all").toLowerCase();
+  const group = deskBeaconGroup(deviceTopicKey);
+  if (want === "all") return true;
+  if (want === "dim") return group === "led" || group === "dali" || group === "mdm";
+  if (want === "relay" || want === "mr") return group === "mr";
+  return group === want;
+}
+
+/** led | relay — плавность маяка и список назначений. */
 export function deskBeaconKind(controlId, deviceTopicKey) {
+  const group = deskBeaconGroup(deviceTopicKey);
+  if (group === "led" || group === "dali" || group === "mdm") return "led";
+  if (group === "mr") return "relay";
   const c = String(controlId || "").trim();
-  const key = String(deviceTopicKey || "").toLowerCase();
-  if (/led|ampled|dali|mdali/i.test(key) || /^Channel\s+\d+$/i.test(c) || /^CCT\d+$/i.test(c) || /^RGB\d+$/i.test(c)) {
-    return "led";
-  }
   if (/^K\d+$/i.test(c)) return "relay";
+  if (/^Channel\s+\d+$/i.test(c) || /^CCT\d+$/i.test(c) || /^RGB\d+$/i.test(c)) return "led";
   return "relay";
 }
 
@@ -327,9 +346,7 @@ export function deskBeaconHoldMs(kind) {
  */
 export function deskBeaconCandidates(shelves, opts = {}) {
   const includeNamed = opts.includeNamed === true;
-  const family = /^(led|relay)$/i.test(String(opts.family || ""))
-    ? String(opts.family).toLowerCase()
-    : "all";
+  const family = String(opts.family || "all").toLowerCase();
   const free = [];
   const named = [];
   for (const s of completeDeskModuleChannels(shelves)) {
@@ -339,7 +356,7 @@ export function deskBeaconCandidates(shelves, opts = {}) {
       const cid = String(ch?.controlId || "").trim();
       if (!isDeskBeaconLoad(cid, dk)) continue;
       const kind = deskBeaconKind(cid, dk);
-      if (family !== "all" && kind !== family) continue;
+      if (!deskBeaconFamilyMatch(family, dk)) continue;
       const name = String(ch?.name || "").trim();
       const row = {
         deviceTopicKey: dk,

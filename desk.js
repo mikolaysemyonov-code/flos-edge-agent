@@ -54,7 +54,7 @@
     let linePlanNote = "";
     let pairBusy = false;
     let lineBeacon = null; /* { current, busy } — горит один канал */
-    let lineBeaconFamily = "led"; /* led | relay | all */
+    let lineBeaconFamily = "dim"; /* dim | led | dali | mdm | mr */
     let lineBeaconCandidates = [];
     let lineBeaconLoading = false;
     let lineBeaconFamilyLoaded = "";
@@ -491,16 +491,8 @@
       if (kicker) kicker.hidden = tab !== "intro";
       if (busLine) busLine.hidden = tab === "intro" || tab === "poured";
       if (ritual) {
-        ritual.hidden = tab === "intro" || tab === "poured";
-        ritual.textContent = activeNav === "keys"
-          ? "Три коротких нажатия. Комната и что включает клавиша."
-          : activeNav === "light"
-            ? "Кружок зажигает канал. Комната и назначение."
-            : activeNav === "climate"
-              ? "Тепло, воздух и пол. Карточка называется по делу."
-              : activeNav === "scenes"
-                ? "Кнопка уже знает комнату. Здесь она получает дело."
-                : "";
+        ritual.hidden = activeNav !== "keys";
+        ritual.textContent = activeNav === "keys" ? "При сканировании следуйте подсказкам." : "";
       }
       if (tab === "mark") renderMark();
       if (tab === "cards") {
@@ -1612,8 +1604,8 @@
       bar.className = "footlink";
       bar.hidden = pouredOpen() || (!lastReleases.length && pouredPane !== "hist");
       bar.replaceChildren();
-      const b = document.createElement("button");
-      b.type = "button";
+        const b = document.createElement("button");
+        b.type = "button";
       b.className = "textlink";
       if (pouredPane === "hist") {
         b.textContent = "К записи";
@@ -1632,7 +1624,7 @@
           renderReady();
         });
       }
-      bar.appendChild(b);
+        bar.appendChild(b);
       paintPourButtons();
       $("n-poured").textContent = sendN || "";
     }
@@ -1648,8 +1640,9 @@
       if (sum) {
         if (show && pouredPane === "send") {
           sum.hidden = false;
+          sum.hidden = !canWrite && !sendN;
           sum.textContent = !canWrite && !sendN
-            ? "На щите уже то, что вы назвали."
+            ? ""
             : (sendN ? ("Ещё не на щите: " + sendN + ".") : "Можно записать.");
         } else if (show && pouredPane === "hist") {
           sum.hidden = false;
@@ -2476,7 +2469,7 @@
       const n = (pouredRules || []).filter((r) => r.kind === "user").length;
       $("diskScenes").textContent = n
         ? (n === 1 ? "Один сценарий уже на щите." : (n + " сценария уже на щите."))
-        : "Соберите сцену. На щит она уйдёт вместе с именами.";
+        : "";
     }
     let cardSheetDispose = null;
     function closeCardSheet() {
@@ -4253,7 +4246,7 @@
           keyPlan = [];
         } else {
           if (j && j.ok) markingUnreadable = false;
-          keyPlan = Array.isArray(j.keyPlan) ? j.keyPlan : [];
+        keyPlan = Array.isArray(j.keyPlan) ? j.keyPlan : [];
           walkSite = j.site && typeof j.site === "object" ? j.site : { kind: "", floors: 1 };
           walkRooms = Array.isArray(j.roomBook) ? j.roomBook : [];
           walkCatalog = Array.isArray(j.roomCatalog) ? j.roomCatalog : [];
@@ -4310,13 +4303,13 @@
       const row = keyScan.walk ? null : keyPlan.find((k) => k.id === keyScan.id);
       const left = Math.max(0, keyScan.need - keyScan.count);
       const ask = !keyScan.primed
-        ? "Секунду, запоминаю тишину"
+        ? "Секунду"
         : left === 3
-          ? "Нажмите выключатель три раза, коротко"
+          ? "Нажмите 3 раза"
           : left === 2
-            ? "Ещё два коротких"
+            ? "Нажмите ещё 2 раза"
             : left === 1
-              ? "Ещё одно короткое"
+              ? "Нажмите ещё раз"
               : "Кнопка нашлась";
       const where = keyScan.walk
         ? "Выключатель"
@@ -4723,7 +4716,7 @@
       } else if (keyCatch) {
         status.textContent = keyPlanNote || "Выберите комнату и назначение.";
       } else {
-        status.textContent = (keyPlanNote ? keyPlanNote + " " : "") + "Сканировать — три коротких нажатия, система назовёт вход.";
+        status.textContent = (keyPlanNote ? keyPlanNote + " " : "") + "Нажмите «Сканировать» и следуйте подсказкам.";
       }
       body.appendChild(status);
       if (keyCatch) {
@@ -4772,8 +4765,8 @@
           if (!j || !j.ok) {
             keyPlanNote = j && j.error === "need_room" ? "Выберите название комнаты." : "Не сохранил.";
             renderMark();
-            return;
-          }
+          return;
+        }
           walkSite = j.site || walkSite;
           walkRooms = Array.isArray(j.roomBook) ? j.roomBook : walkRooms;
           if (j.room) walkRoomOpen = false;
@@ -4950,29 +4943,29 @@
           tr.appendChild(td);
         });
         const act = document.createElement("td");
-        const del = document.createElement("button");
-        del.type = "button";
-        del.className = "ghost";
-        del.textContent = "×";
+          const del = document.createElement("button");
+          del.type = "button";
+          del.className = "ghost";
+          del.textContent = "×";
         del.title = "Убрать строку";
-        del.addEventListener("click", () => {
-          fetch("/runtime/desk-key-plan", {
-            method: "POST",
-            headers: { "content-type": "application/json" },
-            body: JSON.stringify({ delete: k.id }),
-          })
-            .then((r) => r.json())
-            .then((j) => {
-              if (j && j.ok) {
-                keyPlan = j.keyPlan || [];
-                renderMark();
-              }
-            });
-        });
-        act.appendChild(del);
+          del.addEventListener("click", () => {
+            fetch("/runtime/desk-key-plan", {
+              method: "POST",
+              headers: { "content-type": "application/json" },
+              body: JSON.stringify({ delete: k.id }),
+            })
+              .then((r) => r.json())
+              .then((j) => {
+                if (j && j.ok) {
+                  keyPlan = j.keyPlan || [];
+                  renderMark();
+                }
+              });
+          });
+          act.appendChild(del);
         tr.appendChild(act);
         table.appendChild(tr);
-      });
+        });
       wrap.appendChild(table);
       return wrap;
     }
@@ -4993,7 +4986,7 @@
           linePlan = [];
         } else {
           if (j && j.ok) markingUnreadable = false;
-          linePlan = Array.isArray(j.linePlan) ? j.linePlan : [];
+        linePlan = Array.isArray(j.linePlan) ? j.linePlan : [];
         }
       } catch {
         linePlan = [];
@@ -5088,7 +5081,7 @@
       lineBeaconLoading = false;
       lineBeaconCandidates = rows;
       lineBeaconFamilyLoaded = fam;
-      renderMark();
+        renderMark();
     }
     async function pickBeaconChannel(ch) {
       if (!ch || !ch.deviceTopicKey || !ch.controlId) return;
@@ -5105,12 +5098,12 @@
         if (ticket !== beaconPick) return;
         if (same) {
           lineBeacon = { current: null, busy: false };
-          return;
-        }
-        lineBeacon = {
+        return;
+      }
+      lineBeacon = {
           current: { deviceTopicKey: ch.deviceTopicKey, controlId: ch.controlId, kind: ch.kind || "led" },
-          busy: false,
-        };
+        busy: false,
+      };
         try { await actuateChannel(ch.deviceTopicKey, ch.controlId, "on"); } catch (_) { /* */ }
       } finally {
         if (ticket === beaconPick && lineBeacon) lineBeacon.busy = false;
@@ -5144,15 +5137,15 @@
           linePlan = res.linePlan || linePlan;
           const saved = res.line || {};
           const markName = (saved.code ? saved.code + " " : "") + (saved.room || room.name) + " · " + (saved.label || label);
-          lastShelvesRows = (lastShelvesRows || []).map((s) => {
-            if (!s || s.deviceTopicKey !== cur.deviceTopicKey) return s;
-            return {
-              ...s,
-              channels: (s.channels || []).map((c) =>
+            lastShelvesRows = (lastShelvesRows || []).map((s) => {
+              if (!s || s.deviceTopicKey !== cur.deviceTopicKey) return s;
+              return {
+                ...s,
+                channels: (s.channels || []).map((c) =>
                 c && c.controlId === cur.controlId ? { ...c, name: markName, source: "desk" } : c,
-              ),
-            };
-          });
+                ),
+              };
+            });
           lineBeaconCandidates = (lineBeaconCandidates || []).map((c) =>
             c && c.deviceTopicKey === cur.deviceTopicKey && c.controlId === cur.controlId
               ? { ...c, name: markName }
@@ -5175,9 +5168,11 @@
       fam.setAttribute("role", "tablist");
       fam.setAttribute("aria-label", "Тип линий маяка");
       [
-        { id: "led", t: "LED · плавно" },
-        { id: "relay", t: "Реле · быстро" },
-        { id: "all", t: "Все" },
+        { id: "dim", t: "Диммеры" },
+        { id: "led", t: "WB-LED" },
+        { id: "dali", t: "DALI" },
+        { id: "mdm", t: "MDM3" },
+        { id: "mr", t: "WB-MR" },
       ].forEach((opt) => {
         const b = document.createElement("button");
         b.type = "button";
@@ -5188,7 +5183,7 @@
           lineBeaconFamily = opt.id;
           lineBeaconFamilyLoaded = "";
           if (lineBeacon && lineBeacon.current) stopLineBeacon();
-          renderMark();
+            renderMark();
         });
         fam.appendChild(b);
       });
@@ -5235,8 +5230,8 @@
         list.forEach((ch) => {
           const on = lit && lit.deviceTopicKey === ch.deviceTopicKey && lit.controlId === ch.controlId;
           const row = beaconLineFor(ch);
-          const circle = document.createElement("button");
-          circle.type = "button";
+        const circle = document.createElement("button");
+        circle.type = "button";
           circle.className = "line-beacon-circle sm" + (on ? " on" : "") + (row || ch.name ? " marked" : "") + (ch.silent ? " silent" : "");
           circle.title = ch.silent
             ? "Шина этот канал не прислала. Нажатие всё равно пробует включить"
@@ -5320,7 +5315,9 @@
         const plain = "room:" + existing.room;
         roomSel.value = byCode ? "code:" + byCode.code : ([...roomSel.options].some((o) => o.value === plain) ? plain : "");
       }
-      const lightKind = lit && lit.kind === "relay" ? "relay" : (lineBeaconFamily === "relay" ? "relay" : "led");
+      const lightKind = (lit && lit.kind === "relay") || lineBeaconFamily === "mr" || lineBeaconFamily === "relay"
+        ? "relay"
+        : "led";
       const purposeSel = document.createElement("select");
       purposeSel.className = "bind";
       purposeSel.setAttribute("aria-label", "Что за свет");
@@ -5790,7 +5787,7 @@
         intro.hidden = modFamily === "keys" || modFamily === "lines";
         intro.textContent = modFamily === "keys" || modFamily === "lines"
           ? ""
-          : modFamily === "pair"
+            : modFamily === "pair"
               ? "1 · Прозвон: нажмите физ. кнопку — увидите имя и импульс связанных линий."
               : "Назовите комнату и то, что в ней включается.";
       }
@@ -5836,18 +5833,18 @@
         });
         const j = await r.json();
         if (!j.ok || !Array.isArray(j.shelves)) {
-          $("bus").className = "meta bad";
-          $("bus").style.color = "rgb(var(--bad))";
-          delete $("bus").dataset.base;
+            $("bus").className = "meta bad";
+            $("bus").style.color = "rgb(var(--bad))";
+            delete $("bus").dataset.base;
           $("bus").textContent = j.error || "Шина не ответила";
           return;
         }
         showShelves(j);
       } catch (e) {
-        $("bus").className = "meta";
-        $("bus").style.color = "rgb(var(--bad))";
-        delete $("bus").dataset.base;
-        $("bus").textContent = String(e.message || e);
+          $("bus").className = "meta";
+          $("bus").style.color = "rgb(var(--bad))";
+          delete $("bus").dataset.base;
+          $("bus").textContent = String(e.message || e);
       } finally {
         $("scan").disabled = false;
       }
@@ -6010,7 +6007,7 @@
               head.style.color = "rgb(var(--bad))";
               head.textContent = "На диск не легло";
             } else {
-              head.style.color = "";
+            head.style.color = "";
               const bits = [j.mqttOnly ? "Дубли спрятаны" : "Записано на щит"];
               if (j.namedCount) bits.push("имён " + j.namedCount);
               if (j.emittedSolutions) bits.push("сценариев " + j.emittedSolutions);
