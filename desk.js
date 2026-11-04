@@ -3004,7 +3004,7 @@
         const topics = Number(mirror.topicCount) || 0;
         const busOk = mirror.connected === true && topics > 0;
         const cloudState = j.enrollment && j.enrollment.state;
-        const ver = String(j.agentVersion || "").replace(/^.*\./, "") || "—";
+        const ver = String(j.agentVersion || "") || "—";
         if (!j.ok) {
           box.className = "glass status bad";
           main.textContent = "Щит не ответил";
@@ -3024,7 +3024,7 @@
         main.textContent = busCalm ? "Щит на связи" : (busOk ? "Щит ответил не весь" : "Щит молчит");
         main.title = ver;
         if (sub) {
-          const bits = [];
+          const bits = ["Сборка " + ver];
           if (shieldClockUnverified) bits.push("Время не прочитано");
           else if (!shieldClockOk) bits.push("Часы не совпадают с телефоном");
           if (offline) bits.push(offline === 1 ? "Один модуль молчит" : ("Молчит модулей: " + offline));

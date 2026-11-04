@@ -1,7 +1,6 @@
 /**
  * Типовые со стола → defineRule в 40_rules_user.
  */
-import { cellId } from "./runtime-desk-pour-core.mjs";
 import { deskButtonCounter, deskPressEdgeLine } from "./runtime-desk-marking.mjs";
 import { liveDeskDeviceKey } from "./runtime-desk-rules-marks.mjs";
 import { emitDeskClimate, isDeskClimateSolution } from "./runtime-desk-pour-climate.mjs";
@@ -33,12 +32,6 @@ function buttonWhen(trig, kind) {
   const cid = deskButtonCounter(trig?.controlId, kind, dev);
   if (!dev || !cid) return "";
   return dev + "/" + cid;
-}
-
-function virtualOf(path) {
-  const i = String(path || "").indexOf("/");
-  if (i <= 0) return "";
-  return "form_logic_os/" + cellId(path.slice(0, i), path.slice(i + 1));
 }
 
 function triggerWhen(trig) {
@@ -165,28 +158,57 @@ function actuatorBool(path, expr, id, priority = 50) {
   return `      wbActuatorSet(${topic}, ${on}, ${rule}, ${priority});`;
 }
 
+function isLedChannelPath(path) {
+  return /\/Channel \d+$/i.test(String(path || ""));
+}
+
+/** Как компилятор типовых на Vercel: реле — wbActuatorToggle, лента — яркость затем канал. */
+function compilerToggle(path, id) {
+  const rule = esc(id);
+  if (!isLedChannelPath(path)) return `      wbActuatorToggle(${esc(path)}, ${rule}, 50);`;
+  const sw = esc(path);
+  const dim = esc(path + " Brightness");
+  return [
+    "      (function () {",
+    `        var sw = ${sw};`,
+    `        var dim = ${dim};`,
+    "        var on = wbIsOn(readValue(sw));",
+    "        if (on) {",
+    `          wbActuatorSet(dim, 0, ${rule}, 50);`,
+    `          wbActuatorSet(sw, false, ${rule}, 50);`,
+    "        } else {",
+    "          var lv = Number(readValue(dim));",
+    "          if (isNaN(lv) || lv <= 0) lv = 100;",
+    `          wbActuatorSet(dim, lv, ${rule}, 50);`,
+    `          wbActuatorSet(sw, true, ${rule}, 50);`,
+    "        }",
+    "      })();",
+  ].join("\n");
+}
+
+function compilerSet(path, on, id) {
+  const rule = esc(id);
+  if (!isLedChannelPath(path)) return `      wbActuatorSet(${esc(path)}, ${on ? "true" : "false"}, ${rule}, 50);`;
+  const sw = esc(path);
+  const dim = esc(path + " Brightness");
+  if (!on) {
+    return [`      wbActuatorSet(${dim}, 0, ${rule}, 50);`, `      wbActuatorSet(${sw}, false, ${rule}, 50);`].join("\n");
+  }
+  return [`      wbActuatorSet(${dim}, 100, ${rule}, 50);`, `      wbActuatorSet(${sw}, true, ${rule}, 50);`].join("\n");
+}
+
 function emitToggle(sol) {
   const id = DESK_PREFIX + sol.id + "_toggle";
   const when = triggerWhen(sol.trigger);
   const loads = (sol.targets || []).map(pathOf).filter(Boolean);
   if (!when || !loads.length) return "";
-  const cells = loads.map(virtualOf).filter(Boolean);
-  if (!cells.length) return "";
   const mode = String(sol?.params?.mode || "toggle").toLowerCase();
-  let body;
-  if (mode === "off") {
-    body = cells.map((c) => `      dev[${esc(c)}] = false;`).join("\n");
-  } else if (mode === "on") {
-    body = cells.map((c) => `      dev[${esc(c)}] = true;`).join("\n");
-  } else {
-    body = [
-      deskPressEdgeLine(when),
-      `      var next = !wbIsOn(readValue(${esc(cells[0])}));`,
-      ...cells.map((c) => `      dev[${esc(c)}] = next;`),
-    ]
-      .filter(Boolean)
-      .join("\n");
-  }
+  const body =
+    mode === "off"
+      ? loads.map((p) => compilerSet(p, false, id)).join("\n")
+      : mode === "on"
+        ? loads.map((p) => compilerSet(p, true, id)).join("\n")
+        : loads.map((p) => compilerToggle(p, id)).join("\n");
   return [
     `defineRule(${esc(id)}, {`,
     `  whenChanged: ${esc(when)},`,
