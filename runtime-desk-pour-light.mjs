@@ -89,6 +89,13 @@ function autoChangeOf(channelPath) {
   return p + " Auto-Change";
 }
 
+function brightnessOf(channelPath) {
+  const p = String(channelPath || "").trim();
+  if (/\s+Brightness$/i.test(p)) return p;
+  if (/\/(Channel \d+|CCT\d+)$/i.test(p)) return p + " Brightness";
+  return "";
+}
+
 function emitOnWhenActive(sol, defaults) {
   const when = pathOf(sol.trigger);
   const loads = (sol.targets || []).map(pathOf).filter(Boolean);
@@ -131,8 +138,10 @@ function emitOnWhenActive(sol, defaults) {
 }
 
 /**
- * Long = вверх, Shortlong = вниз (счётчики MCM), release (Input → 0) = стоп Auto-Change.
- * Перед рампой выравниваем яркость всех линий по первой — иначе разъедутся.
+ * Long: вверх, а если яркость уже 100 — вниз. Shortlong: вниз.
+ * Отпустили (Input → 0) — стоп Auto-Change.
+ * Сначала яркость всех линий по первой, потом ключ вкл. Ключ числом не пишем:
+ * иначе мост видит Channel при яркости 0 и гасит линию.
  */
 function emitDimHold(sol) {
   const base = inputBase(sol.trigger);
@@ -143,23 +152,36 @@ function emitDimHold(sol) {
   const autos = loads.map(autoChangeOf).filter(Boolean);
   if (!autos.length) return "";
   const id = "desk_sol_" + sol.id;
-  const first = loads[0];
-  const syncFromFirst = [
-    `      try {`,
-    `        var __cur = Number(readValue(${esc(first)}));`,
-    `        if (isNaN(__cur)) __cur = 0;`,
-    ...loads.slice(1).map((p) => `        wbActuatorSet(${esc(p)}, __cur, ${esc(id)}, 50);`),
-    `      } catch (_e) {}`,
+  const flag = "__dimSu_" + String(sol.id || "x").replace(/[^a-zA-Z0-9_]/g, "_");
+  const firstBri = brightnessOf(loads[0]);
+  const arm = [
+    firstBri
+      ? `      var __bri = Number(readValue(${esc(firstBri)}));`
+      : "      var __bri = 0;",
+    "      if (isNaN(__bri) || __bri < 0) __bri = 0;",
+    "      var __arm = __bri <= 0 ? 1 : __bri;",
+    ...loads.map((p) => {
+      const b = brightnessOf(p);
+      return b ? `      wbActuatorSet(${esc(b)}, __arm, ${esc(id)}, 50);` : "";
+    }).filter(Boolean),
+    ...loads
+      .filter((p) => isLedChannelPath(p))
+      .map((p) => `      wbActuatorSet(${esc(p)}, true, ${esc(id)}, 50);`),
   ].join("\n");
-  const writeAc = (val) =>
-    autos.map((p) => `      wbActuatorSet(${esc(p)}, ${val}, ${esc(id)}, 50);`).join("\n");
+  const writeAc = (val, pad) =>
+    autos.map((p) => `${pad}wbActuatorSet(${esc(p)}, ${val}, ${esc(id)}, 50);`).join("\n");
   return [
     `defineRule(${esc(id + "_dim_up")}, {`,
     `  whenChanged: ${esc(long)},`,
     "  then: function () {",
     "    try {",
-    syncFromFirst,
-    writeAc(AC_INC),
+    `      if (global.__proto__[${esc(flag)}]) return;`,
+    arm,
+    "      if (__bri >= 100) {",
+    writeAc(AC_DEC, "        "),
+    "      } else {",
+    writeAc(AC_INC, "        "),
+    "      }",
     "    } catch (e) { if (typeof wbRuleGuardCatch === 'function') wbRuleGuardCatch(" + esc(id + "_dim_up") + ", e); }",
     "  }",
     "});",
@@ -168,8 +190,10 @@ function emitDimHold(sol) {
     `  whenChanged: ${esc(shortlong)},`,
     "  then: function () {",
     "    try {",
-    syncFromFirst,
-    writeAc(AC_DEC),
+    `      global.__proto__[${esc(flag)}] = 1;`,
+    "      setTimeout(function () { global.__proto__[" + esc(flag) + "] = 0; }, 450);",
+    arm,
+    writeAc(AC_DEC, "      "),
     "    } catch (e) { if (typeof wbRuleGuardCatch === 'function') wbRuleGuardCatch(" + esc(id + "_dim_dn") + ", e); }",
     "  }",
     "});",
@@ -179,7 +203,7 @@ function emitDimHold(sol) {
     "  then: function () {",
     "    try {",
     `      if (wbIsOn(readValue(${esc(base)}))) return;`,
-    writeAc(AC_STOP),
+    writeAc(AC_STOP, "      "),
     "    } catch (e) { if (typeof wbRuleGuardCatch === 'function') wbRuleGuardCatch(" + esc(id + "_dim_stop") + ", e); }",
     "  }",
     "});",

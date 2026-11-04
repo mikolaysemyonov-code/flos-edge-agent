@@ -14,6 +14,19 @@ function isPourLoad(controlId) {
   return isLoadControl(c);
 }
 
+const PRESS_FIELD = {
+  key: "press",
+  kind: "select",
+  label: "Нажатие",
+  def: "single",
+  options: [
+    { v: "single", t: "Одиночное" },
+    { v: "double", t: "Двойное" },
+    { v: "long", t: "Долгое" },
+    { v: "shortlong", t: "Короткое и долгое" },
+  ],
+};
+
 const L = (id, cat, title, summary, extra = {}) => ({ id, cat, title, summary, multi: false, ...extra });
 const M = (id, cat, title, summary, extra = {}) => L(id, cat, title, summary, { multi: true, ...extra });
 const C = (id, cat, title, summary, extra = {}) => M(id, cat, title, summary, { needTrig: false, ...extra });
@@ -34,6 +47,7 @@ export const DESK_SOLUTION_CARDS = [
   M("light_button_toggle", "Свет", "Свет кнопкой — переключить", "Кнопка управляет выбранным светом (режим ниже).", {
     loadKind: "light",
     fields: [
+      PRESS_FIELD,
       {
         key: "mode",
         kind: "select",
@@ -95,6 +109,7 @@ export const DESK_SOLUTION_CARDS = [
   M("socket_button_toggle", "Розетки", "Розетка кнопкой", "Если нажали → выбранные розетки.", {
     loadKind: "socket",
     fields: [
+      PRESS_FIELD,
       {
         key: "mode",
         kind: "select",

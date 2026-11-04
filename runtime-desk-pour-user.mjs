@@ -39,6 +39,14 @@ function triggerWhen(trig) {
   return buttonWhen(trig, "Short");
 }
 
+function pressKind(sol) {
+  const p = String(sol?.params?.press || "single").toLowerCase();
+  if (p === "double") return "Double";
+  if (p === "long") return "Long";
+  if (p === "shortlong") return "Shortlong";
+  return "Short";
+}
+
 function longWhen(trig) {
   return buttonWhen(trig, "Long");
 }
@@ -172,7 +180,7 @@ function virtualAssign(cell, expr) {
 
 function emitToggle(sol) {
   const id = DESK_PREFIX + sol.id + "_toggle";
-  const when = triggerWhen(sol.trigger);
+  const when = buttonWhen(sol.trigger, pressKind(sol));
   const loads = (sol.targets || []).map(pathOf).filter(Boolean);
   const cells = loads.map(virtCell).filter(Boolean);
   if (!when || !cells.length) return "";
