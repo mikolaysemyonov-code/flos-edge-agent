@@ -183,7 +183,7 @@ function emitToggle(sol) {
   } else {
     body = [
       "      var anyOn = false;",
-      ...cells.map((c) => `      if (wbIsOn(readValue(${esc("form_logic_os/" + c)}))) anyOn = true;`),
+      ...cells.map((c) => `      if (wbIsOn(flRtRead(${esc("form_logic_os/" + c)}))) anyOn = true;`),
       "      var wantState = !anyOn;",
       ...cells.map((c) => virtualAssign(c, "wantState")),
     ].join("\n");
@@ -194,7 +194,7 @@ function emitToggle(sol) {
     "  then: function (newValue) {",
     "    try {",
     body,
-    "    } catch (e) { if (typeof wbRuleGuardCatch === 'function') wbRuleGuardCatch(" + esc(id) + ", e); }",
+    "    } catch (e) { log(\"[CORE_ERROR] \" + " + esc(id) + " + \": \" + e); if (typeof wbRuleGuardCatch === 'function') wbRuleGuardCatch(" + esc(id) + ", e); }",
     "  }",
     "});",
   ].join("\n");
@@ -212,7 +212,7 @@ function emitAllOff(sol) {
     "  then: function () {",
     "    try {",
     sets,
-    "    } catch (e) { if (typeof wbRuleGuardCatch === 'function') wbRuleGuardCatch(" + esc(id) + ", e); }",
+    "    } catch (e) { log(\"[CORE_ERROR] \" + " + esc(id) + " + \": \" + e); if (typeof wbRuleGuardCatch === 'function') wbRuleGuardCatch(" + esc(id) + ", e); }",
     "  }",
     "});",
   ].join("\n");
@@ -250,7 +250,7 @@ function emitMasterOffRestore(sol) {
     restore,
     `        ${flag} = false;`,
     "      }",
-    "    } catch (e) { if (typeof wbRuleGuardCatch === 'function') wbRuleGuardCatch(" + esc(id) + ", e); }",
+    "    } catch (e) { log(\"[CORE_ERROR] \" + " + esc(id) + " + \": \" + e); if (typeof wbRuleGuardCatch === 'function') wbRuleGuardCatch(" + esc(id) + ", e); }",
     "  }",
     "});",
   ].join("\n");
@@ -273,7 +273,7 @@ function emitCustomSet(sol) {
     "    try {",
     deskPressEdgeLine(when),
     sets,
-    "    } catch (e) { if (typeof wbRuleGuardCatch === 'function') wbRuleGuardCatch(" + esc(id) + ", e); }",
+    "    } catch (e) { log(\"[CORE_ERROR] \" + " + esc(id) + " + \": \" + e); if (typeof wbRuleGuardCatch === 'function') wbRuleGuardCatch(" + esc(id) + ", e); }",
     "  }",
     "});",
   ].join("\n");

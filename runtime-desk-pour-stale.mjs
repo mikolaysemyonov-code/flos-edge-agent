@@ -70,24 +70,35 @@ export function stripStaleHideBlock(src) {
     .replace(/\n{3,}/g, "\n\n");
 }
 
+function idList(ids) {
+  if (!ids.length) return "[]";
+  return "[\n" + ids.map((id) => "    " + JSON.stringify(id)).join(",\n") + "\n  ]";
+}
+
 function hidePublishLines(ghostIds, activeIds) {
   const ghosts = [...new Set((ghostIds || []).map((id) => String(id || "").trim()).filter(Boolean))].sort();
   const active = [...new Set((activeIds || []).map((id) => String(id || "").trim()).filter(Boolean))].sort();
-  const lines = [];
-  for (const id of ghosts) {
-    const base = `/devices/form_logic_os/controls/${id}`;
-    // JSON meta.hidden — то, что читает homeui; subtopic — запасной канал.
-    lines.push(
-      `    publish(${JSON.stringify(base + "/meta")}, ${JSON.stringify(JSON.stringify({ type: "switch", hidden: true, title: { en: id } }))}, 0, true);`,
-    );
-    lines.push(`    publish(${JSON.stringify(base + "/meta/hidden")}, "1", 0, true);`);
-    lines.push(`    publish(${JSON.stringify(base + "/meta/error")}, "1", 0, true);`);
-  }
-  for (const id of active) {
-    const base = `/devices/form_logic_os/controls/${id}`;
-    lines.push(`    publish(${JSON.stringify(base + "/meta/hidden")}, "0", 0, true);`);
-    lines.push(`    publish(${JSON.stringify(base + "/meta/error")}, "", 0, true);`);
-  }
+  if (!ghosts.length && !active.length) return { lines: [], ghostCount: 0 };
+  const lines = [
+    "    var hide = " + idList(ghosts) + ";",
+    "    var show = " + idList(active) + ";",
+    "    var i;",
+    "    var id;",
+    "    var base;",
+    "    for (i = 0; i < hide.length; i++) {",
+    "      id = hide[i];",
+    '      base = "/devices/form_logic_os/controls/" + id;',
+    '      publish(base + "/meta", "{\\"type\\":\\"switch\\",\\"hidden\\":true}", 0, true);',
+    '      publish(base + "/meta/hidden", "1", 0, true);',
+    '      publish(base + "/meta/error", "1", 0, true);',
+    "    }",
+    "    for (i = 0; i < show.length; i++) {",
+    "      id = show[i];",
+    '      base = "/devices/form_logic_os/controls/" + id;',
+    '      publish(base + "/meta/hidden", "0", 0, true);',
+    '      publish(base + "/meta/error", "", 0, true);',
+    "    }",
+  ];
   return { lines, ghostCount: ghosts.length };
 }
 
