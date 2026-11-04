@@ -23,7 +23,7 @@ import {
 } from "./runtime-desk-pour-stale.mjs";
 import { hideFormLogicOsGhostsNow } from "./runtime-desk-pour-mqtt.mjs";
 import { preserveDeskRules } from "./runtime-desk-pour-user.mjs";
-import { buildDeskPassportXlsx } from "./runtime-desk-passport.mjs";
+import { buildDeskKeysXlsx, buildDeskPassportXlsx } from "./runtime-desk-passport.mjs";
 import { readDeskDocument, replaceDeskDocument } from "./runtime-desk-marking.mjs";
 import { findContinuousOutputClash, findScheduleOutputClash } from "./runtime-desk-solutions.mjs";
 import {
@@ -885,6 +885,18 @@ export function runtimeHttpPathHandler(req, res) {
   const urlPath = (req.url ?? "/").split("?")[0];
   if (deskWriteLocked(method, urlPath) && !authorizeRuntimeRequest(req)) {
     jsonWrite(res, 401, { ok: false, error: "AUTH: invalid or missing bearer token" });
+    return true;
+  }
+  if (method === "GET" && urlPath === "/runtime/desk-keys.xlsx") {
+    const bytes = buildDeskKeysXlsx();
+    res.statusCode = 200;
+    res.setHeader("content-type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+    res.setHeader(
+      "content-disposition",
+      "attachment; filename=\"keys.xlsx\"; filename*=UTF-8''%D0%BA%D0%BB%D0%B0%D0%B2%D0%B8%D1%88%D0%B8.xlsx",
+    );
+    res.setHeader("cache-control", "no-store");
+    res.end(bytes);
     return true;
   }
   if (method === "GET" && urlPath === "/runtime/desk-passport.xlsx") {

@@ -4702,8 +4702,8 @@
       file.textContent = "Скачать Excel";
       file.addEventListener("click", () => {
         const a = document.createElement("a");
-        a.href = "/runtime/desk-passport.xlsx";
-        a.download = "клавиши.xlsx";
+          a.href = "/runtime/desk-keys.xlsx";
+          a.download = "клавиши.xlsx";
         a.click();
       });
       body.appendChild(file);
