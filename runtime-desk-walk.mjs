@@ -96,6 +96,11 @@ export function listDeskWalk() {
 export function setDeskSite(input) {
   const site = cleanDeskSite(input);
   if (!site.kind) return { ok: false, error: "need_site" };
+  if (site.kind === "house") {
+    const used = cleanRoomBook(readDeskDocument().roomBook)
+      .reduce((max, room) => Math.max(max, room.floor || 1), 1);
+    if (site.floors < used) site.floors = used;
+  }
   const written = patchDeskDocument({ site });
   if (written?.ok === false) return written;
   return { ok: true, ...listDeskWalk() };

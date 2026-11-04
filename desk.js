@@ -46,6 +46,7 @@
     let shieldClockOk = true;
     let shieldClockUnverified = false;
     let shieldClockLabel = "";
+    let shieldClockSource = "";
     let keyRoomFilter = "";
     let keyPlanFocus = false; /* после «+» вернуть фокус в поле подписей */
     let linePlan = [];
@@ -3062,6 +3063,7 @@
         shieldClockOk = clock.ok !== false;
         shieldClockUnverified = clock.unverified === true;
         shieldClockLabel = clock.label || "";
+        shieldClockSource = clock.source || "";
         paintShieldClock();
         const offline = Number(mirror.offlineDeviceCount) || 0;
         const incident = Array.isArray(j.busIncidents) && j.busIncidents[0] ? j.busIncidents[0].reason : "";
@@ -4674,12 +4676,34 @@
         body.append(phase, row);
         return;
       }
+      const phaseRow = document.createElement("div");
+      phaseRow.className = "key-plan-actions";
       const phase = document.createElement("p");
       phase.className = "meta";
+      phase.style.margin = "0";
       phase.textContent = walkSite.kind === "house"
-        ? ("Дом · этажей " + walkSite.floors + ". Код комнаты: этаж и порядок, 101, 102, 201.")
+        ? "Дом. Код комнаты: этаж и порядок, 101, 102, 201."
         : "Квартира. Код комнаты: 101, 102, 103.";
-      body.appendChild(phase);
+      phaseRow.appendChild(phase);
+      if (walkSite.kind === "house") {
+        const usedFloor = (walkRooms || []).reduce((max, room) => Math.max(max, Number(room.floor) || 1), 1);
+        const floors = document.createElement("select");
+        floors.className = "bind";
+        floors.setAttribute("aria-label", "Этажей");
+        [1, 2, 3, 4, 5].forEach((n) => {
+          const opt = document.createElement("option");
+          opt.value = String(n);
+          opt.textContent = n + (n === 1 ? " этаж" : n < 5 ? " этажа" : " этажей");
+          if (n < usedFloor) opt.disabled = true;
+          floors.appendChild(opt);
+        });
+        floors.value = String(Math.min(5, Math.max(usedFloor, Number(walkSite.floors) || 1)));
+        floors.addEventListener("change", () => {
+          postWalk({ site: { kind: "house", floors: Number(floors.value) || 1 } });
+        });
+        phaseRow.appendChild(floors);
+      }
+      body.appendChild(phaseRow);
       const roomsHead = document.createElement("div");
       roomsHead.className = "key-plan-actions";
       const add = document.createElement("button");
@@ -5725,6 +5749,7 @@
       const el = $("shieldClock");
       if (!el) return;
       el.textContent = shieldClockLabel || "";
+      el.title = shieldClockSource === "host" ? "Время на контроллере" : "Часы контроллера не прочитаны";
       el.hidden = !shieldClockLabel;
     }
     function paintBenchReady() {
