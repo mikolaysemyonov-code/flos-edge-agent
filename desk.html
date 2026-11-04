@@ -31,44 +31,38 @@
         <li>
           <span class="step">1</span>
           <strong>Время</strong>
-          <span>Часы щита и телефон должны идти вместе. Иначе свет вечером включится не в тот час.</span>
+          <span>Часы щита и телефон идут вместе. Иначе вечерний свет включится не в тот час.</span>
           <button type="button" class="ghost" data-go="time">Сверить</button>
         </li>
         <li>
           <span class="step">2</span>
-          <strong>Кнопки</strong>
-          <span>Встаньте в комнате. Три коротких нажатия — и у клавиши появляется имя.</span>
-          <button type="button" class="ghost" data-go="keys">По комнатам</button>
+          <strong>Выключатели</strong>
+          <span>Три коротких нажатия. Комната и что включает клавиша.</span>
+          <button type="button" class="ghost" data-go="keys">Открыть</button>
         </li>
         <li>
           <span class="step">3</span>
-          <strong>Свет</strong>
-          <span>Та же комната. Включите линию и назовите то, что загорелось.</span>
-          <button type="button" class="ghost" data-go="lines">К свету</button>
+          <strong>Освещение</strong>
+          <span>Кружок зажигает канал. Для ленты — подсветка, для реле — свет.</span>
+          <button type="button" class="ghost" data-go="lines">Открыть</button>
         </li>
         <li>
           <span class="step">4</span>
-          <strong>Тепло и вода</strong>
-          <span>Датчик называется там, где он висит. Тремя нажатиями его не найти.</span>
-          <button type="button" class="ghost" data-go="modules">К датчикам</button>
+          <strong>Климат</strong>
+          <span>Тепло, вытяжка и пол. Датчик называется там, где он стоит.</span>
+          <button type="button" class="ghost" data-go="climate">Открыть</button>
         </li>
         <li>
           <span class="step">5</span>
-          <strong>Сцены</strong>
-          <span>Когда кнопки и свет уже знакомы, соберите «Я дома».</span>
-          <button type="button" class="ghost" data-go="cards">К сценам</button>
+          <strong>Сценарии</strong>
+          <span>Когда кнопки и свет уже названы, соберите «Я дома» и типовые карточки.</span>
+          <button type="button" class="ghost" data-go="scenes">Открыть</button>
         </li>
         <li>
           <span class="step">6</span>
-          <strong>На щит</strong>
-          <span>Один раз, в конце. До этого щит просто слушает.</span>
-          <button type="button" class="ghost" data-go="poured">Записать</button>
-        </li>
-        <li>
-          <span class="step">7</span>
-          <strong>Домой</strong>
-          <span>Таблица на память. Во время обхода она не нужна.</span>
-          <button type="button" class="ghost" data-go="xlsx">Забрать таблицу</button>
+          <strong>Контроллер</strong>
+          <span>Слева, внизу колонки. «На контроллере» — что уже записано. «История» — прошлые записи. Запись на щит — один раз, в конце.</span>
+          <button type="button" class="ghost" data-go="board">Открыть</button>
         </li>
       </ol>
     </section>
@@ -87,7 +81,7 @@
           <button id="clearProject" class="ghost mark-clear mark-wipe" type="button">Начать заново</button>
         </div>
       </details>
-      <div class="filters" id="modFamily" role="tablist" aria-label="Семейство">
+      <div class="filters" id="modFamily" role="tablist" aria-label="Семейство" hidden>
         <button type="button" data-fam="all" aria-pressed="true">Все</button>
         <button type="button" data-fam="light" aria-pressed="false">Свет</button>
         <button type="button" data-fam="buttons" aria-pressed="false">Кнопки</button>
@@ -147,23 +141,19 @@
       </details>
     </section>
   </main>
-  <nav class="dock" role="tablist" aria-label="Ритуал пуска">
-    <button class="tab" type="button" role="tab" data-tab="intro" aria-selected="true">
-      <span class="ico"><svg viewBox="0 0 24 24"><path d="M12 3v18"/><path d="M5 8h14"/><path d="M5 16h14"/></svg></span>
-      <span>Обход</span>
-    </button>
-    <button class="tab" type="button" role="tab" data-tab="mark" aria-selected="false">
-      <span class="ico"><svg viewBox="0 0 24 24"><path d="M3 7h18M3 12h18M3 17h12"/></svg></span>
-      <span>Комнаты <span class="n" id="n-mark"></span></span>
-    </button>
-    <button class="tab" type="button" role="tab" data-tab="cards" aria-selected="false">
-      <span class="ico"><svg viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg></span>
-      <span>Сцены <span class="n" id="n-cards"></span></span>
-    </button>
-    <button class="tab" type="button" role="tab" data-tab="poured" aria-selected="false">
-      <span class="ico"><svg viewBox="0 0 24 24"><path d="M12 20V8"/><path d="m6 14 6 6 6-6"/><path d="M4 4h16"/></svg></span>
-      <span>На щит <span class="n" id="n-poured"></span></span>
-    </button>
+  <nav class="rail" role="tablist" aria-label="Пуск">
+    <button class="tab" type="button" role="tab" data-nav="guide" data-tab="intro" aria-selected="true">Туториал</button>
+    <button class="tab" type="button" role="tab" data-nav="keys" data-tab="mark" aria-selected="false">Выключатели <span class="n" id="n-mark"></span></button>
+    <button class="tab" type="button" role="tab" data-nav="light" data-tab="mark" aria-selected="false">Освещение</button>
+    <button class="tab" type="button" role="tab" data-nav="climate" data-tab="cards" aria-selected="false">Климат</button>
+    <button class="tab" type="button" role="tab" data-nav="scenes" data-tab="cards" aria-selected="false">Сценарии <span class="n" id="n-cards"></span></button>
+    <div class="rail-tree" data-open="1">
+      <button class="tab rail-parent" type="button" data-nav="controller" aria-expanded="true">Контроллер</button>
+      <div class="rail-sub">
+        <button class="tab" type="button" role="tab" data-nav="history" data-tab="poured" aria-selected="false">История</button>
+        <button class="tab" type="button" role="tab" data-nav="board" data-tab="poured" aria-selected="false">На контроллере <span class="n" id="n-poured"></span></button>
+      </div>
+    </div>
   </nav>
   <script src="/desk.js" defer></script>
 </body>

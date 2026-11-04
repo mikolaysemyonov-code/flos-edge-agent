@@ -79,6 +79,16 @@
     let roomFilter = "";
     let openMod = "";
     let pouredPane = "send";
+    let activeNav = "guide";
+    const NAV = {
+      guide: { tab: "intro", title: "Туториал" },
+      keys: { tab: "mark", fam: "keys", title: "Выключатели" },
+      light: { tab: "mark", fam: "lines", title: "Освещение" },
+      climate: { tab: "cards", filter: "Климат", title: "Климат" },
+      scenes: { tab: "cards", title: "Сценарии" },
+      history: { tab: "poured", pane: "hist", title: "История" },
+      board: { tab: "poured", pane: "send", title: "На контроллере" },
+    };
     let openPourMod = "";
     let lastReleases = [];
     let rollingBack = false;
@@ -464,8 +474,8 @@
         renderReady();
       }
       if (!keepMod) closeModule();
-      document.querySelectorAll(".tab").forEach((btn) => {
-        btn.setAttribute("aria-selected", btn.dataset.tab === tab ? "true" : "false");
+      document.querySelectorAll(".tab[data-nav]").forEach((btn) => {
+        btn.setAttribute("aria-selected", btn.dataset.nav === activeNav ? "true" : "false");
       });
       document.querySelectorAll(".panel").forEach((p) => {
         p.hidden = p.dataset.tab !== tab;
@@ -475,17 +485,22 @@
       const pageTitle = $("pageTitle");
       const kicker = document.querySelector(".kicker");
       if (pageTitle) {
-        pageTitle.textContent = tab === "mark" ? "Комнаты" : tab === "cards" ? "Сцены" : tab === "poured" ? "На щит" : "Обход";
+        const named = NAV[activeNav];
+        pageTitle.textContent = named ? named.title : "Туториал";
       }
       if (kicker) kicker.hidden = tab !== "intro";
       if (busLine) busLine.hidden = tab === "intro" || tab === "poured";
       if (ritual) {
         ritual.hidden = tab === "intro" || tab === "poured";
-        ritual.textContent = tab === "mark"
-          ? "Одна комната. Сначала кнопка, потом свет."
-          : tab === "cards"
-            ? "Кнопка уже знает комнату. Здесь она получает дело."
-            : "";
+        ritual.textContent = activeNav === "keys"
+          ? "Три коротких нажатия. Комната и что включает клавиша."
+          : activeNav === "light"
+            ? "Кружок зажигает канал. Комната и назначение."
+            : activeNav === "climate"
+              ? "Тепло, воздух и пол. Карточка называется по делу."
+              : activeNav === "scenes"
+                ? "Кнопка уже знает комнату. Здесь она получает дело."
+                : "";
       }
       if (tab === "mark") renderMark();
       if (tab === "cards") {
@@ -499,7 +514,32 @@
         // Тихая диагностика при входе на «Залить» — без блокировки UI.
         void runDeskHealthQuiet();
       }
-      if (location.hash.replace("#", "") !== tab) history.replaceState(null, "", "#" + tab);
+      const hash = activeNav || tab;
+      if (location.hash.replace("#", "") !== hash) history.replaceState(null, "", "#" + hash);
+    }
+    function openNav(id) {
+      const spec = NAV[id] || NAV.guide;
+      activeNav = NAV[id] ? id : "guide";
+      if (spec.fam) {
+        modFamily = spec.fam;
+        openMod = "";
+        markPath = "modules";
+        if (spec.fam === "lines") lineBeaconFamilyLoaded = "";
+        if (spec.fam !== "keys") stopKeyScan();
+        if (spec.fam !== "lines") stopLineBeacon();
+      }
+      if (spec.filter) cardFilter = spec.filter;
+      if (id === "scenes" && cardFilter === "Климат") cardFilter = "Свет";
+      if (spec.pane) pouredPane = spec.pane;
+      const famBar = $("modFamily");
+      if (famBar) famBar.hidden = true;
+      setTab(spec.tab, true);
+      const cardBar = $("cardFilters");
+      if (cardBar) cardBar.hidden = activeNav === "climate";
+      const tree = document.querySelector(".rail-tree");
+      if (tree && (activeNav === "history" || activeNav === "board")) tree.dataset.open = "1";
+      if (spec.fam === "keys") loadKeyPlan().then(() => renderMark());
+      if (spec.fam === "lines") Promise.all([loadKeyPlan(), loadLinePlan()]).then(() => renderMark());
     }
     function previewStatusRu(s) {
       if (s === "blocked") return "без имени";
@@ -2942,6 +2982,7 @@
       const filters = $("cardFilters");
       const have = new Set(deskCatalog.map((c) => c.cat));
       const cats = CAT_ORDER.filter((c) => have.has(c));
+      if (activeNav === "climate" && have.has("Климат")) cardFilter = "Климат";
       if (!cats.includes(cardFilter)) cardFilter = cats[0] || "Свет";
       filters.replaceChildren();
       cats.forEach((cat) => {
@@ -2957,6 +2998,7 @@
         });
         filters.appendChild(b);
       });
+      filters.hidden = activeNav === "climate";
       const grid = $("vitrine");
       grid.replaceChildren();
       if (cardFilter === "Свет") {
@@ -5986,8 +6028,17 @@
           }
         });
     }
-    document.querySelectorAll(".tab").forEach((btn) => {
-      btn.addEventListener("click", () => setTab(btn.dataset.tab));
+    document.querySelectorAll(".tab[data-nav]").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        if (btn.dataset.nav === "controller") {
+          const tree = btn.closest(".rail-tree");
+          if (!tree) return;
+          tree.dataset.open = tree.dataset.open === "1" ? "0" : "1";
+          btn.setAttribute("aria-expanded", tree.dataset.open === "1" ? "true" : "false");
+          return;
+        }
+        openNav(btn.dataset.nav);
+      });
     });
     document.querySelectorAll("#modFamily [data-fam]").forEach((btn) => {
       btn.addEventListener("click", () => {
@@ -6410,24 +6461,23 @@
           if (x) x.click();
           return;
         }
-        if (go === "cards" || go === "poured") {
-          setTab(go);
-          return;
-        }
-        const fam = go === "keys" ? "keys" : go === "lines" ? "lines" : "all";
-        modFamily = fam;
-        openMod = "";
-        setTab("mark");
-        if (fam === "keys") loadKeyPlan().then(() => renderMark());
-        else if (fam === "lines") {
-          lineBeaconFamilyLoaded = "";
-          Promise.all([loadKeyPlan(), loadLinePlan()]).then(() => renderMark());
-        }
+        if (go === "cards" || go === "scenes") { openNav("scenes"); return; }
+        if (go === "poured" || go === "board") { openNav("board"); return; }
+        if (go === "climate") { openNav("climate"); return; }
+        if (go === "history") { openNav("history"); return; }
+        if (go === "keys") { openNav("keys"); return; }
+        if (go === "lines" || go === "light") { openNav("light"); return; }
+        openNav("guide");
       });
     });
     const fromHash = location.hash.replace("#", "");
-    if (/^(intro|mark|cards|poured|light|buttons|relays|keys|lines|pair)$/.test(fromHash)) setTab(fromHash);
-    else setTab("intro");
+    const hashNav = fromHash === "intro" ? "guide"
+      : fromHash === "mark" || fromHash === "keys" ? "keys"
+      : fromHash === "lines" || fromHash === "light" ? "light"
+      : fromHash === "cards" ? "scenes"
+      : fromHash === "poured" ? "board"
+      : fromHash;
+    openNav(NAV[hashNav] ? hashNav : "guide");
     loadHealth();
     loadPoured();
     loadRooms();
