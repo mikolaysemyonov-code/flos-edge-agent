@@ -65,119 +65,210 @@ function cellIdForPhysPath(src, deviceTopicKey, controlId) {
   return m ? m[1] : "";
 }
 
-function emitBridge(deviceTopicKey, controlId, name) {
+function emitLoad(deviceTopicKey, controlId, name) {
   const id = cellId(deviceTopicKey, controlId);
-  const path = physPath(deviceTopicKey, controlId);
+  const dev = liveDeskDeviceKey(deviceTopicKey);
+  const sw = String(controlId || "").trim();
   const cellLines = [];
-  const ruleLines = [];
   if (isLedChannel(controlId)) {
-    const bri = path + " Brightness";
     const briId = id + "_bri";
     cellLines.push(
       `    ${esc(id)}: { type: "switch", title: ${esc(name)}, value: false },`,
       `    ${esc(briId)}: { type: "range", title: ${esc(name + " · яркость")}, value: 100, max: 100, min: 0 },`,
     );
-    const swCell = esc("form_logic_os/" + id);
-    const briCell = esc("form_logic_os/" + briId);
-    const key = esc(id);
-    ruleLines.push(
-      `defineRule(${esc("fl_rt_cmd_" + id)}, {`,
-      "  whenChanged: function () {",
-      `    return [${swCell}, ${briCell}];`,
-      "  },",
-      "  then: function (newValue, devName, cellName) {",
-      "    try {",
-      `      if (flRtEcho[${key}]) return;`,
-      `      var on = wbIsOn(readValue(${swCell}));`,
-      `      var bri = Number(readValue(${briCell}));`,
-      "      if (isNaN(bri) || bri < 0) bri = 0; if (bri > 100) bri = 100;",
-      `      if (cellName === ${esc(briId)} && !on && bri > 0) {`,
-      "        on = true;",
-      `        flRtEcho[${key}] = 1;`,
-      `        dev["form_logic_os"][${esc(id)}] = true;`,
-      `        setTimeout(function () { flRtEcho[${key}] = 0; }, 160);`,
-      "      }",
-      "      var wantSw = on ? 1 : 0;",
-      "      var wantBr = on ? (bri > 0 ? bri : 100) : 0;",
-      `      var curSw = wbIsOn(readValue(${esc(path)})) ? 1 : 0;`,
-      `      var curBr = Number(readValue(${esc(bri)})); if (isNaN(curBr)) curBr = 0;`,
-      "      if (curSw === wantSw && curBr === wantBr) return;",
-      `      flRtEcho[${key}] = 1;`,
-      "      if (on) {",
-      "        if (bri <= 0) {",
-      `          var lastBr = Number(flRtLastBri[${key}]);`,
-      "          if (!isNaN(lastBr) && lastBr > 0) { bri = lastBr; wantBr = lastBr; } else { bri = 100; wantBr = 100; }",
-      `          dev["form_logic_os"][${esc(briId)}] = bri;`,
-      "        } else {",
-      `          flRtLastBri[${key}] = bri;`,
-      "        }",
-      `        wbActuatorSet(${esc(bri)}, wantBr, ${esc("fl_rt_cmd_" + id)}, 50);`,
-      `        wbActuatorSet(${esc(path)}, true, ${esc("fl_rt_cmd_" + id)}, 50);`,
-      "      } else {",
-      "        if (bri > 0) {",
-      `          flRtLastBri[${key}] = bri;`,
-      "        } else if (curBr > 0) {",
-      `          flRtLastBri[${key}] = curBr;`,
-      "        }",
-      `        wbActuatorSet(${esc(bri)}, 0, ${esc("fl_rt_cmd_" + id)}, 50);`,
-      `        wbActuatorSet(${esc(path)}, false, ${esc("fl_rt_cmd_" + id)}, 50);`,
-      "      }",
-      `      setTimeout(function () { flRtEcho[${key}] = 0; }, 160);`,
-      `    } catch (e) { if (typeof wbRuleGuardCatch === "function") wbRuleGuardCatch(${esc("fl_rt_cmd_" + id)}, e); }`,
-      "  }",
-      "});",
-      `defineRule(${esc("fl_rt_mir_" + id)}, {`,
-      "  whenChanged: function () {",
-      `    return [${esc(path)}, ${esc(bri)}];`,
-      "  },",
-      "  then: function () {",
-      "    try {",
-      `      if (flRtEcho[${key}]) return;`,
-      `      var brNow = Number(readValue(${esc(bri)})); if (isNaN(brNow)) brNow = 0;`,
-      "      var physOn = brNow > 0;",
-      `      flRtEcho[${key}] = 1;`,
-      `      if (wbIsOn(readValue(${swCell})) !== physOn) dev["form_logic_os"][${esc(id)}] = physOn;`,
-      "      var br = brNow; if (br < 0) br = 0; if (br > 100) br = 100;",
-      `      var curBr = Number(readValue(${briCell}));`,
-      `      if (physOn && (isNaN(curBr) || curBr !== br)) dev["form_logic_os"][${esc(briId)}] = br;`,
-      `      setTimeout(function () { flRtEcho[${key}] = 0; }, 200);`,
-      `    } catch (e) { if (typeof wbRuleGuardCatch === "function") wbRuleGuardCatch(${esc("fl_rt_mir_" + id)}, e); }`,
-      "  }",
-      "});",
-    );
-  } else {
-    cellLines.push(`    ${esc(id)}: { type: "switch", title: ${esc(name)}, value: false },`);
-    ruleLines.push(
-      `defineRule(${esc("fl_rt_cmd_" + id)}, {`,
-      `  whenChanged: ${esc("form_logic_os/" + id)},`,
-      "  then: function () {",
-      "    try {",
-      `      if (flRtEcho[${esc(id)}]) return;`,
-      `      var want = wbIsOn(readValue(${esc("form_logic_os/" + id)}));`,
-      `      if (wbIsOn(readValue(${esc(path)})) === want) return;`,
-      `      flRtEcho[${esc(id)}] = 1;`,
-      `      wbActuatorSet(${esc(path)}, want, ${esc("fl_rt_cmd_" + id)}, 50);`,
-      `      setTimeout(function () { flRtEcho[${esc(id)}] = 0; }, 120);`,
-      `    } catch (e) { if (typeof wbRuleGuardCatch === "function") wbRuleGuardCatch(${esc("fl_rt_cmd_" + id)}, e); }`,
-      "  }",
-      "});",
-      `defineRule(${esc("fl_rt_mir_" + id)}, {`,
-      `  whenChanged: ${esc(path)},`,
-      "  then: function () {",
-      "    try {",
-      `      if (flRtEcho[${esc(id)}]) return;`,
-      `      var on = wbIsOn(readValue(${esc(path)}));`,
-      `      if (wbIsOn(readValue(${esc("form_logic_os/" + id)})) !== on) {`,
-      `        flRtEcho[${esc(id)}] = 1;`,
-      `        dev["form_logic_os"][${esc(id)}] = on;`,
-      `        setTimeout(function () { flRtEcho[${esc(id)}] = 0; }, 120);`,
-      "      }",
-      `    } catch (e) { if (typeof wbRuleGuardCatch === "function") wbRuleGuardCatch(${esc("fl_rt_mir_" + id)}, e); }`,
-      "  }",
-      "});",
-    );
+    return {
+      id,
+      cellLines,
+      row: { kind: "dimmer", vSw: id, vBri: briId, pDev: dev, pSw: sw, pBri: sw + " Brightness" },
+    };
   }
-  return { id, cellLines, ruleLines };
+  cellLines.push(`    ${esc(id)}: { type: "switch", title: ${esc(name)}, value: false },`);
+  return { id, cellLines, row: { kind: "relay", vSw: id, pDev: dev, pSw: sw } };
+}
+
+function removeDeskRuleBlocks(text, id) {
+  const idEsc = String(id).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const blockRe = new RegExp(
+    `defineRule\\s*\\(\\s*['"]fl_rt_(?:cmd|mir)_${idEsc}['"][\\s\\S]*?\\n\\}\\);\\n?`,
+    "g",
+  );
+  return String(text || "").replace(blockRe, "");
+}
+
+function readJsonField(obj, name) {
+  const m = new RegExp(name + '\\s*:\\s*"((?:\\\\.|[^"\\\\])*)"').exec(obj);
+  if (!m) return "";
+  try {
+    return JSON.parse('"' + m[1] + '"');
+  } catch {
+    return m[1];
+  }
+}
+
+function parseRows(arraySrc, kind) {
+  const rows = [];
+  for (const m of String(arraySrc || "").matchAll(/\{[^{}]*\}/g)) {
+    const vSw = readJsonField(m[0], "vSw");
+    if (!vSw) continue;
+    const row = { kind, vSw, pDev: readJsonField(m[0], "pDev"), pSw: readJsonField(m[0], "pSw") };
+    if (kind === "dimmer") {
+      row.vBri = readJsonField(m[0], "vBri");
+      row.pBri = readJsonField(m[0], "pBri");
+    }
+    rows.push(row);
+  }
+  return rows;
+}
+
+function parseMap(src) {
+  const block = /\/\/ fl_rt_map_begin\n([\s\S]*?)\/\/ fl_rt_map_end/.exec(String(src || ""));
+  if (!block) return { dimmers: [], relays: [] };
+  const dim = /var dimmersConfig = \[([\s\S]*?)\];/.exec(block[1]);
+  const rel = /var relaysConfig = \[([\s\S]*?)\];/.exec(block[1]);
+  return { dimmers: parseRows(dim?.[1] || "", "dimmer"), relays: parseRows(rel?.[1] || "", "relay") };
+}
+
+function renderRow(row) {
+  if (row.kind === "dimmer") {
+    return `  { vSw: ${esc(row.vSw)}, vBri: ${esc(row.vBri)}, pDev: ${esc(row.pDev)}, pSw: ${esc(row.pSw)}, pBri: ${esc(row.pBri)} },`;
+  }
+  return `  { vSw: ${esc(row.vSw)}, pDev: ${esc(row.pDev)}, pSw: ${esc(row.pSw)} },`;
+}
+
+function renderArray(name, rows) {
+  if (!rows.length) return `var ${name} = [];`;
+  return `var ${name} = [\n${rows.map(renderRow).join("\n")}\n];`;
+}
+
+const FL_RT_ENGINE = [
+  "dimmersConfig.forEach(function (cfg) {",
+  "  var key = cfg.vSw;",
+  '  defineRule("fl_rt_cmd_" + key, {',
+  "    whenChanged: function () {",
+  '      return ["form_logic_os/" + cfg.vSw, "form_logic_os/" + cfg.vBri];',
+  "    },",
+  "    then: function (newValue, devName, cellName) {",
+  "      try {",
+  "        if (flRtEcho[key]) return;",
+  '        var on = wbIsOn(readValue("form_logic_os/" + cfg.vSw));',
+  '        var bri = Number(readValue("form_logic_os/" + cfg.vBri));',
+  "        if (isNaN(bri) || bri < 0) bri = 0; if (bri > 100) bri = 100;",
+  "        if (cellName === cfg.vBri && !on && bri > 0) {",
+  "          on = true;",
+  "          flRtEcho[key] = 1;",
+  '          dev["form_logic_os"][cfg.vSw] = true;',
+  "          setTimeout(function () { flRtEcho[key] = 0; }, 160);",
+  "        }",
+  "        var wantSw = on ? 1 : 0;",
+  "        var wantBr = on ? (bri > 0 ? bri : 100) : 0;",
+  '        var curSw = wbIsOn(readValue(cfg.pDev + "/" + cfg.pSw)) ? 1 : 0;',
+  '        var curBr = Number(readValue(cfg.pDev + "/" + cfg.pBri)); if (isNaN(curBr)) curBr = 0;',
+  "        if (curSw === wantSw && curBr === wantBr) return;",
+  "        flRtEcho[key] = 1;",
+  "        if (on) {",
+  "          if (bri <= 0) {",
+  "            var lastBr = Number(flRtLastBri[key]);",
+  "            if (!isNaN(lastBr) && lastBr > 0) { bri = lastBr; wantBr = lastBr; } else { bri = 100; wantBr = 100; }",
+  '            dev["form_logic_os"][cfg.vBri] = bri;',
+  "          } else {",
+  "            flRtLastBri[key] = bri;",
+  "          }",
+  '          wbActuatorSet(cfg.pDev + "/" + cfg.pBri, wantBr, "fl_rt_cmd_" + key, 50);',
+  '          wbActuatorSet(cfg.pDev + "/" + cfg.pSw, true, "fl_rt_cmd_" + key, 50);',
+  "        } else {",
+  "          if (bri > 0) {",
+  "            flRtLastBri[key] = bri;",
+  "          } else if (curBr > 0) {",
+  "            flRtLastBri[key] = curBr;",
+  "          }",
+  '          wbActuatorSet(cfg.pDev + "/" + cfg.pBri, 0, "fl_rt_cmd_" + key, 50);',
+  '          wbActuatorSet(cfg.pDev + "/" + cfg.pSw, false, "fl_rt_cmd_" + key, 50);',
+  "        }",
+  "        setTimeout(function () { flRtEcho[key] = 0; }, 160);",
+  '      } catch (e) { if (typeof wbRuleGuardCatch === "function") wbRuleGuardCatch("fl_rt_cmd_" + key, e); }',
+  "    }",
+  "  });",
+  '  defineRule("fl_rt_mir_" + key, {',
+  "    whenChanged: function () {",
+  '      return [cfg.pDev + "/" + cfg.pSw, cfg.pDev + "/" + cfg.pBri];',
+  "    },",
+  "    then: function () {",
+  "      try {",
+  "        if (flRtEcho[key]) return;",
+  '        var brNow = Number(readValue(cfg.pDev + "/" + cfg.pBri)); if (isNaN(brNow)) brNow = 0;',
+  "        var physOn = brNow > 0;",
+  "        flRtEcho[key] = 1;",
+  '        if (wbIsOn(readValue("form_logic_os/" + cfg.vSw)) !== physOn) dev["form_logic_os"][cfg.vSw] = physOn;',
+  "        var br = brNow; if (br < 0) br = 0; if (br > 100) br = 100;",
+  '        var curBr = Number(readValue("form_logic_os/" + cfg.vBri));',
+  '        if (physOn && (isNaN(curBr) || curBr !== br)) dev["form_logic_os"][cfg.vBri] = br;',
+  "        setTimeout(function () { flRtEcho[key] = 0; }, 200);",
+  '      } catch (e) { if (typeof wbRuleGuardCatch === "function") wbRuleGuardCatch("fl_rt_mir_" + key, e); }',
+  "    }",
+  "  });",
+  "});",
+  "relaysConfig.forEach(function (cfg) {",
+  "  var key = cfg.vSw;",
+  '  defineRule("fl_rt_cmd_" + key, {',
+  '    whenChanged: "form_logic_os/" + cfg.vSw,',
+  "    then: function () {",
+  "      try {",
+  "        if (flRtEcho[key]) return;",
+  '        var want = wbIsOn(readValue("form_logic_os/" + cfg.vSw));',
+  '        if (wbIsOn(readValue(cfg.pDev + "/" + cfg.pSw)) === want) return;',
+  "        flRtEcho[key] = 1;",
+  '        wbActuatorSet(cfg.pDev + "/" + cfg.pSw, want, "fl_rt_cmd_" + key, 50);',
+  "        setTimeout(function () { flRtEcho[key] = 0; }, 120);",
+  '      } catch (e) { if (typeof wbRuleGuardCatch === "function") wbRuleGuardCatch("fl_rt_cmd_" + key, e); }',
+  "    }",
+  "  });",
+  '  defineRule("fl_rt_mir_" + key, {',
+  '    whenChanged: cfg.pDev + "/" + cfg.pSw,',
+  "    then: function () {",
+  "      try {",
+  "        if (flRtEcho[key]) return;",
+  '        var on = wbIsOn(readValue(cfg.pDev + "/" + cfg.pSw));',
+  '        if (wbIsOn(readValue("form_logic_os/" + cfg.vSw)) !== on) {',
+  "          flRtEcho[key] = 1;",
+  '          dev["form_logic_os"][cfg.vSw] = on;',
+  "          setTimeout(function () { flRtEcho[key] = 0; }, 120);",
+  "        }",
+  '      } catch (e) { if (typeof wbRuleGuardCatch === "function") wbRuleGuardCatch("fl_rt_mir_" + key, e); }',
+  "    }",
+  "  });",
+  "});",
+].join("\n");
+
+function renderMap(dimmers, relays) {
+  return [
+    "// fl_rt_map_begin",
+    renderArray("dimmersConfig", dimmers),
+    renderArray("relaysConfig", relays),
+    FL_RT_ENGINE,
+    "// fl_rt_map_end",
+  ].join("\n");
+}
+
+function installMap(src, dimmers, relays) {
+  const block = renderMap(dimmers, relays);
+  const re = /\/\/ fl_rt_map_begin\n[\s\S]*?\/\/ fl_rt_map_end/;
+  if (re.test(src)) return src.replace(re, block);
+  return String(src || "").trimEnd() + "\n\n" + block + "\n";
+}
+
+function dropMap(src) {
+  return String(src || "").replace(/\n*\/\/ fl_rt_map_begin\n[\s\S]*?\/\/ fl_rt_map_end\n?/g, "\n");
+}
+
+function upsertRow(list, row) {
+  const i = list.findIndex((r) => r.vSw === row.vSw);
+  if (i >= 0) list[i] = row;
+  else list.push(row);
+}
+
+function dropRow(list, vSw) {
+  const i = list.findIndex((r) => r.vSw === vSw);
+  if (i >= 0) list.splice(i, 1);
 }
 
 function pathQuotedIn(src, path) {
@@ -301,33 +392,22 @@ export function stripDuplicateTitles(src) {
   return { content: text.replace(/\n{3,}/g, "\n\n"), changed: removedIds.length > 0, removedIds };
 }
 
-function bridgeBlocks(ruleLines) {
-  return ruleLines
-    .join("\n")
-    .split(/\n(?=defineRule\()/)
-    .map((s) => s.trim())
-    .filter(Boolean);
+function foreignOwnsPath(src, deviceTopicKey, controlId, ownId) {
+  const text = dropMap(removeDeskRuleBlocks(src, ownId));
+  const path = physPath(deviceTopicKey, controlId);
+  if (!path || path.endsWith("/")) return false;
+  if (pathQuotedIn(text, path)) return true;
+  return isLedChannel(controlId) && pathQuotedIn(text, path + " Brightness");
 }
 
-/** Ячейка уже есть — тело fl_rt_cmd/fl_rt_mir всё равно меняем. Иначе на щите остаётся старая запись яркости. */
-function upsertBridgeRules(src, ruleLines) {
-  let text = String(src || "");
-  let changed = false;
-  for (const block of bridgeBlocks(ruleLines)) {
-    const name = /defineRule\s*\(\s*["']([^"']+)["']/.exec(block)?.[1];
-    if (!name) continue;
-    const nameEsc = name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-    const re = new RegExp(`defineRule\\s*\\(\\s*["']${nameEsc}["'][\\s\\S]*?\\n\\}\\);`);
-    if (re.test(text)) {
-      const next = text.replace(re, block);
-      if (next !== text) changed = true;
-      text = next;
-    } else {
-      text = `${text.trimEnd()}\n\n${block}\n`;
-      changed = true;
-    }
+function rememberRow(map, row) {
+  if (row.kind === "dimmer") {
+    dropRow(map.relays, row.vSw);
+    upsertRow(map.dimmers, row);
+  } else {
+    dropRow(map.dimmers, row.vSw);
+    upsertRow(map.relays, row);
   }
-  return { src: text, changed };
 }
 
 export function emptyFormLogicOsSource() {
@@ -355,21 +435,36 @@ export function mergeDeskNamesIntoCore(coreSrc, named) {
     changed = true;
   }
   const addCells = [];
-  const addRules = [];
   const removedIds = [];
+  const map = parseMap(src);
+  const seen = new Set();
+  let mapTouched = false;
   for (const row of named || []) {
     const name = String(row.name || "").trim();
     if (!name || !row.deviceTopicKey || !row.controlId) continue;
     if (isDriveClose(row.controlId)) continue;
     const id = cellId(row.deviceTopicKey, row.controlId);
+    if (seen.has(id)) continue;
+    seen.add(id);
+    const load = emitLoad(row.deviceTopicKey, row.controlId, name);
     if (src.includes(`"${id}"`) || src.includes(`'${id}'`)) {
       const next = patchCellTitle(src, id, name);
       src = next.src;
       if (next.changed) changed = true;
-      const emit = emitBridge(row.deviceTopicKey, row.controlId, name);
-      const rules = upsertBridgeRules(src, emit.ruleLines);
-      src = rules.src;
-      if (rules.changed) changed = true;
+      if (foreignOwnsPath(src, row.deviceTopicKey, row.controlId, id)) {
+        dropRow(map.dimmers, id);
+        dropRow(map.relays, id);
+        const stripped = removeCellAndRules(src, id);
+        if (stripped !== src) {
+          src = stripped;
+          changed = true;
+          removedIds.push(id, id + "_bri");
+        }
+        mapTouched = true;
+        continue;
+      }
+      rememberRow(map, load.row);
+      mapTouched = true;
       continue;
     }
     if (pathAlreadyInCore(src, row.deviceTopicKey, row.controlId)) {
@@ -381,16 +476,27 @@ export function mergeDeskNamesIntoCore(coreSrc, named) {
       }
       continue;
     }
-    const emit = emitBridge(row.deviceTopicKey, row.controlId, name);
-    addCells.push(...emit.cellLines);
-    addRules.push(...emit.ruleLines);
+    addCells.push(...load.cellLines);
+    rememberRow(map, load.row);
+    mapTouched = true;
     changed = true;
   }
   if (addCells.length) {
     const withCells = src.replace(/(cells:\s*\{)/, `$1\n${addCells.join("\n")}`);
     src = withCells !== src ? withCells : src + "\n";
   }
-  if (addRules.length) src = src.trimEnd() + "\n\n" + addRules.join("\n") + "\n";
+  if (mapTouched) {
+    for (const item of [...map.dimmers, ...map.relays]) {
+      const next = removeDeskRuleBlocks(src, item.vSw);
+      if (next !== src) {
+        src = next;
+        changed = true;
+      }
+    }
+    const next = map.dimmers.length || map.relays.length ? installMap(src, map.dimmers, map.relays) : dropMap(src);
+    if (next !== src) changed = true;
+    src = next;
+  }
   for (const step of [
     stripDriveCloseBridges,
     stripDuplicateDeskBridges,
@@ -420,6 +526,8 @@ function ensureFlRtStores(src) {
     'var flRtLastBri = typeof flRtLastBri !== "undefined" ? flRtLastBri : {};',
     "",
   ].join("\n");
+  const atMap = text.indexOf("// fl_rt_map_begin");
+  if (atMap >= 0) return { src: text.slice(0, atMap) + banner + text.slice(atMap), changed: true };
   const at = text.search(/defineRule\s*\(\s*["']fl_rt_/);
   if (at < 0) return { src: text.trimEnd() + "\n\n" + banner, changed: true };
   return { src: text.slice(0, at) + banner + text.slice(at), changed: true };
