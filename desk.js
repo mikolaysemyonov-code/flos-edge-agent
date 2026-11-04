@@ -5168,7 +5168,7 @@
       body.replaceChildren();
       const intro = document.createElement("p");
       intro.className = "meta";
-      intro.textContent = "Кружок — это канал. Нажатие гасит предыдущий и зажигает этот. Потом комната и назначение.";
+      intro.textContent = "Контур — выход без имени. Зелёный — уже назван. Кольцо — сейчас горит.";
       body.appendChild(intro);
       const fam = document.createElement("div");
       fam.className = "filters line-beacon-fam";
@@ -5210,10 +5210,8 @@
       } else {
         const silentN = (lineBeaconCandidates || []).filter((ch) => ch.silent).length;
         status.textContent = (linePlanNote ? linePlanNote + " " : "")
-          + "Каналов " + (lineBeaconCandidates || []).length
-          + ", с именем " + markedN
-          + (silentN ? ". Пунктир — шина канал не прислала, ряд модуля всё равно целый" : "")
-          + ". Нажмите кружок — загорится только он.";
+          + "Названо " + markedN + " из " + (lineBeaconCandidates || []).length
+          + (silentN ? ". Пунктир — шина этот выход не прислала" : "");
       }
       body.appendChild(status);
       const groups = new Map();
@@ -5227,12 +5225,14 @@
       [...groups.keys()].sort((a, b) => shelfLabel(a).localeCompare(shelfLabel(b), "ru", { numeric: true })).forEach((dk) => {
         const block = document.createElement("div");
         block.className = "line-beacon-mod";
+        const list = groups.get(dk).slice().sort((a, b) => String(a.controlId).localeCompare(String(b.controlId), "ru", { numeric: true }));
+        const namedHere = list.filter((ch) => beaconLineFor(ch) || ch.name).length;
         const ttl = document.createElement("p");
         ttl.className = "meta";
-        ttl.textContent = shelfLabel(dk);
+        ttl.textContent = shelfLabel(dk) + " · " + namedHere + " из " + list.length;
         const dots = document.createElement("div");
         dots.className = "line-beacon-dots";
-        groups.get(dk).slice().sort((a, b) => String(a.controlId).localeCompare(String(b.controlId), "ru", { numeric: true })).forEach((ch) => {
+        list.forEach((ch) => {
           const on = lit && lit.deviceTopicKey === ch.deviceTopicKey && lit.controlId === ch.controlId;
           const row = beaconLineFor(ch);
           const circle = document.createElement("button");

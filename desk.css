@@ -659,8 +659,11 @@
       padding: .3rem;
     }
     .line-beacon-circle.marked {
-      border-color: rgb(167 243 208 / .65);
+      background: rgb(52 211 153 / .28);
+      border-color: rgb(52 211 153);
+      color: rgb(209 250 229);
     }
+    .line-beacon-circle.marked .cap { opacity: 1; }
     .line-beacon-circle.silent {
       border-style: dashed;
       opacity: .72;
@@ -677,9 +680,11 @@
       margin-top: .12rem;
     }
     .line-beacon-circle.on {
-      background: rgb(var(--sky) / .28);
       border-color: rgb(186 230 253);
-      box-shadow: 0 0 0 7px rgb(var(--sky) / .14);
+      box-shadow: 0 0 0 6px rgb(var(--sky) / .38);
+    }
+    .line-beacon-circle.marked.on {
+      background: rgb(52 211 153 / .4);
     }
     .line-beacon-circle:disabled {
       opacity: .55;
