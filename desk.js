@@ -3062,6 +3062,7 @@
         shieldClockOk = clock.ok !== false;
         shieldClockUnverified = clock.unverified === true;
         shieldClockLabel = clock.label || "";
+        paintShieldClock();
         const offline = Number(mirror.offlineDeviceCount) || 0;
         const incident = Array.isArray(j.busIncidents) && j.busIncidents[0] ? j.busIncidents[0].reason : "";
         const busCalm = busOk && shieldClockOk && !shieldClockUnverified && !offline && !incident;
@@ -5720,6 +5721,12 @@
         "bad",
       );
     }
+    function paintShieldClock() {
+      const el = $("shieldClock");
+      if (!el) return;
+      el.textContent = shieldClockLabel || "";
+      el.hidden = !shieldClockLabel;
+    }
     function paintBenchReady() {
       const el = $("benchReady");
       if (!el) return;
@@ -5754,19 +5761,18 @@
               : Number(scan.offlineDeviceCount) > 0
                 ? ("молчит " + scan.offlineDeviceCount)
                 : "шина спокойна";
-      const keyText = keys ? ("клавиши " + keysBound + "/" + keys) : "план клавиш пуст";
-      const lineText = lines ? ("линии " + linesBound + "/" + lines) : "";
+      const keyText = keys && keysBound !== keys ? ("клавиши " + keysBound + "/" + keys) : "";
+      const lineText = lines && linesBound !== lines ? ("линии " + linesBound + "/" + lines) : "";
       const ready = Boolean(scan) && scan.truncated !== true && scan.shortScan !== true && scan.settled !== false
         && !(Number(scan.offlineDeviceCount) > 0)
         && keys > 0 && keysBound === keys
         && (lines === 0 || linesBound === lines);
-      const clockBit = shieldClockLabel ? "часы " + shieldClockLabel : "";
-      el.hidden = ready;
-      el.textContent = ready
-        ? ""
-        : (!scan
-          ? "Обновите щит. Затем встаньте в комнате и нажмите кнопку три раза."
-          : [busText === "шина спокойна" ? "" : busText, keyText, lineText, clockBit].filter(Boolean).join(" · "));
+      const parts = !scan
+        ? ["Обновите щит. Затем встаньте в комнате и нажмите кнопку три раза."]
+        : [busText === "шина спокойна" ? "" : busText, keyText, lineText].filter(Boolean);
+      el.hidden = ready || parts.length === 0;
+      el.textContent = ready ? "" : parts.join(" · ");
+      paintShieldClock();
     }
     function renderMark() {
       paintBenchReady();

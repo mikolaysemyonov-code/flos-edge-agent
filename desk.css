@@ -18,7 +18,15 @@
     main { max-width: 72rem; margin: 0 0 0 14.5rem; padding: 1.25rem 1.35rem 2.5rem; }
     .kicker { margin: 0; color: var(--mute); font-size: .78rem; letter-spacing: .01em; font-weight: 500; }
     .top { display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; margin: .35rem 0 1rem; }
-    .top-actions { display: flex; flex-wrap: wrap; gap: .4rem; }
+    .top-side { display: flex; flex-direction: column; align-items: flex-end; gap: .35rem; }
+    .shield-clock {
+      margin: 0;
+      color: rgb(var(--mute));
+      font-size: .92rem;
+      font-variant-numeric: tabular-nums;
+      letter-spacing: .01em;
+    }
+    .top-actions { display: flex; flex-wrap: wrap; gap: .4rem; justify-content: flex-end; }
     .cert-list { list-style: none; margin: 0; padding: 0; display: grid; gap: .4rem; }
     .cert-list li {
       padding: .55rem .65rem; border-radius: .75rem;
