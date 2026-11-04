@@ -151,9 +151,10 @@ function scenarioFamilyId(id) {
 }
 
 function humanScenarioTitle(id) {
-  if (/dim_hold/i.test(id)) return "Дим-удержание";
-  if (/all_off/i.test(id)) return "Все выкл";
-  if (/button_toggle/i.test(id)) return "Переключение";
+  const s = String(id || "");
+  if (/dim_hold/i.test(s)) return "Дим-удержание";
+  if (/all_?off/i.test(s)) return "Все выкл";
+  if (/button_toggle|_toggle$/i.test(s)) return "Переключение";
   return "Сценарий";
 }
 

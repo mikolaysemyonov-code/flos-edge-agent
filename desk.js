@@ -1154,7 +1154,7 @@
       if (!lastReleases.length) {
         const empty = document.createElement("p");
         empty.className = "empty";
-        empty.textContent = "Пока нет заливок. Первая появится после «1 · Имена» или «2 · Сценарии».";
+        empty.textContent = "Пока пусто. Запись появится после «Записать на щит».";
         box.appendChild(empty);
         return;
       }
@@ -1289,7 +1289,7 @@
       ico.innerHTML = MOD_ICO[moduleKind(shelf || { deviceTopicKey: key })] || MOD_ICO.led;
       const cat = document.createElement("span");
       cat.className = "cat on";
-      cat.textContent = n + " к заливке";
+      cat.textContent = n + (n === 1 ? " линия" : " линии");
       top.append(ico, cat);
       const vt = document.createElement("span");
       vt.className = "vt";
@@ -1350,14 +1350,14 @@
         ico.innerHTML = MOD_ICO[moduleKind(shelf || { deviceTopicKey: openPourMod })] || MOD_ICO.led;
         const cat = document.createElement("span");
         cat.className = "cat on";
-        cat.textContent = chunk.length + " к заливке";
+        cat.textContent = chunk.length + (chunk.length === 1 ? " линия" : " линии");
         top.append(ico, cat);
         const vt = document.createElement("span");
         vt.className = "vt";
         vt.textContent = sku;
         const vs = document.createElement("span");
         vs.className = "vs";
-        vs.textContent = "Имена на щит · кнопка «1 · Имена» выше";
+        vs.textContent = "На щит · кнопка «Записать на щит»";
         const bars = document.createElement("div");
         bars.className = "ch-bars";
         bars.setAttribute("aria-hidden", "true");
@@ -1385,7 +1385,7 @@
         const blocked = chunk.filter((i) => i.status === "blocked").length;
         tip.textContent = blocked
           ? ("Блок · " + blocked + " без имени — дайте имя в «Разметить» или «Снять».")
-          : (chunk.length ? "Проверьте каналы, затем «1 · Имена»." : "В этом модуле нового нет.");
+          : (chunk.length ? "Проверьте линии, затем «Записать на щит»." : "В этом модуле нового нет.");
         const ul = document.createElement("ul");
         ul.className = "channels drill-list";
         chunk.slice().sort(byContact).forEach((i) => ul.appendChild(readyCard(i, i.room)));
@@ -1596,27 +1596,19 @@
         hint.hidden = true;
         hint.textContent = "";
       }
+      const allBtn = $("pourAll");
       const namesBtn = $("pourNames");
       const rulesBtn = $("pourRules");
       const repairBtn = $("pour");
-      if (namesBtn) {
-        namesBtn.hidden = pouredPane === "hist" && !canPourNamesDesk;
-        namesBtn.disabled = !canPourNamesDesk;
-        namesBtn.textContent = "1 · Имена";
-        namesBtn.title = canPourNamesDesk
-          ? "Имена каналов на щит"
-          : "Нет новых имён";
+      const canWrite = canPourNamesDesk || canPourRulesDesk;
+      if (allBtn) {
+        allBtn.hidden = pouredPane === "hist";
+        allBtn.disabled = !canWrite;
+        allBtn.textContent = "Записать на щит";
+        allBtn.title = canWrite ? "Имена и сценарии одним разом" : "На щите уже то же, что на столе";
       }
-      if (rulesBtn) {
-        rulesBtn.hidden = pouredPane === "hist" && !canPourRulesDesk;
-        rulesBtn.disabled = !canPourRulesDesk;
-        rulesBtn.textContent = "2 · Сценарии";
-        rulesBtn.title = !canPourRulesDesk
-          ? "Нет сценариев на столе"
-          : canPourNamesDesk
-            ? "Можно сейчас. Лучше сначала имена."
-            : "Типовые со стола на щит";
-      }
+      if (namesBtn) namesBtn.hidden = true;
+      if (rulesBtn) rulesBtn.hidden = true;
       if (repairBtn) {
         const showRepair = pouredPane === "hist" && canRepairDesk && !canPourNamesDesk;
         repairBtn.hidden = !showRepair;
@@ -5734,7 +5726,7 @@
       btn.disabled = true;
       btn.textContent = solutionIds && solutionIds.length
         ? "Пишу…"
-        : scope === "names" ? "Имена…" : scope === "rules" ? "Сценарии…" : "Убираю…";
+        : scope === "all" ? "Записываю…" : scope === "names" ? "Имена…" : scope === "rules" ? "Сценарии…" : "Убираю…";
       const payload = { scope: scope === "repair" ? "names" : scope };
       if (solutionIds && solutionIds.length) payload.solutionIds = solutionIds;
       fetch("/runtime/desk-pour", {
@@ -5759,23 +5751,17 @@
           const head = $("previewHead");
           if (head) {
             head.hidden = false;
-            head.style.color = "";
-            const scopeRu = j.scope === "rules" ? "Сценарии" : j.scope === "names" ? "Имена" : "Щит";
-            const proof = pourResultLine(j);
-            const bits = [
-              j.mqttOnly ? "Дубли спрятаны" : scopeRu,
-              j.namedCount ? ("имён " + j.namedCount) : "",
-              j.emittedSolutions ? ("сценариев " + j.emittedSolutions) : "",
-              j.hiddenGhosts ? ("скрыто " + j.hiddenGhosts) : "",
-              proof,
-              j.appliedRevisionId
-                ? String(j.appliedRevisionId).replace(/^(?:fnv1a32:|sha256:)/i, "").slice(0, 8)
-                : "",
-            ].filter(Boolean);
-            if (j.disk && j.disk.ok === false) head.style.color = "rgb(var(--bad))";
-            head.textContent = bits.join(" · ") || "Готово";
+            if (j.disk && j.disk.ok === false) {
+              head.style.color = "rgb(var(--bad))";
+              head.textContent = "На диск не легло";
+            } else {
+              head.style.color = "";
+              const bits = [j.mqttOnly ? "Дубли спрятаны" : "Записано на щит"];
+              if (j.namedCount) bits.push("имён " + j.namedCount);
+              if (j.emittedSolutions) bits.push("сценариев " + j.emittedSolutions);
+              head.textContent = bits.join(" · ");
+            }
           }
-          pouredPane = "hist";
           openPourMod = "";
           loadPoured().then(() => renderDeskSolutions());
           loadPreview();
@@ -6179,6 +6165,12 @@
     }
     if ($("runHealth")) $("runHealth").addEventListener("click", () => { void runDeskHealth(); });
     if ($("runAudit")) $("runAudit").addEventListener("click", () => { void runExpressAudit(); });
+    if ($("pourAll")) {
+      $("pourAll").addEventListener("click", () => {
+        if (!canPourNamesDesk && !canPourRulesDesk) return;
+        runDeskPour("all", $("pourAll"));
+      });
+    }
     if ($("pourNames")) {
       $("pourNames").addEventListener("click", () => {
         if (!canPourNamesDesk) return;

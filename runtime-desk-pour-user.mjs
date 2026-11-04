@@ -143,6 +143,21 @@ export function preserveDeskRules(previous, incoming) {
   return `${next.replace(/\s*$/, "")}\n\n${extra.join("\n\n")}\n`;
 }
 
+/** LED: яркость 100/0, иначе канал остаётся на 1%. Реле — как есть. */
+function actuatorBool(path, expr, id, priority = 50) {
+  const topic = esc(path);
+  const rule = esc(id);
+  const on = expr === "0" || expr === "1" ? expr : `${expr} ? 1 : 0`;
+  const bri = expr === "0" ? "0" : expr === "1" ? "100" : `${expr} ? 100 : 0`;
+  if (/\/Channel \d+$/i.test(String(path || ""))) {
+    return [
+      `      wbActuatorSet(${esc(path + " Brightness")}, ${bri}, ${rule}, ${priority});`,
+      `      wbActuatorSet(${topic}, ${on}, ${rule}, ${priority});`,
+    ].join("\n");
+  }
+  return `      wbActuatorSet(${topic}, ${on}, ${rule}, ${priority});`;
+}
+
 function emitToggle(sol) {
   const id = DESK_PREFIX + sol.id + "_toggle";
   const when = triggerWhen(sol.trigger);
@@ -151,13 +166,13 @@ function emitToggle(sol) {
   const mode = String(sol?.params?.mode || "toggle").toLowerCase();
   let body;
   if (mode === "off") {
-    body = loads.map((p) => `      wbActuatorSet(${esc(p)}, 0, ${esc(id)}, 50);`).join("\n");
+    body = loads.map((p) => actuatorBool(p, "0", id)).join("\n");
   } else if (mode === "on") {
-    body = loads.map((p) => `      wbActuatorSet(${esc(p)}, 1, ${esc(id)}, 50);`).join("\n");
+    body = loads.map((p) => actuatorBool(p, "1", id)).join("\n");
   } else {
     body = [
       `      var next = !wbIsOn(readValue(${esc(loads[0])}));`,
-      ...loads.map((p) => `      wbActuatorSet(${esc(p)}, next, ${esc(id)}, 50);`),
+      ...loads.map((p) => actuatorBool(p, "next", id)),
     ].join("\n");
   }
   return [
@@ -177,9 +192,7 @@ function emitAllOff(sol) {
   const when = longWhen(sol.trigger);
   const loads = (sol.targets || []).map(pathOf).filter(Boolean);
   if (!when || !loads.length) return "";
-  const sets = loads
-    .map((p) => `      wbActuatorSet(${esc(p)}, 0, ${esc(id)}, 55);`)
-    .join("\n");
+  const sets = loads.map((p) => actuatorBool(p, "0", id, 55)).join("\n");
   return [
     `defineRule(${esc(id)}, {`,
     `  whenChanged: ${esc(when)},`,

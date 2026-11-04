@@ -108,24 +108,28 @@
     <div id="cardSheet" class="sheet" hidden></div>
 
     <section id="panel-poured" class="panel glass" hidden data-tab="poured">
-      <p class="meta">3 · Диагностика → аудит → имена → сценарии. Когда «к полю» зелёное — можно в квартиру.</p>
-      <div id="checkDock" class="pour-dock check-dock">
-        <div class="pour-strip">
-          <button id="runHealth" class="ghost" type="button">Диагностика</button>
-          <button id="runAudit" class="ghost pour-primary" type="button">Экспресс-аудит</button>
-        </div>
-        <p id="checkHead" class="meta" hidden></p>
-        <ul id="checkList" class="check-list" hidden></ul>
-      </div>
+      <p class="meta">Одна кнопка. Имена и сценарии записываются на щит вместе.</p>
       <div id="pourDock" class="pour-dock">
         <p id="pourSummary" class="pour-summary" hidden></p>
         <p id="pouredHead" class="pour-disk meta" hidden></p>
         <div id="pourWrap" class="pour-strip" hidden>
-          <button id="pourNames" class="ghost pour-primary" type="button" disabled>1 · Имена</button>
-          <button id="pourRules" class="ghost pour-primary" type="button" disabled>2 · Сценарии</button>
+          <button id="pourAll" class="ghost pour-primary" type="button" disabled>Записать на щит</button>
+          <button id="pourNames" class="ghost" type="button" disabled hidden>Имена</button>
+          <button id="pourRules" class="ghost" type="button" disabled hidden>Сценарии</button>
           <button id="pour" class="ghost" type="button" disabled hidden>Убрать дубли</button>
         </div>
       </div>
+      <details class="more">
+        <summary>Проверка</summary>
+        <div id="checkDock" class="pour-dock check-dock">
+          <div class="pour-strip">
+            <button id="runHealth" class="ghost" type="button">Диагностика</button>
+            <button id="runAudit" class="ghost" type="button">Экспресс-аудит</button>
+          </div>
+          <p id="checkHead" class="meta" hidden></p>
+          <ul id="checkList" class="check-list" hidden></ul>
+        </div>
+      </details>
       <div class="filters" id="pouredTabs" role="tablist" aria-label="Полки заливки"></div>
       <p id="previewHead" class="meta" hidden></p>
       <p id="pourHint" class="meta" hidden></p>
