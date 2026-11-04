@@ -101,12 +101,17 @@ function emitCurtain(sol, kind) {
   const loads = (sol.targets || []).map(pathOf).filter(Boolean);
   if (!when || !loads.length) return "";
   const id = "desk_sol_" + sol.id + "_curt";
-  const lines = loads.map((p) => {
+  const lines = loads.flatMap((p) => {
+    if (kind === "stop") {
+      const open = p.replace(/ Close$/i, " Open");
+      const close = p.replace(/ Open$/i, " Close");
+      const both = open === close ? [p] : [open, close];
+      return both.map((path) => `      wbActuatorSet(${esc(path)}, 0, ${esc(id)}, 55);`);
+    }
     let path = p;
     if (kind === "close" && / Open$/i.test(p)) path = p.replace(/ Open$/i, " Close");
     if (kind === "open" && / Close$/i.test(p)) path = p.replace(/ Close$/i, " Open");
-    const val = kind === "stop" ? 0 : 1;
-    return `      wbActuatorSet(${esc(path)}, ${val}, ${esc(id)}, 55);`;
+    return [`      wbActuatorSet(${esc(path)}, 1, ${esc(id)}, 55);`];
   });
   return [
     `defineRule(${esc(id)}, {`,
@@ -115,6 +120,26 @@ function emitCurtain(sol, kind) {
     "    try {",
     deskPressEdgeLine(when),
     lines.join("\n"),
+    "    } catch (e) { if (typeof wbRuleGuardCatch === 'function') wbRuleGuardCatch(" + esc(id) + ", e); }",
+    "  }",
+    "});",
+  ].join("\n");
+}
+
+/** Замок — жест кнопки, не уровень входа. Счётчик не читаем через wbIsOn. */
+function emitLock(sol) {
+  const when = triggerWhen(sol.trigger);
+  const loads = (sol.targets || []).map(pathOf).filter(Boolean);
+  if (!when || !loads.length) return "";
+  const id = "desk_sol_" + sol.id + "_sec";
+  const sets = loads.map((p) => `      wbActuatorSet(${esc(p)}, 1, ${esc(id)}, 55);`).join("\n");
+  return [
+    `defineRule(${esc(id)}, {`,
+    `  whenChanged: ${esc(when)},`,
+    "  then: function (newValue) {",
+    "    try {",
+    deskPressEdgeLine(when),
+    sets,
     "    } catch (e) { if (typeof wbRuleGuardCatch === 'function') wbRuleGuardCatch(" + esc(id) + ", e); }",
     "  }",
     "});",
@@ -152,9 +177,8 @@ export function emitDeskScene(sol) {
   if (sid === "curtain_button_open" || sid === "gate_button_open") return emitCurtain(sol, "open");
   if (sid === "curtain_button_close" || sid === "gate_button_close") return emitCurtain(sol, "close");
   if (sid === "curtain_button_stop" || sid === "gate_button_stop") return emitCurtain(sol, "stop");
-  if (sid === "leak_close_valves" || sid === "siren_motion" || sid === "lock_button_set") {
-    return emitSensorOn(sol);
-  }
+  if (sid === "lock_button_set") return emitLock(sol);
+  if (sid === "leak_close_valves" || sid === "siren_motion") return emitSensorOn(sol);
   const level = SCENE_LEVEL[sid];
   if (level == null) return "";
   return emitLevels(sol, level);

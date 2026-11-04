@@ -152,21 +152,6 @@ export function preserveDeskRules(previous, incoming) {
   return `${next.replace(/\s*$/, "")}\n\n${extra.join("\n\n")}\n`;
 }
 
-/** LED: яркость 100/0, иначе канал остаётся на 1%. Реле — как есть. */
-function actuatorBool(path, expr, id, priority = 50) {
-  const topic = esc(path);
-  const rule = esc(id);
-  const on = expr === "0" || expr === "1" ? expr : `${expr} ? 1 : 0`;
-  const bri = expr === "0" ? "0" : expr === "1" ? "100" : `${expr} ? 100 : 0`;
-  if (/\/Channel \d+$/i.test(String(path || ""))) {
-    const briLine = `      wbActuatorSet(${esc(path + " Brightness")}, ${bri}, ${rule}, ${priority});`;
-    const swLine = `      wbActuatorSet(${topic}, ${on}, ${rule}, ${priority});`;
-    // Канал последним оставляет лампу на 1%. Яркость — до и после ключа.
-    return [briLine, swLine, briLine].join("\n");
-  }
-  return `      wbActuatorSet(${topic}, ${on}, ${rule}, ${priority});`;
-}
-
 function virtCell(path) {
   const i = String(path || "").indexOf("/");
   if (i <= 0) return "";
@@ -213,7 +198,7 @@ function emitAllOff(sol) {
   const when = longWhen(sol.trigger);
   const loads = (sol.targets || []).map(pathOf).filter(Boolean);
   if (!when || !loads.length) return "";
-  const sets = loads.map((p) => actuatorBool(p, "0", id, 55)).join("\n");
+  const sets = loads.map((p) => virtualAssign(virtCell(p), "false")).join("\n");
   return [
     `defineRule(${esc(id)}, {`,
     `  whenChanged: ${esc(when)},`,
@@ -234,13 +219,37 @@ function emitMasterOffRestore(sol) {
   if (!when || !loads.length) return "";
   const flag = "_desk_offrest_" + String(sol.id || "").replace(/[^a-zA-Z0-9_]/g, "_");
   const snap = flag + "_snap";
-  const save = loads.map((p) => `        ${snap}[${esc(p)}] = readValue(${esc(p)});`).join("\n");
-  const off = loads.map((p) => `        wbActuatorSet(${esc(p)}, 0, ${esc(id)}, 55);`).join("\n");
+  const save = loads
+    .map((p) => {
+      const cell = virtCell(p);
+      const lines = [
+        `        ${snap}[${esc(cell)}] = wbIsOn(readValue(${esc("form_logic_os/" + cell)}));`,
+      ];
+      if (/\/Channel \d+$/i.test(p)) {
+        lines.push(
+          `        ${snap}[${esc(cell + "_bri")}] = Number(readValue(${esc("form_logic_os/" + cell + "_bri")}));`,
+        );
+      }
+      return lines.join("\n");
+    })
+    .join("\n");
+  const off = loads.map((p) => "  " + virtualAssign(virtCell(p), "false")).join("\n");
   const restore = loads
-    .map(
-      (p) =>
-        `        wbActuatorSet(${esc(p)}, ${snap}[${esc(p)}] != null ? ${snap}[${esc(p)}] : 0, ${esc(id)}, 55);`,
-    )
+    .map((p) => {
+      const cell = virtCell(p);
+      const lines = [];
+      if (/\/Channel \d+$/i.test(p)) {
+        lines.push(
+          `        if (${snap}[${esc(cell)}]) {`,
+          `          var __b = Number(${snap}[${esc(cell + "_bri")}]);`,
+          `          if (isNaN(__b) || __b <= 0) __b = 100; if (__b > 100) __b = 100;`,
+          `          dev["form_logic_os"][${esc(cell + "_bri")}] = __b;`,
+          `        }`,
+        );
+      }
+      lines.push(`        dev["form_logic_os"][${esc(cell)}] = ${snap}[${esc(cell)}] ? true : false;`);
+      return lines.join("\n");
+    })
     .join("\n");
   return [
     `var ${flag} = false;`,

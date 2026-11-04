@@ -2,6 +2,7 @@
  * L1 свет со стола → defineRule (motion/reed/night + dim Auto-Change).
  * Параметры: level (%), offDelay (сек; 0 = гасить сразу при уходе).
  */
+import { cellId } from "./runtime-desk-pour-core.mjs";
 import { deskButtonCounter } from "./runtime-desk-marking.mjs";
 import { liveDeskDeviceKey } from "./runtime-desk-rules-marks.mjs";
 
@@ -53,7 +54,16 @@ function isSwitchPath(path) {
   return /\/K\d+$/i.test(p) || /\/(?:Curtain|Actuator) \d+ (?:Open|Close)$/i.test(p);
 }
 
-/** LED: ключ 0/1 и яркость 0…100. Реле и привод: 0/1. 100% яркости остаётся 100. */
+function virtSet(cell, expr) {
+  return `dev["form_logic_os"][${JSON.stringify(cell)}] = ${expr};`;
+}
+
+/**
+ * LED пишет ячейку: яркость, затем ключ. Мост сам пишет канал.
+ * Прямой ключ при яркости 0 мост тут же гасит.
+ * 0% — только выключить ключ, яркость ячейки не обнуляем (иначе мост ставит 100).
+ * Реле и привод: 0/1 на железо.
+ */
 export function wbActuatorSetLines(path, pct, ruleId, priority = 50) {
   const p = String(path || "");
   const topic = JSON.stringify(p);
@@ -61,11 +71,10 @@ export function wbActuatorSetLines(path, pct, ruleId, priority = 50) {
   const n = Math.max(0, Math.min(100, Number(pct) || 0));
   const pri = Number(priority) || 50;
   if (isLedChannelPath(p)) {
-    const bri = JSON.stringify(p + " Brightness");
-    return [
-      `wbActuatorSet(${topic}, ${n <= 0 ? 0 : 1}, ${id}, ${pri});`,
-      `wbActuatorSet(${bri}, ${n}, ${id}, ${pri});`,
-    ];
+    const slash = p.indexOf("/");
+    const cell = cellId(p.slice(0, slash), p.slice(slash + 1));
+    if (n <= 0) return [virtSet(cell, "false")];
+    return [virtSet(cell + "_bri", String(n)), virtSet(cell, "true")];
   }
   if (isSwitchPath(p)) {
     return [`wbActuatorSet(${topic}, ${n <= 0 ? 0 : 1}, ${id}, ${pri});`];
