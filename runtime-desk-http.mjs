@@ -41,6 +41,8 @@ import {
 import {
   bindDeskKeyPlanItem,
   captureDeskKeyPlanItem,
+  captureDeskKeyDraft,
+  patchDeskKeyRow,
   deleteDeskKeyPlanItem,
   listDeskKeyPlan,
   replaceDeskKeyPlan,
@@ -429,6 +431,14 @@ export async function handleRuntimeDeskKeyPlan(req, res) {
   if (body.addRoom && typeof body.addRoom === "object") {
     const out = addDeskRoom(body.addRoom);
     jsonEnd(res, out.ok ? 200 : 400, out);
+    return;
+  }
+  if (body.draft === true) {
+    jsonEnd(res, 200, captureDeskKeyDraft(body));
+    return;
+  }
+  if (body.patch === true) {
+    jsonEnd(res, 200, patchDeskKeyRow(body));
     return;
   }
   if (body.capture === true) {

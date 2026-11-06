@@ -638,26 +638,26 @@ function keyPlace(rows, row) {
   return idx + " из " + place.length;
 }
 
-/** Таблица вкладки «Клавиши»: топик, этаж, код, комната, назначение, клавиша. */
+/** Таблица вкладки «Клавиши»: как полевой лист — помещение, код, клавиша, топик. */
 export function buildDeskKeysSheet(doc) {
-  const house = doc?.site?.kind === "house";
   const rows = (doc?.keyPlan || [])
     .filter((k) => k && k.deviceTopicKey)
     .slice()
     .sort((a, b) => {
-      const c = String(a.code || "999").localeCompare(String(b.code || "999"));
+      const c = String(a.code || "999").localeCompare(String(b.code || "999"), "ru", { numeric: true });
       return c || String(a.controlId || "").localeCompare(String(b.controlId || ""), "ru", { numeric: true });
     });
   return {
     name: "Клавиши",
-    headers: ["Топик", "Этаж", "Код", "Комната", "Чем управляет", "Клавиша"],
+    headers: ["Помещение", "Код помещения", "Номер клавиши", "Топик", "Что включает", "Примечание", "Канал управляющего устройства"],
     rows: rows.map((k) => [
-      (formatDeskShelfLabel(k.deviceTopicKey) || k.deviceTopicKey) + " · " + String(k.controlId || ""),
-      house && k.floor != null && k.floor !== "" ? String(k.floor) : "",
-      k.code || "",
       k.room || "",
+      k.code || "",
+      k.place || keyPlace(rows, k),
+      (formatDeskShelfLabel(k.deviceTopicKey) || k.deviceTopicKey) + " · " + String(k.controlId || ""),
       k.label || "",
-      keyPlace(rows, k),
+      k.note || "",
+      k.load || "",
     ]),
   };
 }

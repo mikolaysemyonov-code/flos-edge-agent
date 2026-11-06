@@ -4437,13 +4437,29 @@
             if (keyScan.count >= keyScan.need) {
               const sig = rose.sig;
               if (keyScan.walk) {
-                keyCatch = {
-                  deviceTopicKey: sig.deviceTopicKey,
-                  controlId: sig.controlId,
-                  ignoreKey: rose.k,
-                };
+                const caught = rose.sig;
+                const ignoreKey = rose.k;
                 stopKeyScan();
-                renderMark();
+                fetch("/runtime/desk-key-plan", {
+                  method: "POST",
+                  headers: { "content-type": "application/json" },
+                  body: JSON.stringify({
+                    draft: true,
+                    deviceTopicKey: caught.deviceTopicKey,
+                    controlId: caught.controlId,
+                  }),
+                })
+                  .then((r) => r.json())
+                  .then((res) => {
+                    if (res && res.ok) keyPlan = res.keyPlan || keyPlan;
+                    else keyPlanNote = "Топик не встал в таблицу.";
+                    startKeyScan(null, { ignoreKey });
+                    renderMark();
+                  })
+                  .catch(() => {
+                    keyPlanNote = "Щит не ответил.";
+                    renderMark();
+                  });
                 return;
               }
               const armedId = keyScan.id;
@@ -4692,9 +4708,7 @@
       const phase = document.createElement("p");
       phase.className = "meta";
       phase.style.margin = "0";
-      phase.textContent = walkSite.kind === "house"
-        ? "Дом. Код комнаты: этаж и порядок, 101, 102, 201."
-        : "Квартира. Код комнаты: 101, 102, 103.";
+      phase.textContent = "Три нажатия — топик в таблице. Помещение, код и клавишу пишите в строке.";
       phaseRow.appendChild(phase);
       if (walkSite.kind === "house") {
         const usedFloor = (walkRooms || []).reduce((max, room) => Math.max(max, Number(room.floor) || 1), 1);
@@ -4734,7 +4748,7 @@
       if (!orderedRooms.length) {
         const empty = document.createElement("p");
         empty.className = "meta orphan";
-        empty.textContent = "Комнат пока нет. Добавьте первую — с первого этажа, из списка.";
+        empty.textContent = "Помещение появится в строке, когда впишете его в таблицу.";
         roomList.appendChild(empty);
       }
       orderedRooms.forEach((room) => {
@@ -4762,8 +4776,8 @@
         listen.type = "button";
         listen.className = "ghost key-add-all";
         listen.textContent = "Сканировать";
-        listen.disabled = !orderedRooms.length;
-        listen.title = orderedRooms.length ? "Нажмите выключатель три раза" : "Сначала добавьте комнату";
+        listen.disabled = false;
+        listen.title = "Нажмите выключатель три раза";
         listen.addEventListener("click", () => {
           keyPlanNote = "";
           startKeyScan(null);
@@ -4947,14 +4961,14 @@
       if (!rows.length) {
         const empty = document.createElement("p");
         empty.className = "meta orphan";
-        empty.textContent = "Таблица пустая. Добавьте комнату и нажмите «Сканировать».";
+        empty.textContent = "Нажмите «Сканировать». Топик встанет в строку, комнату допишите здесь.";
         wrap.appendChild(empty);
         return wrap;
       }
       const table = document.createElement("table");
       table.className = "key-table";
       const head = document.createElement("tr");
-      ["Топик", "Этаж", "Код", "Комната", "Чем управляет", "Клавиша", ""].forEach((label) => {
+      ["Помещение", "Код", "Клавиша", "Топик", "Что включает", "Примечание", "Канал", ""].forEach((label) => {
         const th = document.createElement("th");
         th.textContent = label;
         head.appendChild(th);
@@ -4962,22 +4976,42 @@
       table.appendChild(head);
       rows.forEach((k) => {
         const tr = document.createElement("tr");
-        const mates = rows.filter((x) => x.deviceTopicKey === k.deviceTopicKey && x.code === k.code);
-        const place = mates.slice().sort((a, b) => String(a.controlId).localeCompare(String(b.controlId), "ru", { numeric: true }));
-        const idx = place.findIndex((x) => x.id === k.id) + 1;
-        const cells = [
-          shelfLabel(k.deviceTopicKey) + " · " + prettyControlId(k.controlId),
-          walkSite.kind === "house" ? String(k.floor || "") : "",
-          k.code || "",
-          k.room || "",
-          k.label || "",
-          idx + " из " + place.length,
-        ];
-        cells.forEach((text) => {
+        const mates = rows.filter((x) => x.deviceTopicKey === k.deviceTopicKey && String(x.code || "") === String(k.code || ""));
+        const order = mates.slice().sort((a, b) => String(a.controlId).localeCompare(String(b.controlId), "ru", { numeric: true }));
+        const idx = order.findIndex((x) => x.id === k.id) + 1;
+        const fallbackPlace = idx + " из " + order.length;
+        const put = (name, value, label) => {
           const td = document.createElement("td");
-          td.textContent = text;
-          tr.appendChild(td);
-        });
+          const input = document.createElement("input");
+          input.className = "bind";
+          input.value = value;
+          input.setAttribute("aria-label", label);
+          input.addEventListener("change", () => {
+            const body = { patch: true, id: k.id };
+            body[name] = input.value;
+            fetch("/runtime/desk-key-plan", {
+              method: "POST",
+              headers: { "content-type": "application/json" },
+              body: JSON.stringify(body),
+            })
+              .then((r) => r.json())
+              .then((j) => {
+                if (j && j.ok) keyPlan = j.keyPlan || keyPlan;
+                else keyPlanNote = "Строка не сохранилась.";
+              });
+          });
+          td.appendChild(input);
+          return td;
+        };
+        tr.appendChild(put("room", k.room || "", "Помещение"));
+        tr.appendChild(put("code", k.code || "", "Код"));
+        tr.appendChild(put("place", k.place || fallbackPlace, "Клавиша"));
+        const topic = document.createElement("td");
+        topic.textContent = shelfLabel(k.deviceTopicKey) + " · " + prettyControlId(k.controlId);
+        tr.appendChild(topic);
+        tr.appendChild(put("label", k.label || "", "Что включает"));
+        tr.appendChild(put("note", k.note || "", "Примечание"));
+        tr.appendChild(put("load", k.load || "", "Канал"));
         const act = document.createElement("td");
           const del = document.createElement("button");
           del.type = "button";
