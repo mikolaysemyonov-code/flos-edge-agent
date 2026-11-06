@@ -48,18 +48,46 @@ function cleanFree(value, max) {
   return s.length > max ? s.slice(0, max) : s;
 }
 
+function cleanCount(value, max) {
+  const n = Math.round(Number(value));
+  if (!Number.isFinite(n) || n < 1 || n > max) return 0;
+  return n;
+}
+
 function withKeyExtras(item, row) {
-  const place = cleanFree(row?.place, 80);
-  const note = cleanFree(row?.note, 160);
-  const load = cleanFree(row?.load, 80);
-  if (place) item.place = place;
+  const src = Object.assign({}, item, row || {});
+  const note = cleanFree(src.note, 160);
+  const load = cleanFree(src.load, 80);
+  const rowCount = cleanCount(src.rowCount, 12);
+  const keyIndex = cleanCount(src.keyIndex, 12);
   if (note) item.note = note;
+  else delete item.note;
   if (load) item.load = load;
-  const code = String(row?.code || "").trim();
+  else delete item.load;
+  if (rowCount) item.rowCount = rowCount;
+  else delete item.rowCount;
+  if (keyIndex) item.keyIndex = keyIndex;
+  else delete item.keyIndex;
+  if (rowCount && keyIndex) item.place = keyIndex + " из " + rowCount;
+  else {
+    const place = cleanFree(src.place, 80);
+    if (place) item.place = place;
+    else delete item.place;
+  }
+  const code = String(src.code || "").trim();
   if (/^\d{1,4}$/.test(code)) item.code = code;
-  const floor = Math.round(Number(row?.floor) || 0);
+  else delete item.code;
+  const floor = Math.round(Number(src.floor) || 0);
   if (floor >= 1 && floor <= 9) item.floor = floor;
+  else delete item.floor;
   return item;
+}
+
+function nextKeyIndex(prev, rowCount) {
+  const cap = cleanCount(rowCount, 12);
+  const prevIndex = cleanCount(prev?.keyIndex, 12);
+  if (cap && prevIndex && prevIndex < cap) return prevIndex + 1;
+  return 1;
 }
 
 function newId(prefix) {
@@ -239,8 +267,11 @@ export function captureDeskKeyDraft(input) {
   );
   if (!taken && plan.length >= MAX_KEYS) return { ok: false, error: "key_plan_full", cap: MAX_KEYS };
   const prev = (plan || []).filter((k) => k.deviceTopicKey).slice(-1)[0];
-  const room = cleanRoom(input?.room) || taken?.room || cleanRoom(prev?.room) || "";
+  const fresh = !taken;
+  const room = cleanRoom(input?.room) || taken?.room || (fresh ? cleanRoom(prev?.room) : "") || "";
   const label = cleanLabel(input?.label) || taken?.label || "";
+  const rowCount = cleanCount(input?.rowCount, 12) || cleanCount(taken?.rowCount, 12) || (fresh ? cleanCount(prev?.rowCount, 12) || 1 : 0);
+  const keyIndex = cleanCount(input?.keyIndex, 12) || cleanCount(taken?.keyIndex, 12) || (fresh ? nextKeyIndex(prev, rowCount) : 0);
   const key = withKeyExtras({
     id: taken?.id || newId("key"),
     room,
@@ -251,8 +282,10 @@ export function captureDeskKeyDraft(input) {
     place: input?.place ?? taken?.place,
     note: input?.note ?? taken?.note,
     load: input?.load ?? taken?.load,
-    code: input?.code ?? taken?.code ?? prev?.code,
-    floor: input?.floor ?? taken?.floor ?? prev?.floor,
+    code: input?.code ?? taken?.code ?? (fresh ? prev?.code : ""),
+    floor: input?.floor ?? taken?.floor ?? (fresh ? prev?.floor : ""),
+    rowCount,
+    keyIndex,
   }, {});
   if (room) upsertDeskRoom(room);
   const doc = readRawDoc();
@@ -283,6 +316,8 @@ export function patchDeskKeyRow(input) {
     load: input?.load != null ? input.load : row.load,
     code: input?.code != null ? input.code : row.code,
     floor: input?.floor != null ? input.floor : row.floor,
+    rowCount: input?.rowCount != null ? input.rowCount : row.rowCount,
+    keyIndex: input?.keyIndex != null ? input.keyIndex : row.keyIndex,
   }, {});
   if (room) upsertDeskRoom(room);
   const doc = readRawDoc();

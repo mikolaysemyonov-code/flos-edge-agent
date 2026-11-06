@@ -4451,9 +4451,17 @@
                 })
                   .then((r) => r.json())
                   .then((res) => {
-                    if (res && res.ok) keyPlan = res.keyPlan || keyPlan;
-                    else keyPlanNote = "Топик не встал в таблицу.";
-                    startKeyScan(null, { ignoreKey });
+                    if (res && res.ok && res.key) {
+                      keyPlan = res.keyPlan || keyPlan;
+                      keyCatch = {
+                        deviceTopicKey: res.key.deviceTopicKey,
+                        controlId: res.key.controlId,
+                        id: res.key.id,
+                        ignoreKey,
+                        fresh: !res.key.label,
+                      };
+                      keyPlanNote = "";
+                    } else keyPlanNote = "Топик не встал в таблицу.";
                     renderMark();
                   })
                   .catch(() => {
@@ -4708,7 +4716,7 @@
       const phase = document.createElement("p");
       phase.className = "meta";
       phase.style.margin = "0";
-      phase.textContent = "Три нажатия — топик в таблице. Помещение, код и клавишу пишите в строке.";
+      phase.textContent = "Три нажатия — сразу карточка этой клавиши. Следующую скан слушает после записи.";
       phaseRow.appendChild(phase);
       if (walkSite.kind === "house") {
         const usedFloor = (walkRooms || []).reduce((max, room) => Math.max(max, Number(room.floor) || 1), 1);
@@ -4764,7 +4772,7 @@
         status.textContent = keyScanStatusText();
         status.classList.add("live");
       } else if (keyCatch) {
-        status.textContent = keyPlanNote || "Выберите комнату и назначение.";
+        status.textContent = keyPlanNote || "Запишите эту клавишу. Следующую скан поймает после записи.";
       } else {
         status.textContent = (keyPlanNote ? keyPlanNote + " " : "") + "Нажмите «Сканировать» и следуйте подсказкам.";
       }
@@ -4881,63 +4889,119 @@
       card.append(nameSel, custom, save);
       return card;
     }
+    function keyField(label, value, aria) {
+      const wrap = document.createElement("label");
+      wrap.className = "meta";
+      wrap.textContent = label;
+      const input = document.createElement("input");
+      input.className = "bind";
+      input.value = value || "";
+      input.setAttribute("aria-label", aria || label);
+      wrap.appendChild(input);
+      return { wrap, input };
+    }
+    function resumeKeyScan(ignoreKey) {
+      keyCatch = null;
+      startKeyScan(null, { ignoreKey });
+    }
     function assignCard(existing) {
+      const row = existing || {};
       const card = document.createElement("div");
       card.className = "key-plan-add glass";
       const topic = document.createElement("p");
       topic.className = "meta";
-      const oldName = namedInputLabel(keyCatch.deviceTopicKey, keyCatch.controlId);
-      topic.textContent = (existing
-        ? "Уже в таблице. Можно сменить комнату и назначение. "
-        : "Нашёлся. ")
-        + shelfLabel(keyCatch.deviceTopicKey) + " · " + prettyControlId(keyCatch.controlId)
-        + (oldName && !(existing && existing.code) ? " · на канале «" + oldName + "»" : "");
-      const roomSel = document.createElement("select");
-      roomSel.className = "bind";
-      roomSel.setAttribute("aria-label", "Комната");
-      (walkRooms || []).slice().sort((a, b) => String(a.code).localeCompare(String(b.code))).forEach((room) => {
-        const opt = document.createElement("option");
-        opt.value = room.code;
-        opt.textContent = room.code + " · " + room.name;
-        roomSel.appendChild(opt);
-      });
-      if (existing && existing.code) roomSel.value = existing.code;
-      const purposeSel = document.createElement("select");
-      purposeSel.className = "bind";
-      purposeSel.setAttribute("aria-label", "Назначение выключателя");
-      const blank = document.createElement("option");
-      blank.value = "";
-      blank.textContent = "Назначение";
-      purposeSel.appendChild(blank);
-      (walkPurposes || []).forEach((name) => {
-        const opt = document.createElement("option");
-        opt.value = name;
-        opt.textContent = name;
-        purposeSel.appendChild(opt);
-      });
-      const other = document.createElement("option");
-      other.value = "__other";
-      other.textContent = "Другое";
-      purposeSel.appendChild(other);
-      if (existing && existing.label) {
-        const known = (walkPurposes || []).indexOf(existing.label) >= 0;
-        purposeSel.value = known ? existing.label : "__other";
-      }
+      topic.textContent = shelfLabel(keyCatch.deviceTopicKey) + " · " + prettyControlId(keyCatch.controlId);
+      const room = keyField("Помещение", row.room, "Помещение");
+      const code = keyField("Код", row.code, "Код помещения");
+      const pair = document.createElement("div");
+      pair.className = "key-pair";
+      const count = keyField("Клавиш в ряду", row.rowCount ? String(row.rowCount) : "", "Клавиш в ряду");
+      count.input.inputMode = "numeric";
+      const index = keyField("Какая слева", row.keyIndex ? String(row.keyIndex) : "", "Номер слева направо");
+      index.input.inputMode = "numeric";
+      pair.append(count.wrap, index.wrap);
+      const where = keyField("Где", row.note, "Где на стене");
+      where.input.placeholder = "Подрозетник, изголовье, проходной";
+      const kinds = ["Основной", "Бра", "Контур"];
+      let picked = kinds.indexOf(row.label) >= 0 ? row.label : "";
+      const purpose = document.createElement("div");
+      purpose.className = "purpose";
       const custom = document.createElement("input");
       custom.className = "bind";
-      custom.placeholder = "Своё назначение";
-      custom.hidden = purposeSel.value !== "__other";
-      if (existing && existing.label && purposeSel.value === "__other") custom.value = existing.label;
-      purposeSel.addEventListener("change", () => { custom.hidden = purposeSel.value !== "__other"; });
+      custom.placeholder = "Своё, если не из трёх";
+      custom.setAttribute("aria-label", "За что клавиша");
+      if (row.label && !picked) custom.value = row.label;
+      const chips = kinds.map((name) => {
+        const btn = document.createElement("button");
+        btn.type = "button";
+        btn.className = "mod-pill" + (picked === name ? " on" : "");
+        btn.textContent = name;
+        btn.addEventListener("click", () => {
+          picked = picked === name ? "" : name;
+          if (picked) custom.value = "";
+          chips.forEach((chip) => chip.classList.toggle("on", chip.textContent === picked));
+        });
+        purpose.appendChild(btn);
+        return btn;
+      });
+      custom.addEventListener("input", () => {
+        if (custom.value.trim()) {
+          picked = "";
+          chips.forEach((chip) => chip.classList.remove("on"));
+        }
+      });
       const act = document.createElement("div");
       act.className = "key-plan-actions";
       const save = document.createElement("button");
       save.type = "button";
       save.className = "ghost key-add-all";
-      save.textContent = "Зафиксировать";
+      save.textContent = "Записать";
       save.addEventListener("click", () => {
-        const purpose = purposeSel.value === "__other" ? custom.value : purposeSel.value;
-        saveCaughtKey(roomSel.value, purpose);
+        const label = picked || custom.value.trim();
+        const roomName = room.input.value.trim();
+        if (!roomName || !label) {
+          keyPlanNote = "Напишите помещение и за что клавиша.";
+          const status = document.querySelector("#mark-body .key-scan-status");
+          if (status) status.textContent = keyPlanNote;
+          return;
+        }
+        const id = (existing && existing.id) || (keyCatch && keyCatch.id);
+        if (!id) return;
+        const ignoreKey = keyCatch && keyCatch.ignoreKey;
+        fetch("/runtime/desk-key-plan", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            patch: true,
+            id,
+            room: roomName,
+            code: code.input.value.trim(),
+            note: where.input.value.trim(),
+            label,
+            rowCount: count.input.value.trim(),
+            keyIndex: index.input.value.trim(),
+          }),
+        })
+          .then((r) => r.json())
+          .then((res) => {
+            if (res && res.ok) {
+              keyPlan = res.keyPlan || keyPlan;
+              const saved = res.key || {};
+              paintCaughtOnShelf(
+                keyCatch,
+                (saved.code ? saved.code + " " : "") + (saved.room || roomName) + " · " + (saved.label || label),
+              );
+              keyPlanNote = "";
+              resumeKeyScan(ignoreKey);
+              return;
+            }
+            keyPlanNote = "Клавиша не записалась.";
+            renderMark();
+          })
+          .catch(() => {
+            keyPlanNote = "Щит не ответил.";
+            renderMark();
+          });
       });
       const skip = document.createElement("button");
       skip.type = "button";
@@ -4945,11 +5009,27 @@
       skip.textContent = "Ещё раз";
       skip.addEventListener("click", () => {
         const ignoreKey = keyCatch && keyCatch.ignoreKey;
+        const fresh = keyCatch && keyCatch.fresh;
+        const id = keyCatch && keyCatch.id;
         keyCatch = null;
-        startKeyScan(null, { ignoreKey });
+        if (fresh && id) {
+          fetch("/runtime/desk-key-plan", {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ delete: id }),
+          })
+            .then((r) => r.json())
+            .then((j) => {
+              if (j && j.ok) keyPlan = j.keyPlan || [];
+              resumeKeyScan(ignoreKey);
+            })
+            .catch(() => resumeKeyScan(ignoreKey));
+          return;
+        }
+        resumeKeyScan(ignoreKey);
       });
       act.append(save, skip);
-      card.append(topic, roomSel, purposeSel, custom, act);
+      card.append(topic, room.wrap, code.wrap, pair, where.wrap, purpose, custom, act);
       return card;
     }
     function keyTable() {
@@ -4961,7 +5041,7 @@
       if (!rows.length) {
         const empty = document.createElement("p");
         empty.className = "meta orphan";
-        empty.textContent = "Нажмите «Сканировать». Топик встанет в строку, комнату допишите здесь.";
+        empty.textContent = "Нажмите «Сканировать». После трёх нажатий откроется карточка этой клавиши.";
         wrap.appendChild(empty);
         return wrap;
       }
@@ -5005,9 +5085,26 @@
         };
         tr.appendChild(put("room", k.room || "", "Помещение"));
         tr.appendChild(put("code", k.code || "", "Код"));
-        tr.appendChild(put("place", k.place || fallbackPlace, "Клавиша"));
+        const placeCell = document.createElement("td");
+        placeCell.textContent = k.place || fallbackPlace;
+        tr.appendChild(placeCell);
         const topic = document.createElement("td");
-        topic.textContent = shelfLabel(k.deviceTopicKey) + " · " + prettyControlId(k.controlId);
+        const open = document.createElement("button");
+        open.type = "button";
+        open.className = "ghost";
+        open.textContent = shelfLabel(k.deviceTopicKey) + " · " + prettyControlId(k.controlId);
+        open.title = "Открыть карточку";
+        open.addEventListener("click", () => {
+          stopKeyScan();
+          keyCatch = {
+            deviceTopicKey: k.deviceTopicKey,
+            controlId: k.controlId,
+            id: k.id,
+            fresh: false,
+          };
+          renderMark();
+        });
+        topic.appendChild(open);
         tr.appendChild(topic);
         tr.appendChild(put("label", k.label || "", "Что включает"));
         tr.appendChild(put("note", k.note || "", "Примечание"));

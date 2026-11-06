@@ -620,6 +620,28 @@
       gap: .4rem;
       align-items: center;
     }
+    .key-plan-add .key-pair {
+      display: flex;
+      gap: .5rem;
+    }
+    .key-plan-add .key-pair label {
+      flex: 1;
+      display: grid;
+      gap: .2rem;
+    }
+    .key-plan-add label.meta {
+      display: grid;
+      gap: .2rem;
+    }
+    .key-plan-add .purpose {
+      display: flex;
+      flex-wrap: wrap;
+      gap: .35rem;
+    }
+    .key-plan-add .purpose button {
+      font: inherit;
+      cursor: pointer;
+    }
     .key-add-all {
       color: rgb(186 230 253) !important;
       border-color: rgb(var(--sky) / .4) !important;
