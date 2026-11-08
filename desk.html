@@ -62,7 +62,7 @@
       <p id="healthSub" class="status-sub" hidden></p>
     </div>
     <p id="bus" class="meta"></p>
-    <p id="ritual" class="meta ritual" hidden>Сначала кнопки по комнатам. Потом свет. Запись на щит — в конце.</p>
+    <p id="ritual" class="meta ritual" hidden>При сканировании следуйте подсказкам.</p>
 
     <section id="panel-intro" class="panel" data-tab="intro">
       <ol class="walk">
@@ -74,15 +74,15 @@
         </li>
         <li>
           <span class="step">2</span>
-          <strong>Выключатели</strong>
-          <span>Три коротких нажатия. Комната и что включает клавиша.</span>
-          <button type="button" class="ghost" data-go="keys">Открыть</button>
+          <strong>Удалённая ПНР</strong>
+          <span>Скан шины и клавиши, которые уже известны. Нажатия в темноте не нужны. Запись на щит — одна, в конце.</span>
+          <button type="button" class="ghost" data-go="remote">Открыть</button>
         </li>
         <li>
           <span class="step">3</span>
-          <strong>Освещение</strong>
-          <span>Кружок зажигает канал. Для ленты — подсветка, для реле — свет.</span>
-          <button type="button" class="ghost" data-go="lines">Открыть</button>
+          <strong>ПНР по месту</strong>
+          <span>Три нажатия, карточка клавиши, из неё скан света. Комнату записываете один раз и проверяете рукой.</span>
+          <button type="button" class="ghost" data-go="site">Открыть</button>
         </li>
         <li>
           <span class="step">4</span>
@@ -181,8 +181,8 @@
   </main>
   <nav class="rail" role="tablist" aria-label="Пуск">
     <button class="tab" type="button" role="tab" data-nav="guide" data-tab="intro" aria-selected="true">Туториал</button>
-    <button class="tab" type="button" role="tab" data-nav="keys" data-tab="mark" aria-selected="false">Выключатели <span class="n" id="n-mark"></span></button>
-    <button class="tab" type="button" role="tab" data-nav="light" data-tab="mark" aria-selected="false">Освещение</button>
+    <button class="tab" type="button" role="tab" data-nav="remote" data-tab="mark" aria-selected="false">Удалённая ПНР</button>
+    <button class="tab" type="button" role="tab" data-nav="site" data-tab="mark" aria-selected="false">ПНР по месту <span class="n" id="n-mark"></span></button>
     <button class="tab" type="button" role="tab" data-nav="climate" data-tab="cards" aria-selected="false">Климат</button>
     <button class="tab" type="button" role="tab" data-nav="scenes" data-tab="cards" aria-selected="false">Сценарии <span class="n" id="n-cards"></span></button>
     <div class="rail-tree" data-open="1">

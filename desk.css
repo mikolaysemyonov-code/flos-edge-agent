@@ -642,6 +642,11 @@
       font: inherit;
       cursor: pointer;
     }
+    .remote-mods {
+      display: grid;
+      gap: .2rem;
+      margin: .45rem 0 .75rem;
+    }
     .key-add-all {
       color: rgb(186 230 253) !important;
       border-color: rgb(var(--sky) / .4) !important;

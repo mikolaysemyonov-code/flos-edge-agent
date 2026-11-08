@@ -678,6 +678,26 @@ function shelvesWithoutSolutionCard(shelves, solution, remaining) {
   return next;
 }
 
+/** Типовые «свет кнопкой» для клавиш одной комнаты — запись зоны на щите. */
+export function zoneSolutionIds(solutions, keys, room) {
+  const wantRoom = String(room || "").trim().toLowerCase();
+  if (!wantRoom) return [];
+  const want = new Set();
+  for (const k of keys || []) {
+    if (String(k?.room || "").trim().toLowerCase() !== wantRoom) continue;
+    const dk = String(k?.deviceTopicKey || "").trim();
+    const cid = String(k?.controlId || "").trim();
+    if (dk && cid) want.add(dk + "\0" + cid);
+  }
+  const ids = [];
+  for (const s of solutions || []) {
+    if (String(s?.solutionId || "") !== "light_button_toggle" || !s?.trigger || !s?.id) continue;
+    const key = String(s.trigger.deviceTopicKey || "") + "\0" + String(s.trigger.controlId || "");
+    if (want.has(key)) ids.push(String(s.id));
+  }
+  return ids;
+}
+
 export function deleteDeskSolution(id) {
   const want = String(id ?? "").trim();
   if (!want) return { ok: false, error: "need_id" };
