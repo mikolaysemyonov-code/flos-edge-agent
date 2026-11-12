@@ -85,7 +85,7 @@
     let activeNav = "guide";
     const NAV = {
       guide: { tab: "intro", title: "Туториал" },
-      remote: { tab: "mark", fam: "remote", title: "Удалённая ПНР" },
+      remote: { tab: "mark", fam: "all", title: "Удалённая ПНР" },
       site: { tab: "mark", fam: "site", title: "ПНР по месту" },
       climate: { tab: "cards", filter: "Климат", title: "Климат" },
       scenes: { tab: "cards", title: "Сценарии" },
@@ -534,7 +534,14 @@
       if (id === "scenes" && cardFilter === "Климат") cardFilter = "Свет";
       if (spec.pane) pouredPane = spec.pane;
       const famBar = $("modFamily");
-      if (famBar) famBar.hidden = true;
+      if (famBar) {
+        const remote = activeNav === "remote";
+        famBar.hidden = !remote;
+        famBar.querySelectorAll("[data-fam]").forEach((btn) => {
+          const id = btn.dataset.fam;
+          btn.hidden = remote && (id === "keys" || id === "lines" || id === "pair");
+        });
+      }
       setTab(spec.tab, true);
       const cardBar = $("cardFilters");
       if (cardBar) cardBar.hidden = activeNav === "climate";
@@ -5000,17 +5007,6 @@
         return j;
       });
     }
-    function busInputs() {
-      const rows = [];
-      (lastShelvesRows || []).forEach((s) => {
-        (s.channels || []).forEach((c) => {
-          if (c && isDeskInput(c.controlId, s.deviceTopicKey)) {
-            rows.push({ deviceTopicKey: s.deviceTopicKey, controlId: c.controlId });
-          }
-        });
-      });
-      return rows;
-    }
     function busLoads() {
       const rows = [];
       (lastShelvesRows || []).forEach((s) => {
@@ -6263,139 +6259,6 @@
       el.textContent = ready ? "" : parts.join(" · ");
       paintShieldClock();
     }
-    function renderRemotePanel(body) {
-      body.replaceChildren();
-      const lead = document.createElement("p");
-      lead.className = "meta";
-      lead.textContent = "Скан шины показывает модули. Клавиши вносите по известным топикам. Запись на щит — одна, когда разметка собрана.";
-      const scan = document.createElement("button");
-      scan.type = "button";
-      scan.className = "ghost key-add-all";
-      scan.textContent = "Скан шины";
-      scan.addEventListener("click", () => { void scanNow(); });
-      body.append(lead, scan);
-      const shelves = lastShelvesRows || [];
-      if (!shelves.length) {
-        const empty = document.createElement("p");
-        empty.className = "meta orphan";
-        empty.textContent = "Шина ещё не считана.";
-        body.appendChild(empty);
-      } else {
-        const list = document.createElement("div");
-        list.className = "remote-mods";
-        shelves.forEach((s) => {
-          const block = document.createElement("p");
-          block.className = "meta";
-          const channels = (s.channels || []).map((c) => prettyControlId(c.controlId)).filter(Boolean);
-          block.textContent = (s.label || s.deviceTopicKey) + (channels.length ? " · " + channels.join(", ") : "");
-          list.appendChild(block);
-        });
-        body.appendChild(list);
-      }
-      const form = document.createElement("div");
-      form.className = "key-plan-add glass";
-      const inputSel = document.createElement("select");
-      inputSel.className = "bind";
-      inputSel.setAttribute("aria-label", "Топик клавиши");
-      const blank = document.createElement("option");
-      blank.value = "";
-      blank.textContent = "Топик с шины";
-      inputSel.appendChild(blank);
-      busInputs().forEach((row) => {
-        const opt = document.createElement("option");
-        opt.value = row.deviceTopicKey + "\0" + row.controlId;
-        opt.textContent = shelfLabel(row.deviceTopicKey) + " · " + prettyControlId(row.controlId);
-        inputSel.appendChild(opt);
-      });
-      const room = document.createElement("input");
-      room.className = "bind";
-      room.placeholder = "Помещение";
-      room.setAttribute("aria-label", "Помещение");
-      const code = document.createElement("input");
-      code.className = "bind";
-      code.placeholder = "Код";
-      code.setAttribute("aria-label", "Код помещения");
-      const label = document.createElement("input");
-      label.className = "bind";
-      label.placeholder = "Что включает";
-      label.setAttribute("aria-label", "Что включает");
-      const add = document.createElement("button");
-      add.type = "button";
-      add.className = "ghost key-add-all";
-      add.textContent = "Добавить клавишу";
-      add.addEventListener("click", () => {
-        const parts = String(inputSel.value || "").split("\0");
-        if (!parts[0] || !parts[1] || !room.value.trim() || !label.value.trim()) {
-          keyPlanNote = "Нужны топик, помещение и что включает.";
-          renderMark();
-          return;
-        }
-        fetch("/runtime/desk-key-plan", {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({ draft: true, deviceTopicKey: parts[0], controlId: parts[1] }),
-        })
-          .then((r) => r.json())
-          .then((draft) => {
-            if (!draft || !draft.ok || !draft.key) {
-              keyPlanNote = "Клавиша не встала в таблицу.";
-              renderMark();
-              return null;
-            }
-            return fetch("/runtime/desk-key-plan", {
-              method: "POST",
-              headers: { "content-type": "application/json" },
-              body: JSON.stringify({
-                patch: true,
-                id: draft.key.id,
-                room: room.value.trim(),
-                code: code.value.trim(),
-                label: label.value.trim(),
-              }),
-            }).then((r) => r.json());
-          })
-          .then((patched) => {
-            if (!patched) return;
-            if (patched.ok) {
-              keyPlan = patched.keyPlan || keyPlan;
-              keyPlanNote = "";
-              keyCatch = {
-                deviceTopicKey: patched.key.deviceTopicKey,
-                controlId: patched.key.controlId,
-                id: patched.key.id,
-                fresh: false,
-              };
-              siteLoadsKey = "";
-            } else keyPlanNote = "Строка не сохранилась.";
-            renderMark();
-          })
-          .catch(() => {
-            keyPlanNote = "Щит не ответил.";
-            renderMark();
-          });
-      });
-      form.append(inputSel, room, code, label, add);
-      body.appendChild(form);
-      if (keyPlanNote) {
-        const note = document.createElement("p");
-        note.className = "meta key-scan-status";
-        note.textContent = keyPlanNote;
-        body.appendChild(note);
-      }
-      if (keyCatch) body.appendChild(assignCard(caughtNamed()));
-      const typed = (deskSolutions || []).filter((s) => s && s.solutionId === "light_button_toggle").length;
-      const ready = document.createElement("p");
-      ready.className = "meta";
-      ready.textContent = typed
-        ? "Типовых со светом: " + typed + ". Когда комнаты собраны — одна запись на щит."
-        : "Типовое появится, когда у клавиши выбран свет.";
-      const toBoard = document.createElement("button");
-      toBoard.type = "button";
-      toBoard.className = "ghost key-add-all";
-      toBoard.textContent = "К записи на щит";
-      toBoard.addEventListener("click", () => openNav("board"));
-      body.append(ready, toBoard, keyTable());
-    }
     function renderMark() {
       paintBenchReady();
       lastShelvesRows = lastShelvesRows || [];
@@ -6422,10 +6285,6 @@
       const body = $("mark-body");
       if (!body) return;
       body.hidden = false;
-      if (modFamily === "remote") {
-        renderRemotePanel(body);
-        return;
-      }
       if (modFamily === "site" || modFamily === "keys") {
         renderKeyScanPanel(body);
         return;
