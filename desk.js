@@ -2436,23 +2436,23 @@
         root.classList.remove("open");
         search.value = "";
       }
-      function setRows(next, hint) {
+      function setRows(next, hint, empty) {
         rows = Array.isArray(next) ? next : [];
         indexRows();
         for (const key of [...selected.keys()]) {
           if (!byKey.has(key)) selected.delete(key);
         }
         addBtn.disabled = !rows.length;
-        const emptyMsg = field.querySelector(".tag-empty-msg");
+        let emptyMsg = field.querySelector(".tag-empty-msg");
         if (!rows.length) {
           field.classList.add("is-empty");
           addBtn.hidden = true;
           if (!emptyMsg) {
-            const msg = document.createElement("span");
-            msg.className = "tag-empty-msg";
-            msg.textContent = emptyText;
-            field.appendChild(msg);
+            emptyMsg = document.createElement("span");
+            emptyMsg.className = "tag-empty-msg";
+            field.appendChild(emptyMsg);
           }
+          emptyMsg.textContent = empty || emptyText;
         } else {
           field.classList.remove("is-empty");
           if (emptyMsg) emptyMsg.remove();
@@ -2735,6 +2735,8 @@
         (draftTrigKey && !hasKey(namedTrigRows, draftTrigKey))
         || draftTargetKeys.some((key) => !hasKey(namedLoadRows, key)),
       );
+      // Диммер без имён — сразу сырые каналы WB-LED / DALI / MDM, не пустой «поправьте имена».
+      if (card.id === "light_dim_hold_mcm" && !rawOn && !namedLoadRows.length) rawOn = true;
       rawBtn.setAttribute("aria-pressed", rawOn ? "true" : "false");
       const rawHint = "WB-LED №4, K1, Input 7";
       lead.append(p, rawBtn);
@@ -2868,7 +2870,9 @@
         searchPlaceholder: rawOn ? rawHint : "",
         emptyText: /leak|valve/.test(card.id + (card.loadKind || ""))
           ? "Нет линий с именем «кран/клапан» — разметьте краны, не свет."
-          : "Нет подходящих нагрузок этого типа — поправьте имена в «Разметить».",
+          : (rawOn && card.id === "light_dim_hold_mcm"
+            ? "На шине нет каналов WB-LED, DALI или MDM3."
+            : "Нет подходящих нагрузок этого типа — поправьте имена в «Разметить»."),
         draftKeys,
         draftLevels,
         onChange: bump,
@@ -3002,9 +3006,12 @@
         rawOn = !rawOn;
         rawBtn.setAttribute("aria-pressed", rawOn ? "true" : "false");
         const hint = rawOn ? rawHint : "Поиск: кух, бра, канал…";
-        if (trigPicker) trigPicker.setRows(rawOn ? rawTriggerRows() : namedTrigRows, hint);
-        if (auxPicker) auxPicker.setRows(rawOn ? rawTriggerRows() : auxNamed, hint);
-        if (tgtPicker) tgtPicker.setRows(rawOn ? rawLoadsForCard(card) : namedLoadRows, hint);
+        const rawEmpty = card.id === "light_dim_hold_mcm"
+          ? "На шине нет каналов WB-LED, DALI или MDM3."
+          : "На шине нет таких каналов.";
+        if (trigPicker) trigPicker.setRows(rawOn ? rawTriggerRows() : namedTrigRows, hint, rawOn ? rawEmpty : "");
+        if (auxPicker) auxPicker.setRows(rawOn ? rawTriggerRows() : auxNamed, hint, rawOn ? rawEmpty : "");
+        if (tgtPicker) tgtPicker.setRows(rawOn ? rawLoadsForCard(card) : namedLoadRows, hint, rawOn ? rawEmpty : "");
       });
       const body = document.createElement("div");
       body.className = "sheet-body";
@@ -3374,9 +3381,35 @@
       raw.sort((a, b) => a.label.localeCompare(b.label, "ru", { numeric: true }));
       return raw;
     }
+    function rawDimmerRows() {
+      const raw = [];
+      (lastShelvesRows || []).forEach((s) => {
+        const key = String(s.deviceTopicKey || "");
+        const label = String(s.label || "");
+        const dimmer = /led|ampled|dali|mdm|mao/i.test(key + " " + label);
+        if (!dimmer) return;
+        visibleChannels(s).forEach((ch) => {
+          const id = String(ch.controlId || "").trim();
+          if (!/^(?:Channel|CCT|RGB)\s*\d+$/i.test(id) && !/^(?:CCT|RGB)\d+$/i.test(id)) return;
+          const mod = s.label || s.deviceTopicKey;
+          raw.push({
+            deviceTopicKey: s.deviceTopicKey,
+            controlId: id,
+            room: mod,
+            label: mod + " · " + id,
+            raw: true,
+          });
+        });
+      });
+      raw.sort((a, b) => a.label.localeCompare(b.label, "ru", { numeric: true }));
+      return raw;
+    }
     function rawLoadsForCard(card) {
       const all = rawLoadRows();
-      if (card.id === "light_dim_hold_mcm") return all.filter(isLikelyDimmerLoad);
+      if (card.id === "light_dim_hold_mcm") {
+        const dim = rawDimmerRows();
+        return dim.length ? dim : all.filter(isLikelyDimmerLoad);
+      }
       if ((card.loadKind || "") === "light" || card.cat === "Свет" || card.cat === "Сцены") {
         return all.filter((r) => /^(?:Channel|CCT|RGB)\s*\d+$/i.test(r.controlId)
           || /^(?:CCT|RGB)\d+$/i.test(r.controlId)
