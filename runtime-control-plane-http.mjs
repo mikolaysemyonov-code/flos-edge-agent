@@ -41,6 +41,7 @@ import {
   handleRuntimeDeskMarking,
   handleRuntimeDeskPourPreview,
   handleRuntimeDeskPoured,
+  handleRuntimeDeskRulesFile,
   handleRuntimeDeskSolutions,
   handleRuntimeFieldCert,
   handleRuntimeMqttScan,
@@ -987,6 +988,10 @@ export function runtimeHttpPathHandler(req, res) {
   }
   if (method === "GET" && urlPath === "/runtime/desk-poured") {
     handleRuntimeDeskPoured(req, res);
+    return true;
+  }
+  if (method === "GET" && urlPath === "/runtime/desk-rules-file") {
+    handleRuntimeDeskRulesFile(req, res);
     return true;
   }
   if (method === "GET" && urlPath === "/runtime/field-cert") {

@@ -83,6 +83,7 @@
     let modQuery = "";
     let openMod = "";
     let pouredPane = "send";
+    let rulesFileText = "";
     let activeNav = "guide";
     let deskNavLive = false;
     const NAV = {
@@ -1626,14 +1627,14 @@
         { id: "send", ru: "Сейчас" },
         { id: "hist", ru: "Раньше" },
       ];
-      if (!tabs.some((t) => t.id === pouredPane) && pouredPane !== "rules") pouredPane = "send";
+      if (!tabs.some((t) => t.id === pouredPane) && pouredPane !== "rules" && pouredPane !== "file") pouredPane = "send";
       bar.className = "footlink";
-      bar.hidden = pouredOpen() || (!lastReleases.length && pouredPane !== "hist");
+      bar.hidden = pouredOpen();
       bar.replaceChildren();
         const b = document.createElement("button");
         b.type = "button";
       b.className = "textlink";
-      if (pouredPane === "hist") {
+      if (pouredPane === "hist" || pouredPane === "file") {
         b.textContent = "К записи";
         b.addEventListener("click", () => {
           pouredPane = "send";
@@ -1651,6 +1652,19 @@
         });
       }
         bar.appendChild(b);
+      const fileBtn = document.createElement("button");
+      fileBtn.type = "button";
+      fileBtn.className = "textlink" + (pouredPane === "file" ? " on" : "");
+      fileBtn.textContent = "rules.js";
+      fileBtn.addEventListener("click", () => {
+        openSceneId = "";
+        openContact = "";
+        openPourMod = "";
+        pouredPane = "file";
+        renderReady();
+        void loadRulesFile();
+      });
+      bar.appendChild(fileBtn);
       paintPourButtons();
       $("n-poured").textContent = sendN || "";
     }
@@ -1979,6 +1993,22 @@
         renderPouredTabs();
       }
       setPouredChrome(false);
+      if (pouredPane === "file") {
+        openPourMod = "";
+        box.className = "";
+        const pre = document.createElement("pre");
+        pre.className = "rules-file";
+        pre.textContent = String(rulesFileText || "").trim()
+          ? rulesFileText
+          : "На щите ещё нет rules.js.";
+        box.appendChild(pre);
+        const head = $("previewHead");
+        if (head) {
+          head.hidden = true;
+          head.textContent = "";
+        }
+        return;
+      }
       if (pouredPane === "hist") {
         openPourMod = "";
         renderHistory(box);
@@ -6625,6 +6655,16 @@
       renderPoured();
       loadPreview();
       if (shelves.length) $("scan").textContent = "Обновить";
+    }
+    async function loadRulesFile() {
+      try {
+        const r = await fetch("/runtime/desk-rules-file");
+        const j = await r.json();
+        rulesFileText = j && j.ok ? String(j.content || "") : "";
+      } catch (_) {
+        rulesFileText = "";
+      }
+      if (pouredPane === "file") renderReady();
     }
     async function loadPoured() {
       try {

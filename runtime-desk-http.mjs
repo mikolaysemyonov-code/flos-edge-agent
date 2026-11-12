@@ -745,6 +745,22 @@ export function handleRuntimeDeskPoured(_req, res) {
   jsonEnd(res, 200, { ok: true, ...snap, rules });
 }
 
+/** Текст 40_rules_user.js с диска щита. Только этот файл, без пути из запроса. */
+export function handleRuntimeDeskRulesFile(_req, res) {
+  const dir = (
+    process.env.FLOS_WB_RULES_DEPLOY_DIR ||
+    process.env.REACTOR_WB_RULES_DEPLOY_DIR ||
+    "/etc/wb-rules"
+  ).trim();
+  const filename = "40_rules_user.js";
+  try {
+    const content = fs.readFileSync(path.join(dir, filename), "utf8");
+    jsonEnd(res, 200, { ok: true, filename, content });
+  } catch {
+    jsonEnd(res, 200, { ok: true, filename, content: "" });
+  }
+}
+
 /** Полевой сертификат: checklist + passport JSON. */
 export function handleRuntimeFieldCert(req, res, live = {}) {
   const last = readLastDeskShelves();

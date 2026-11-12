@@ -835,10 +835,19 @@
       color: rgb(var(--sky) / .95); font: inherit; font-size: .78rem; font-weight: 650;
       padding: .15rem 0 .35rem; cursor: pointer;
     }
-    .footlink { margin: .35rem 0 .2rem; }
+    .footlink { margin: .35rem 0 .2rem; display: flex; gap: 1rem; align-items: baseline; }
     .footlink button {
       appearance: none; border: 0; background: none; padding: 0;
       color: rgb(235 235 245 / .55); font: inherit; font-size: .95rem; cursor: pointer;
+    }
+    .footlink button.on { color: #fff; }
+    .rules-file {
+      margin: .2rem 0 1rem; padding: .85rem .95rem;
+      max-height: min(70vh, 42rem); overflow: auto; white-space: pre;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-size: .72rem; line-height: 1.45;
+      color: rgb(235 235 245 / .9);
+      background: #141418; border-radius: 12px;
     }
     .mod-search {
       display: block; width: 100%; box-sizing: border-box;
