@@ -1464,18 +1464,7 @@
         return;
       }
       box.className = "vitrine";
-      const byRoom = new Map();
-      loads.forEach((i) => {
-        const k = i.room || "Без имени";
-        if (!byRoom.has(k)) byRoom.set(k, []);
-        byRoom.get(k).push(i);
-      });
-      const rooms = [...byRoom.keys()].sort((a, b) => {
-        if (a === "Без имени") return 1;
-        if (b === "Без имени") return -1;
-        return a.localeCompare(b, "ru");
-      });
-      rooms.forEach((room) => box.appendChild(pourRoomTile(room, byRoom.get(room) || [])));
+      loads.slice().sort(byContact).forEach((item) => box.appendChild(pourLineTile(item)));
       if (scenes.length) {
         const note = document.createElement("p");
         note.className = "meta";
@@ -1483,21 +1472,21 @@
         box.appendChild(note);
       }
     }
-    function pourRoomTile(room, chunk) {
+    function pourLineTile(item) {
       const btn = document.createElement("button");
       btn.type = "button";
       btn.className = "vcard on";
-      const lit = chunk.some((i) => channelIsOn(pourLiveCh(i.deviceTopicKey, i.controlId)));
+      const lit = channelIsOn(pourLiveCh(item.deviceTopicKey, item.controlId));
       if (lit) btn.classList.add("amber", "lit");
       const vt = document.createElement("span");
       vt.className = "vt";
-      vt.textContent = room;
+      vt.textContent = item.title || item.room || "Линия";
       const vs = document.createElement("span");
       vs.className = "vs";
-      vs.textContent = chunk.map((i) => i.title).filter(Boolean).slice(0, 4).join(" · ");
+      vs.textContent = item.sub || item.room || "";
       btn.append(vt, vs);
       btn.addEventListener("click", () => {
-        openPourMod = "room:" + room;
+        openPourMod = "room:" + (item.room || "Без имени");
         openContact = "";
         openSceneId = "";
         renderReady();
