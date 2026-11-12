@@ -20,6 +20,7 @@ import {
 } from "./runtime-desk-pour-stale.mjs";
 import { mergeDeskSolutionsIntoUser, supportedDeskSolution } from "./runtime-desk-pour-user.mjs";
 import { readReleaseRing } from "./runtime-desk-releases.mjs";
+import { formatDeskShelfLabel } from "./runtime-desk-shelves.mjs";
 
 function deployDir() {
   return (
@@ -57,6 +58,26 @@ function namedLoadsFromDesk() {
       if (seenNamePath.has(pathKey)) continue;
       seenNamePath.add(pathKey);
       out.push({ deviceTopicKey: key, controlId, name });
+    }
+  }
+  return out;
+}
+
+/** Цель правила без имени всё равно получает ячейку и мост. Подпись — тип и номер. */
+function unnamedTargetsForBridge(solutions, named) {
+  const have = new Set((named || []).map((r) => r.deviceTopicKey + "\0" + r.controlId));
+  const out = [];
+  const seen = new Set();
+  for (const sol of solutions || []) {
+    for (const t of sol?.targets || []) {
+      if (!t?.deviceTopicKey || !t?.controlId || isDriveClose(t.controlId)) continue;
+      const deviceTopicKey = liveDeskDeviceKey(t.deviceTopicKey);
+      const controlId = String(t.controlId).trim();
+      const key = deviceTopicKey + "\0" + controlId;
+      if (have.has(key) || seen.has(key)) continue;
+      seen.add(key);
+      const mod = formatDeskShelfLabel(deviceTopicKey) || deviceTopicKey;
+      out.push({ deviceTopicKey, controlId, name: mod + " · " + controlId });
     }
   }
   return out;
@@ -236,6 +257,22 @@ export function buildDeskPourPackage(scopeRaw = "all", opts = {}) {
     if (user.changed) {
       shards.push({ filename: "40_rules_user.js", content: user.content });
       emittedSolutions = user.emitted;
+    }
+    const pouredSols = onlyIds.length
+      ? sols.filter((s) => onlyIds.includes(String(s.id)))
+      : sols;
+    const extra = unnamedTargetsForBridge(pouredSols, named);
+    if (extra.length) {
+      const bridged = buildCoreRepair(coreSrc, named.concat(extra), { persist: true });
+      if (bridged.ok && bridged.changed) {
+        const shard = { filename: "00_core.js", content: bridged.content };
+        const prev = shards.findIndex((s) => s.filename === "00_core.js");
+        if (prev >= 0) shards[prev] = shard;
+        else shards.push(shard);
+        hiddenGhosts = bridged.hiddenGhosts || hiddenGhosts;
+        removedIds = bridged.removedIds || removedIds;
+        activeIds = bridged.activeIds || activeIds;
+      }
     }
   }
 

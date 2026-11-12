@@ -481,11 +481,18 @@ const LATCHING_CARDS = new Set([
   "curtain_button_stop",
 ]);
 
-/** Две одинаковые карточки на один выход гоняются. Сцена и переключение на одной линии — можно. */
-function latchClash(solutions, id, solutionId, targets) {
+/** Две одинаковые карточки с одной клавиши на один выход гоняются.
+ *  Другая клавиша на ту же линию — проходной выключатель, её пишем.
+ */
+function latchClash(solutions, id, solutionId, targets, trigger) {
   if (!LATCHING_CARDS.has(solutionId)) return null;
+  const passThrough = solutionId === "light_button_toggle" || solutionId === "socket_button_toggle";
   for (const s of solutions || []) {
     if (!s || s.id === id || s.solutionId !== solutionId) continue;
+    if (passThrough && trigger && s.trigger
+      && (s.trigger.deviceTopicKey !== trigger.deviceTopicKey || s.trigger.controlId !== trigger.controlId)) {
+      continue;
+    }
     for (const t of Array.isArray(s.targets) ? s.targets : []) {
       const hit = (targets || []).find((x) => x.deviceTopicKey === t.deviceTopicKey && x.controlId === t.controlId);
       if (!hit) continue;
@@ -628,7 +635,7 @@ export function upsertDeskSolution(input) {
     savedAt: new Date().toISOString(),
   };
   const clash =
-    latchClash(doc.solutions, id, card.id, targets) ||
+    latchClash(doc.solutions, id, card.id, targets, trigger) ||
     continuousClash(doc.solutions, id, card.id, targets) ||
     scheduleClash(doc.solutions, id, card.id, targets);
   if (clash) return clash;
