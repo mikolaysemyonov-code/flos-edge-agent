@@ -1164,6 +1164,15 @@
     .sheet-head { flex: none; }
     .sheet-body { flex: 1; min-height: 0; overflow: auto; padding-right: .15rem; }
     .sheet h3 { margin: 0 0 .3rem; font-size: 1.05rem; }
+    .sheet-lead { display: flex; align-items: flex-start; justify-content: space-between; gap: .6rem; }
+    .sheet-lead .meta { margin: 0; flex: 1; }
+    .raw-toggle {
+      appearance: none; flex: none; cursor: pointer; white-space: nowrap;
+      border: 1px solid rgb(255 255 255 / .14); background: rgb(255 255 255 / .04);
+      color: var(--mute); font: inherit; font-size: .72rem; font-weight: 650;
+      padding: .28rem .65rem; border-radius: 999px;
+    }
+    .raw-toggle[aria-pressed="true"] { color: #fff; background: #3a3a3c; border-color: transparent; }
     .sheet .fld { display: block; margin: .7rem 0 .2rem; font-size: .68rem; letter-spacing: .07em; text-transform: uppercase; color: var(--mute); }
     .sheet .actions { flex: none; display: flex; gap: .5rem; margin-top: .75rem; }
     .sheet select.bind {

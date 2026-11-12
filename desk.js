@@ -2127,7 +2127,7 @@
      * Без галки в списке = не в сцене (ignore).
      */
     function makeTagPicker(opts) {
-      const rows = Array.isArray(opts.rows) ? opts.rows : [];
+      let rows = Array.isArray(opts.rows) ? opts.rows : [];
       const multi = opts.multi !== false;
       const withLevel = Boolean(opts.withLevel);
       const defLevel = Number.isFinite(Number(opts.defLevel)) ? Number(opts.defLevel) : 100;
@@ -2135,7 +2135,11 @@
       const emptyText = opts.emptyText || "Нет подходящих имён — разметьте в «Разметить».";
       const onChange = typeof opts.onChange === "function" ? opts.onChange : () => {};
       const byKey = new Map();
-      rows.forEach((r) => byKey.set(contactKey(r.deviceTopicKey, r.controlId), r));
+      function indexRows() {
+        byKey.clear();
+        rows.forEach((r) => byKey.set(contactKey(r.deviceTopicKey, r.controlId), r));
+      }
+      indexRows();
       /** @type {Map<string, number>} */
       const selected = new Map();
       (opts.draftKeys || []).forEach((k) => {
@@ -2170,7 +2174,7 @@
       const search = document.createElement("input");
       search.type = "search";
       search.className = "tag-search";
-      search.placeholder = "Поиск: кух, бра, канал…";
+      search.placeholder = opts.searchPlaceholder || "Поиск: кух, бра, канал…";
       search.autocomplete = "off";
       const list = document.createElement("div");
       list.className = "tag-dd-list";
@@ -2178,7 +2182,8 @@
       root.append(field, panel);
 
       function roomOf(r) {
-        return nameRoom(r.label) || "Общие (без комнаты в имени)";
+        if (r && r.room) return r.room;
+        return nameRoom(r && r.label) || "Общие (без комнаты в имени)";
       }
       function shortLabel(r) {
         const room = roomOf(r);
@@ -2328,7 +2333,7 @@
         const match = (r) => !q || String(r.label || "").toLowerCase().includes(q)
           || String(r.controlId || "").toLowerCase().includes(q)
           || String(r.deviceTopicKey || "").toLowerCase().includes(q);
-        if (multi) {
+        if (multi && rows.length && rows.length <= 48) {
           const allBtn = document.createElement("button");
           allBtn.type = "button";
           allBtn.className = "tag-dd-row tag-dd-all";
@@ -2412,6 +2417,32 @@
         root.classList.remove("open");
         search.value = "";
       }
+      function setRows(next, hint) {
+        rows = Array.isArray(next) ? next : [];
+        indexRows();
+        for (const key of [...selected.keys()]) {
+          if (!byKey.has(key)) selected.delete(key);
+        }
+        addBtn.disabled = !rows.length;
+        const emptyMsg = field.querySelector(".tag-empty-msg");
+        if (!rows.length) {
+          field.classList.add("is-empty");
+          addBtn.hidden = true;
+          if (!emptyMsg) {
+            const msg = document.createElement("span");
+            msg.className = "tag-empty-msg";
+            msg.textContent = emptyText;
+            field.appendChild(msg);
+          }
+        } else {
+          field.classList.remove("is-empty");
+          if (emptyMsg) emptyMsg.remove();
+          addBtn.hidden = false;
+        }
+        if (hint) search.placeholder = hint;
+        paintChips();
+        if (!panel.hidden) paintList();
+      }
       addBtn.addEventListener("click", (e) => {
         e.stopPropagation();
         if (panel.hidden) openPanel();
@@ -2434,6 +2465,7 @@
       return {
         node: root,
         collect,
+        setRows,
         isEmpty: () => selected.size === 0,
         dispose: () => {
           if (root._tagPickDispose) root._tagPickDispose();
@@ -2649,11 +2681,11 @@
     function groupLoadsByRoom(loads) {
       const map = new Map();
       (loads || []).forEach((r) => {
-        const room = nameRoom(r.label) || "Общие (без комнаты в имени)";
+        const room = (r && r.room) || nameRoom(r.label) || "Общие (без комнаты в имени)";
         if (!map.has(room)) map.set(room, []);
         map.get(room).push(r);
       });
-      return [...map.entries()].sort((a, b) => String(a[0]).localeCompare(String(b[0]), "ru"));
+      return [...map.entries()].sort((a, b) => String(a[0]).localeCompare(String(b[0]), "ru", { numeric: true }));
     }
     function openCardSheet(card, draft) {
       const box = $("cardSheet");
@@ -2666,6 +2698,27 @@
       const p = document.createElement("p");
       p.className = "meta";
       p.textContent = card.summary;
+      const lead = document.createElement("div");
+      lead.className = "sheet-lead";
+      const rawBtn = document.createElement("button");
+      rawBtn.type = "button";
+      rawBtn.className = "raw-toggle";
+      rawBtn.textContent = "Без разметки";
+      const draftTrigKey = draft && draft.trigger
+        ? contactKey(draft.trigger.deviceTopicKey, draft.trigger.controlId)
+        : "";
+      const draftTargetKeys = (draft && draft.targets || [])
+        .map((t) => contactKey(t.deviceTopicKey, t.controlId));
+      const namedTrigRows = triggersForCard(card);
+      const namedLoadRows = loadsForCard(card, roomFilter);
+      const hasKey = (list, key) => list.some((r) => contactKey(r.deviceTopicKey, r.controlId) === key);
+      let rawOn = Boolean(
+        (draftTrigKey && !hasKey(namedTrigRows, draftTrigKey))
+        || draftTargetKeys.some((key) => !hasKey(namedLoadRows, key)),
+      );
+      rawBtn.setAttribute("aria-pressed", rawOn ? "true" : "false");
+      const rawHint = "WB-LED №4, K1, Input 7";
+      lead.append(p, rawBtn);
       const needTrig = card.needTrig !== false;
       const needAux = card.needAux === true;
       const disposers = [];
@@ -2679,7 +2732,7 @@
       const bump = () => { err.textContent = ""; refreshSave(); };
       if (needTrig) {
         trigLab.textContent = sheetTrigLab(card);
-        const trigs = triggersForCard(card);
+        const trigs = rawOn ? rawTriggerRows() : namedTrigRows;
         let draftTrigKeys = [];
         if (draft && draft.trigger) {
           draftTrigKeys = [contactKey(draft.trigger.deviceTopicKey, draft.trigger.controlId)];
@@ -2713,6 +2766,7 @@
           rows: trigs,
           multi: false,
           placeholder: sheetPickPlaceholder(sheetTrigLab(card)),
+          searchPlaceholder: rawOn ? rawHint : "",
           emptyText: "Нет подходящих имён — разметьте в «Разметить».",
           draftKeys: draftTrigKeys,
           onChange: bump,
@@ -2735,15 +2789,17 @@
           + " и время ниже.";
         trig = note;
       }
+      let auxNamed = [];
       const auxLab = document.createElement("span");
       auxLab.className = "fld";
       if (needAux) {
         auxLab.textContent = sheetAuxLab(card);
-        const auxRows = preferRows(
+        auxNamed = preferRows(
           namedTriggers().filter((r) => String(r.label || "").trim()),
           (r) => /движен|motion|pir|присут/i.test(r.label || ""),
           true,
         );
+        const auxRows = rawOn ? rawTriggerRows() : auxNamed;
         let draftAuxKeys = [];
         if (draft && draft.aux) {
           draftAuxKeys = [contactKey(draft.aux.deviceTopicKey, draft.aux.controlId)];
@@ -2755,6 +2811,7 @@
           rows: auxRows,
           multi: false,
           placeholder: sheetPickPlaceholder(sheetAuxLab(card)),
+          searchPlaceholder: rawOn ? rawHint : "",
           emptyText: "Нет датчиков движения — разметьте в «Разметить».",
           draftKeys: draftAuxKeys,
           onChange: bump,
@@ -2765,7 +2822,7 @@
       const tgtLab = document.createElement("span");
       tgtLab.className = "fld";
       tgtLab.textContent = sheetTgtLab(card);
-      const loads = loadsForCard(card, roomFilter);
+      const loads = rawOn ? rawLoadsForCard(card) : namedLoadRows;
       const err = document.createElement("p");
       err.className = "meta orphan";
       const perLoadLevel = Boolean(card.perLoadLevel);
@@ -2789,6 +2846,7 @@
         placeholder: perLoadLevel
           ? "Комнаты / линии в сцену…"
           : sheetPickPlaceholder(sheetTgtLab(card)),
+        searchPlaceholder: rawOn ? rawHint : "",
         emptyText: /leak|valve/.test(card.id + (card.loadKind || ""))
           ? "Нет линий с именем «кран/клапан» — разметьте краны, не свет."
           : "Нет подходящих нагрузок этого типа — поправьте имена в «Разметить».",
@@ -2920,7 +2978,15 @@
       actions.append(save, cancel);
       const head = document.createElement("div");
       head.className = "sheet-head";
-      head.append(h, p);
+      head.append(h, lead);
+      rawBtn.addEventListener("click", () => {
+        rawOn = !rawOn;
+        rawBtn.setAttribute("aria-pressed", rawOn ? "true" : "false");
+        const hint = rawOn ? rawHint : "Поиск: кух, бра, канал…";
+        if (trigPicker) trigPicker.setRows(rawOn ? rawTriggerRows() : namedTrigRows, hint);
+        if (auxPicker) auxPicker.setRows(rawOn ? rawTriggerRows() : auxNamed, hint);
+        if (tgtPicker) tgtPicker.setRows(rawOn ? rawLoadsForCard(card) : namedLoadRows, hint);
+      });
       const body = document.createElement("div");
       body.className = "sheet-body";
       body.append(trigLab, trig);
@@ -3244,6 +3310,69 @@
           : r.name,
       }));
       return preferRoomRows(all);
+    }
+    function hardwareChannelLabel(s, ch) {
+      const mod = String((s && (s.label || s.deviceTopicKey)) || "").trim() || "модуль";
+      const cid = prettyControlId(ch && ch.controlId) || (ch && ch.controlId) || "канал";
+      return mod + " · " + cid;
+    }
+    function rawTriggerRows() {
+      const raw = [];
+      (lastShelvesRows || []).forEach((s) => {
+        (s.channels || []).forEach((ch) => {
+          if (isDeskLoad(ch.controlId)) return;
+          if (/(?:Single|Short|Long|Shortlong|Double) Press Counter$/i.test(String(ch.controlId || ""))) return;
+          if (!isDeskInput(ch.controlId, s.deviceTopicKey)) return;
+          const mod = s.label || s.deviceTopicKey;
+          raw.push({
+            deviceTopicKey: s.deviceTopicKey,
+            controlId: ch.controlId,
+            room: mod,
+            label: hardwareChannelLabel(s, ch),
+            named: false,
+          });
+        });
+      });
+      raw.sort((a, b) => a.label.localeCompare(b.label, "ru", { numeric: true }));
+      return raw;
+    }
+    function rawLoadRows() {
+      const raw = [];
+      (lastShelvesRows || []).forEach((s) => {
+        (s.channels || []).forEach((ch) => {
+          if (!isDeskLoad(ch.controlId)) return;
+          if (isDriveClose(ch.controlId)) return;
+          const mod = s.label || s.deviceTopicKey;
+          raw.push({
+            deviceTopicKey: s.deviceTopicKey,
+            controlId: ch.controlId,
+            room: mod,
+            label: hardwareChannelLabel(s, ch),
+            raw: true,
+          });
+        });
+      });
+      raw.sort((a, b) => a.label.localeCompare(b.label, "ru", { numeric: true }));
+      return raw;
+    }
+    function rawLoadsForCard(card) {
+      const all = rawLoadRows();
+      if (card.id === "light_dim_hold_mcm") return all.filter(isLikelyDimmerLoad);
+      if ((card.loadKind || "") === "light" || card.cat === "Свет" || card.cat === "Сцены") {
+        return all.filter((r) => /^(?:Channel|CCT|RGB)\s*\d+$/i.test(r.controlId)
+          || /^(?:CCT|RGB)\d+$/i.test(r.controlId)
+          || /^K\d+$/i.test(r.controlId)
+          || isLightLoad(r));
+      }
+      if (card.cat === "Шторы") {
+        const hit = all.filter(isCurtainLoad);
+        return hit.length ? hit : all.filter((r) => isDeskDrive(r.controlId));
+      }
+      if (card.loadKind) {
+        const hit = all.filter((r) => loadKindHit(card.loadKind, r));
+        return hit.length ? hit : all;
+      }
+      return all;
     }
     function loadsForRoom(room) {
       const all = namedLoads();
