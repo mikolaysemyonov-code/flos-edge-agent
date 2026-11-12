@@ -3743,15 +3743,21 @@
         if (room && rooms.indexOf(room) < 0) rooms.push(room);
         if (nm) lineNames.push(String(nm).trim());
       });
+      const hardware = String(s.label || s.deviceTopicKey || "").trim();
       const vt = document.createElement("span");
       vt.className = "vt";
-      vt.textContent = rooms.length ? rooms.join(" · ") : "Без имени";
-      vt.title = s.label || s.deviceTopicKey;
+      vt.textContent = rooms.length ? rooms.join(" · ") : (hardware || "Без имени");
+      vt.title = hardware;
       const vs = document.createElement("span");
       vs.className = "vs";
-      vs.textContent = lineNames.length
-        ? lineNames.slice(0, 3).join(" · ")
-        : "Назовите комнату и линию";
+      if (rooms.length) {
+        const lines = lineNames.slice(0, 2).join(" · ");
+        vs.textContent = lines ? hardware + " · " + lines : hardware;
+      } else {
+        vs.textContent = lineNames.length
+          ? lineNames.slice(0, 3).join(" · ")
+          : "Назовите комнату и линию";
+      }
       const bars = document.createElement("div");
       bars.className = "ch-bars";
       bars.setAttribute("aria-hidden", "true");
