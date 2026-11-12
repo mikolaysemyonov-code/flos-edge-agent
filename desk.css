@@ -840,6 +840,14 @@
       appearance: none; border: 0; background: none; padding: 0;
       color: rgb(235 235 245 / .55); font: inherit; font-size: .95rem; cursor: pointer;
     }
+    .mod-search {
+      display: block; width: 100%; box-sizing: border-box;
+      margin: 0 0 .75rem; padding: .55rem .8rem; border-radius: 12px;
+      border: 1px solid rgb(255 255 255 / .1); background: rgb(255 255 255 / .04);
+      color: inherit; font: inherit; font-size: .9rem;
+    }
+    .mod-search::placeholder { color: var(--mute); }
+    .mod-search[hidden] { display: none; }
     .filters { display: flex; flex-wrap: wrap; gap: .35rem; margin: .15rem 0 .85rem; }
     .filters[hidden], .meta[hidden] { display: none; }
     .filters button {

@@ -80,6 +80,7 @@
     let deskRooms = [];
     let markPending = {};
     let roomFilter = "";
+    let modQuery = "";
     let openMod = "";
     let pouredPane = "send";
     let activeNav = "guide";
@@ -535,6 +536,8 @@
       if (id === "scenes" && cardFilter === "Климат") cardFilter = "Свет";
       if (spec.pane) pouredPane = spec.pane;
       const famBar = $("modFamily");
+      const modSearch = $("modSearch");
+      if (modSearch) modSearch.hidden = activeNav !== "remote";
       if (famBar) {
         const remote = activeNav === "remote";
         famBar.hidden = !remote;
@@ -4019,8 +4022,26 @@
       }
       box.append(head, ul);
     }
+    function normModuleSearch(value) {
+      return String(value || "").toLowerCase().replace(/[№#]/g, " ").replace(/[_-]+/g, " ").replace(/\s+/g, " ").trim();
+    }
+    function moduleMatchesQuery(s, q) {
+      const query = normModuleSearch(q);
+      if (!query) return true;
+      const names = [];
+      visibleChannels(s).forEach((ch) => {
+        const nm = pairName(s, ch);
+        if (nm) names.push(nm);
+      });
+      const blob = normModuleSearch([s && s.label, s && s.deviceTopicKey].concat(moduleRoomsOf(s), names).join(" "));
+      const flat = blob.replace(/\s+/g, "");
+      return query.split(" ").every((token) => {
+        if (/^\d+$/.test(token)) return new RegExp("(^|\\D)" + token + "(\\D|$)").test(blob);
+        return flat.includes(token.replace(/\s+/g, ""));
+      });
+    }
     function modulesForFilter(rows) {
-      const list = sortModules(rows || []);
+      const list = sortModules(rows || []).filter((s) => moduleMatchesQuery(s, modQuery));
       if (!roomFilter) return list;
       return list.filter((s) => {
         if (moduleRoomsOf(s).includes(roomFilter)) return true;
@@ -4035,12 +4056,12 @@
         box.className = "vitrine";
         const p = document.createElement("p");
         p.className = "empty";
-        p.textContent = emptyText;
+        p.textContent = String(modQuery || "").trim() ? "Такого модуля нет." : emptyText;
         box.appendChild(p);
         return;
       }
       const open = filtered.find((s) => s.deviceTopicKey === openMod)
-        || (rows || []).find((s) => s.deviceTopicKey === openMod);
+        || (String(modQuery || "").trim() ? null : (rows || []).find((s) => s.deviceTopicKey === openMod));
       if (open) {
         box.className = "modopen";
         renderModuleDrill(box, open);
@@ -6627,6 +6648,17 @@
         openNav(btn.dataset.nav);
       });
     });
+    const modSearch = $("modSearch");
+    if (modSearch) {
+      modSearch.addEventListener("input", () => {
+        modQuery = modSearch.value;
+        if (openMod) {
+          const open = (lastShelvesRows || []).find((s) => s.deviceTopicKey === openMod);
+          if (!open || !moduleMatchesQuery(open, modQuery)) openMod = "";
+        }
+        renderMark();
+      });
+    }
     document.querySelectorAll("#modFamily [data-fam]").forEach((btn) => {
       btn.addEventListener("click", () => {
         modFamily = /^(all|light|buttons|relays|keys|lines|pair)$/.test(btn.dataset.fam) ? btn.dataset.fam : "all";
