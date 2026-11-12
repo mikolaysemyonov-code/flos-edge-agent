@@ -44,6 +44,20 @@ export function pathAlreadyInCore(src, deviceTopicKey, controlId) {
   return false;
 }
 
+function applyNameTitles(src, id, name) {
+  let changed = false;
+  const sw = patchCellTitle(src, id, name);
+  src = sw.src;
+  if (sw.changed) changed = true;
+  const briId = id + "_bri";
+  if (src.includes(`"${briId}"`) || src.includes(`'${briId}'`)) {
+    const bri = patchCellTitle(src, briId, name + " · яркость");
+    src = bri.src;
+    if (bri.changed) changed = true;
+  }
+  return { src, changed };
+}
+
 function patchCellTitle(src, id, title) {
   const needle = `"${id}"`;
   const i = src.indexOf(needle);
@@ -448,7 +462,7 @@ export function mergeDeskNamesIntoCore(coreSrc, named) {
     seen.add(id);
     const load = emitLoad(row.deviceTopicKey, row.controlId, name);
     if (src.includes(`"${id}"`) || src.includes(`'${id}'`)) {
-      const next = patchCellTitle(src, id, name);
+      const next = applyNameTitles(src, id, name);
       src = next.src;
       if (next.changed) changed = true;
       if (foreignOwnsPath(src, row.deviceTopicKey, row.controlId, id)) {
@@ -470,7 +484,7 @@ export function mergeDeskNamesIntoCore(coreSrc, named) {
     if (pathAlreadyInCore(src, row.deviceTopicKey, row.controlId)) {
       const existing = cellIdForPhysPath(src, row.deviceTopicKey, row.controlId);
       if (existing) {
-        const next = patchCellTitle(src, existing, name);
+        const next = applyNameTitles(src, existing, name);
         src = next.src;
         if (next.changed) changed = true;
       }

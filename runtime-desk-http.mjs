@@ -32,6 +32,7 @@ import {
   readPouredDeskSnapshot,
 } from "./runtime-desk-rules-marks.mjs";
 import { applyDeskScanShelves, deskScanGap, formatDeskShelfLabel, groupDeskShelves } from "./runtime-desk-shelves.mjs";
+import { deskHaLights } from "./runtime-desk-ha-lights.mjs";
 import { assessDeskCanPour, buildDeskPourPackage } from "./runtime-desk-pour.mjs";
 import {
   actuateDeskChannel,
@@ -746,6 +747,19 @@ export function handleRuntimeDeskPoured(_req, res) {
 }
 
 /** Текст 40_rules_user.js с диска щита. Только этот файл, без пути из запроса. */
+export function handleRuntimeDeskHaLights(_req, res) {
+  const dir = (
+    process.env.FLOS_WB_RULES_DEPLOY_DIR ||
+    process.env.REACTOR_WB_RULES_DEPLOY_DIR ||
+    "/etc/wb-rules"
+  ).trim();
+  let core = "";
+  let rules = "";
+  try { core = fs.readFileSync(path.join(dir, "00_core.js"), "utf8"); } catch { core = ""; }
+  try { rules = fs.readFileSync(path.join(dir, "40_rules_user.js"), "utf8"); } catch { rules = ""; }
+  jsonEnd(res, 200, { ok: true, lights: deskHaLights(core, rules) });
+}
+
 export function handleRuntimeDeskRulesFile(_req, res) {
   const dir = (
     process.env.FLOS_WB_RULES_DEPLOY_DIR ||

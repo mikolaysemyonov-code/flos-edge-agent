@@ -15,6 +15,7 @@ COPY runtime-desk-rules-marks.mjs /app/runtime-desk-rules-marks.mjs
 COPY runtime-desk-releases.mjs /app/runtime-desk-releases.mjs
 COPY runtime-desk-pour.mjs /app/runtime-desk-pour.mjs
 COPY runtime-desk-pour-core.mjs /app/runtime-desk-pour-core.mjs
+COPY runtime-desk-ha-lights.mjs /app/runtime-desk-ha-lights.mjs
 COPY runtime-desk-pour-user.mjs /app/runtime-desk-pour-user.mjs
 COPY runtime-desk-pour-climate.mjs /app/runtime-desk-pour-climate.mjs
 COPY runtime-desk-pour-light.mjs /app/runtime-desk-pour-light.mjs

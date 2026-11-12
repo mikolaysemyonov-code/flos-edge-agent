@@ -84,6 +84,11 @@
     let openMod = "";
     let pouredPane = "send";
     let rulesFileText = "";
+    let haLights = null;
+    let haDrafts = new Map();
+    function haRowKey(row) {
+      return row.deviceTopicKey + "\0" + row.controlId;
+    }
     let activeNav = "guide";
     let deskNavLive = false;
     const NAV = {
@@ -1616,14 +1621,14 @@
         { id: "send", ru: "Сейчас" },
         { id: "hist", ru: "Раньше" },
       ];
-      if (!tabs.some((t) => t.id === pouredPane) && pouredPane !== "rules" && pouredPane !== "file") pouredPane = "send";
+      if (!tabs.some((t) => t.id === pouredPane) && pouredPane !== "rules" && pouredPane !== "file" && pouredPane !== "ha") pouredPane = "send";
       bar.className = "footlink";
       bar.hidden = pouredOpen();
       bar.replaceChildren();
         const b = document.createElement("button");
         b.type = "button";
       b.className = "textlink";
-      if (pouredPane === "hist" || pouredPane === "file") {
+      if (pouredPane === "hist" || pouredPane === "file" || pouredPane === "ha") {
         b.textContent = "К записи";
         b.addEventListener("click", () => {
           pouredPane = "send";
@@ -1654,6 +1659,19 @@
         void loadRulesFile();
       });
       bar.appendChild(fileBtn);
+      const haBtn = document.createElement("button");
+      haBtn.type = "button";
+      haBtn.className = "textlink" + (pouredPane === "ha" ? " on" : "");
+      haBtn.textContent = "Home Assistant";
+      haBtn.addEventListener("click", () => {
+        openSceneId = "";
+        openContact = "";
+        openPourMod = "";
+        pouredPane = "ha";
+        renderReady();
+        void loadHaLights();
+      });
+      bar.appendChild(haBtn);
       paintPourButtons();
       $("n-poured").textContent = sendN || "";
     }
@@ -1996,6 +2014,11 @@
           head.hidden = true;
           head.textContent = "";
         }
+        return;
+      }
+      if (pouredPane === "ha") {
+        openPourMod = "";
+        paintHaPane(box);
         return;
       }
       if (pouredPane === "hist") {
@@ -6677,6 +6700,121 @@
       renderPoured();
       loadPreview();
       if (shelves.length) $("scan").textContent = "Обновить";
+    }
+    function paintHaPane(box) {
+      box.className = "";
+      const lead = document.createElement("p");
+      lead.className = "meta";
+      lead.textContent = "Свет из правил. Имя станет подписью в Home Assistant.";
+      box.appendChild(lead);
+      if (!haLights) {
+        const wait = document.createElement("p");
+        wait.className = "empty";
+        wait.textContent = "Читаю правила…";
+        box.appendChild(wait);
+        return;
+      }
+      const find = document.createElement("input");
+      find.type = "search";
+      find.className = "ha-find";
+      find.placeholder = "кух, бра, K5";
+      find.setAttribute("aria-label", "Найти линию");
+      const list = document.createElement("div");
+      list.className = "ha-list";
+      function paintRows() {
+        const q = String(find.value || "").trim().toLowerCase().replace(/[№#_\-]+/g, " ");
+        list.replaceChildren();
+        const rows = haLights.filter((row) => {
+          if (!q) return true;
+          const draft = haDrafts.get(haRowKey(row)) || "";
+          const blob = (row.hardware + " " + row.title + " " + draft + " " + row.deviceTopicKey + " " + row.controlId)
+            .toLowerCase().replace(/[№#_\-]+/g, " ");
+          return q.split(/\s+/).every((part) => part && blob.includes(part));
+        });
+        if (!rows.length) {
+          const empty = document.createElement("p");
+          empty.className = "empty";
+          empty.textContent = haLights.length ? "Такой линии нет." : "В правилах пока нет света.";
+          list.appendChild(empty);
+          return;
+        }
+        rows.forEach((row) => {
+          const line = document.createElement("label");
+          line.className = "ha-row";
+          const cap = document.createElement("span");
+          cap.textContent = row.hardware;
+          const key = haRowKey(row);
+          const input = document.createElement("input");
+          input.type = "text";
+          input.className = "ha-name";
+          input.placeholder = "Комната · светильник";
+          input.value = haDrafts.has(key) ? haDrafts.get(key) : (row.named ? row.title : "");
+          input.addEventListener("input", () => { haDrafts.set(key, input.value); });
+          line.append(cap, input);
+          list.appendChild(line);
+        });
+      }
+      find.addEventListener("input", paintRows);
+      paintRows();
+      const foot = document.createElement("div");
+      foot.className = "ha-foot";
+      const write = document.createElement("button");
+      write.type = "button";
+      write.className = "ghost pour-primary";
+      write.textContent = "Записать на щит";
+      const note = document.createElement("p");
+      note.className = "meta";
+      write.addEventListener("click", () => { void writeHaNames(write, note); });
+      foot.append(write, note);
+      box.append(find, list, foot);
+    }
+    async function writeHaNames(btn, note) {
+      const jobs = (haLights || []).map((row) => {
+        const key = haRowKey(row);
+        const name = String(haDrafts.get(key) || "").trim().replace(/\s+/g, " ");
+        const was = row.named ? row.title : "";
+        return name && name !== was ? { row, name } : null;
+      }).filter(Boolean);
+      if (!jobs.length) {
+        note.textContent = "Нечего записывать.";
+        return;
+      }
+      btn.disabled = true;
+      note.textContent = "";
+      try {
+        for (const job of jobs) {
+          const r = await fetch("/runtime/desk-marking", {
+            method: "PUT",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({
+              deviceTopicKey: job.row.deviceTopicKey,
+              controlId: job.row.controlId,
+              name: job.name,
+            }),
+          });
+          const j = await r.json();
+          if (!j || j.ok === false) throw new Error(j && j.error ? j.error : "Не сохранил имя");
+        }
+      } catch (e) {
+        btn.disabled = false;
+        note.textContent = String(e.message || e);
+        return;
+      }
+      btn.disabled = false;
+      runDeskPour("names", btn, null, () => {
+        if (pouredPane === "ha") void loadHaLights();
+      });
+    }
+    async function loadHaLights() {
+      try {
+        const r = await fetch("/runtime/desk-ha-lights");
+        const j = await r.json();
+        haLights = j && j.ok && Array.isArray(j.lights) ? j.lights : [];
+        haDrafts = new Map(haLights.map((row) => [haRowKey(row), row.named ? row.title : ""]));
+      } catch (_) {
+        haLights = [];
+      }
+      if (pouredPane === "ha") renderReady();
     }
     async function loadRulesFile() {
       try {
