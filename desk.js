@@ -83,6 +83,7 @@
     let openMod = "";
     let pouredPane = "send";
     let activeNav = "guide";
+    let deskNavLive = false;
     const NAV = {
       guide: { tab: "intro", title: "Туториал" },
       remote: { tab: "mark", fam: "all", title: "Удалённая ПНР" },
@@ -549,6 +550,10 @@
       if (tree && (activeNav === "history" || activeNav === "board")) tree.dataset.open = "1";
       if (spec.fam === "site" || spec.fam === "remote") {
         Promise.all([loadKeyPlan(), loadLinePlan(), loadSolutions()]).then(() => renderMark());
+      }
+      if (id === "remote" && deskNavLive) {
+        const scanBtn = $("scan");
+        if (!scanBtn || !scanBtn.disabled) void scanNow();
       }
     }
     function previewStatusRu(s) {
@@ -7057,6 +7062,7 @@
     void (async () => {
       if (!(await ensureDeskOpen())) return;
       openNav(NAV[hashNav] ? hashNav : "guide");
+      deskNavLive = true;
       loadHealth();
       loadPoured();
       loadRooms();

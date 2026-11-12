@@ -279,10 +279,11 @@ export async function handleRuntimeMqttScan(req, res) {
       const ready = !partial && out.scan?.settled === true && out.scan?.truncated !== true;
       const merged = applyDeskScanShelves(prev.shelves, grouped, { partial, ready });
       out.shelves = withPouredHints(applyMarksToShelves(merged));
+      const grew = Array.isArray(merged) && merged.length > modulesBefore;
       if (!partial && out.scan && typeof out.scan === "object") {
         out.scan = { ...out.scan, modulesBefore, modulesSeen, modulesMissing, channelsMissing, shortScan };
       }
-      if (ready || (partial && out.shelves.length)) {
+      if (ready || grew || (partial && out.shelves.length)) {
         const scanMeta = partial
           ? undefined
           : {

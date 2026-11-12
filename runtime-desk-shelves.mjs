@@ -380,7 +380,8 @@ export function rememberDeskShelves(prev, next) {
  */
 export function applyDeskScanShelves(prev, next, opts = {}) {
   if (opts?.partial === true) return patchDeskShelfValues(prev, next);
-  if (opts?.ready === false) return Array.isArray(prev) ? prev : [];
+  // Незавершённый снимок не затирает уже виденные модули и дописывает новые.
+  if (opts?.ready === false) return unionDeskShelves(prev, next);
   return Array.isArray(next) ? next : [];
 }
 
