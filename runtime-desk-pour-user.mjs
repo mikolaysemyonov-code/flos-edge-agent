@@ -169,6 +169,7 @@ function emitToggle(sol) {
   const loads = (sol.targets || []).map(pathOf).filter(Boolean);
   const cells = loads.map(virtCell).filter(Boolean);
   if (!when || !cells.length) return "";
+  const edge = /Press Counter|\scounter$/i.test(when) ? "" : deskPressEdgeLine(when);
   const mode = String(sol?.params?.mode || "toggle").toLowerCase();
   let body;
   if (mode === "off" || mode === "on") {
@@ -186,6 +187,7 @@ function emitToggle(sol) {
     `  whenChanged: ${esc(when)},`,
     "  then: function (newValue) {",
     "    try {",
+    edge,
     body,
     "    } catch (e) { log(\"[CORE_ERROR] \" + " + esc(id) + " + \": \" + e); if (typeof wbRuleGuardCatch === 'function') wbRuleGuardCatch(" + esc(id) + ", e); }",
     "  }",

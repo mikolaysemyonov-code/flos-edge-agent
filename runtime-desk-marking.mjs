@@ -324,7 +324,9 @@ export function deskButtonCounter(controlId, kind = "Short", _deviceTopicKey = "
 /** Строка в then: на уровне входа действуем только в момент нажатия, не на отпускании. */
 export function deskPressEdgeLine(whenPath) {
   const when = String(whenPath || "");
-  if (/\/Input\s+[A-Z]?\d+$/i.test(when) || /\/IN\d+$/i.test(when)) return "      if (!wbIsOn(newValue)) return;";
+  if (/\/Input\s+[A-Z]?\d+$/i.test(when) || /\/IN\d+$/i.test(when)) {
+    return "      if (!wbIsOn(readValue(" + JSON.stringify(when) + "))) return;";
+  }
   if (/\scounter$/i.test(when) || /Press Counter$/i.test(when)) {
     return '      if (newValue === 0 || newValue === "0") return;';
   }
