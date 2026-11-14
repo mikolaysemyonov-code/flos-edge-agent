@@ -1,7 +1,7 @@
 /**
  * Сцены / шторы / охрана со стола → defineRule (кнопка → уровни на линиях).
  */
-import { deskButtonCounter, deskPressEdgeLine } from "./runtime-desk-marking.mjs";
+import { deskButtonCounter, deskPressEdgeLine, deskWhenSpec } from "./runtime-desk-marking.mjs";
 import { wbActuatorSetLines } from "./runtime-desk-pour-light.mjs";
 import { liveDeskDeviceKey } from "./runtime-desk-rules-marks.mjs";
 
@@ -84,7 +84,7 @@ function emitLevels(sol, level) {
     .join("\n");
   return [
     `defineRule(${esc(id)}, {`,
-    `  whenChanged: ${esc(when)},`,
+    deskWhenSpec(when),
     "  then: function (newValue) {",
     "    try {",
     deskPressEdgeLine(when),
@@ -115,7 +115,7 @@ function emitCurtain(sol, kind) {
   });
   return [
     `defineRule(${esc(id)}, {`,
-    `  whenChanged: ${esc(when)},`,
+    deskWhenSpec(when),
     "  then: function (newValue) {",
     "    try {",
     deskPressEdgeLine(when),
@@ -135,7 +135,7 @@ function emitLock(sol) {
   const sets = loads.map((p) => `      wbActuatorSet(${esc(p)}, 1, ${esc(id)}, 55);`).join("\n");
   return [
     `defineRule(${esc(id)}, {`,
-    `  whenChanged: ${esc(when)},`,
+    deskWhenSpec(when),
     "  then: function (newValue) {",
     "    try {",
     deskPressEdgeLine(when),
@@ -156,7 +156,7 @@ function emitSensorOn(sol) {
     .join("\n");
   return [
     `defineRule(${esc(id)}, {`,
-    `  whenChanged: ${esc(when)},`,
+    deskWhenSpec(when),
     "  then: function () {",
     "    try {",
     `      var on = wbIsOn(readValue(${esc(when)}));`,

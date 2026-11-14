@@ -321,6 +321,22 @@ export function deskButtonCounter(controlId, kind = "Short", _deviceTopicKey = "
   return String(controlId || "").trim();
 }
 
+/** Подписка на ячейку. Id с «:» (MIO-GPIO :3) нельзя класть в whenChanged — движок режет по двоеточию. */
+export function deskWhenSpec(whenPath) {
+  const when = String(whenPath || "");
+  const slash = when.indexOf("/");
+  const deviceId = slash > 0 ? when.slice(0, slash) : "";
+  const controlId = slash > 0 ? when.slice(slash + 1) : "";
+  if (deviceId.indexOf(":") >= 0 && controlId) {
+    return [
+      "  asSoonAs: function () {",
+      "    try { return wbIsOn(dev[" + JSON.stringify(deviceId) + "][" + JSON.stringify(controlId) + "]); } catch (e) { return false; }",
+      "  },",
+    ].join("\n");
+  }
+  return "  whenChanged: " + JSON.stringify(when) + ",";
+}
+
 /** Строка в then: на уровне входа действуем только в момент нажатия, не на отпускании. */
 export function deskPressEdgeLine(whenPath) {
   const when = String(whenPath || "");

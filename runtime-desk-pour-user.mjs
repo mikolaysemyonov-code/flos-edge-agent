@@ -2,7 +2,7 @@
  * Типовые со стола → defineRule в 40_rules_user.
  */
 import { cellId } from "./runtime-desk-pour-core.mjs";
-import { deskButtonCounter, deskPressEdgeLine } from "./runtime-desk-marking.mjs";
+import { deskButtonCounter, deskPressEdgeLine, deskWhenSpec } from "./runtime-desk-marking.mjs";
 import { liveDeskDeviceKey } from "./runtime-desk-rules-marks.mjs";
 import { emitDeskClimate, isDeskClimateSolution } from "./runtime-desk-pour-climate.mjs";
 import { emitDeskCron, isDeskCronSolution } from "./runtime-desk-pour-cron.mjs";
@@ -169,7 +169,8 @@ function emitToggle(sol) {
   const loads = (sol.targets || []).map(pathOf).filter(Boolean);
   const cells = loads.map(virtCell).filter(Boolean);
   if (!when || !cells.length) return "";
-  const edge = /Press Counter|\scounter$/i.test(when) ? "" : deskPressEdgeLine(when);
+  const spec = deskWhenSpec(when);
+  const edge = spec.indexOf("asSoonAs") >= 0 || /Press Counter|\scounter$/i.test(when) ? "" : deskPressEdgeLine(when);
   const mode = String(sol?.params?.mode || "toggle").toLowerCase();
   let body;
   if (mode === "off" || mode === "on") {
@@ -184,7 +185,7 @@ function emitToggle(sol) {
   }
   return [
     `defineRule(${esc(id)}, {`,
-    `  whenChanged: ${esc(when)},`,
+    spec,
     "  then: function (newValue) {",
     "    try {",
     edge,
@@ -203,7 +204,7 @@ function emitAllOff(sol) {
   const sets = loads.map((p) => virtualAssign(virtCell(p), "false")).join("\n");
   return [
     `defineRule(${esc(id)}, {`,
-    `  whenChanged: ${esc(when)},`,
+    deskWhenSpec(when),
     "  then: function () {",
     "    try {",
     sets,
@@ -257,7 +258,7 @@ function emitMasterOffRestore(sol) {
     `var ${flag} = false;`,
     `var ${snap} = {};`,
     `defineRule(${esc(id)}, {`,
-    `  whenChanged: ${esc(when)},`,
+    deskWhenSpec(when),
     "  then: function (newValue) {",
     "    try {",
     deskPressEdgeLine(when),
@@ -287,7 +288,7 @@ function emitCustomSet(sol) {
     .join("\n");
   return [
     `defineRule(${esc(id)}, {`,
-    `  whenChanged: ${esc(when)},`,
+    deskWhenSpec(when),
     "  then: function (newValue) {",
     "    try {",
     deskPressEdgeLine(when),
