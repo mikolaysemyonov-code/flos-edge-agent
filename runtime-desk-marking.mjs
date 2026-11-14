@@ -328,9 +328,18 @@ export function deskWhenSpec(whenPath) {
   const deviceId = slash > 0 ? when.slice(0, slash) : "";
   const controlId = slash > 0 ? when.slice(slash + 1) : "";
   if (deviceId.indexOf(":") >= 0 && controlId) {
+    const cell = deviceId + "/" + controlId;
     return [
       "  asSoonAs: function () {",
-      "    try { return wbIsOn(dev[" + JSON.stringify(deviceId) + "][" + JSON.stringify(controlId) + "]); } catch (e) { return false; }",
+      "    try {",
+      "      var __v = readValue(" + JSON.stringify(cell) + ");",
+      "      if (__v === undefined && typeof getDevice === \"function\") {",
+      "        var __d = getDevice(" + JSON.stringify(deviceId) + ");",
+      "        var __c = __d && typeof __d.getControl === \"function\" ? __d.getControl(" + JSON.stringify(controlId) + ") : null;",
+      "        __v = __c && typeof __c.getValue === \"function\" ? __c.getValue() : __c;",
+      "      }",
+      "      return wbIsOn(__v);",
+      "    } catch (e) { return false; }",
       "  },",
     ].join("\n");
   }
