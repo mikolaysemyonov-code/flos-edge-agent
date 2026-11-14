@@ -352,8 +352,8 @@ function deskRuleCatch(id) {
 }
 
 /**
- * Правило кнопки. MIO с «:» — trackMqtt на топик, фронт замыкания, взвод на размыкании.
- * asSoonAs на таком id не подписан на MQTT: опрос → задержка и «выключило, не включает».
+ * Правило кнопки. MIO с «:» — trackMqtt. Жмём, когда вход уходит из покоя
+ * (NO: 0→1, подтяжка/NC: 1→0). Только фронт on даёт паузу до отпускания.
  */
 export function deskEmitRule(id, whenPath, tryBody, opts = {}) {
   const colon = deskColonCell(whenPath);
@@ -361,17 +361,17 @@ export function deskEmitRule(id, whenPath, tryBody, opts = {}) {
   if (colon) {
     return [
       "(function () {",
-      "  var __edge = 0;",
       "  var __seen = 0;",
+      "  var __idle = false;",
+      "  var __prev = false;",
       "  trackMqtt(" + JSON.stringify(colon.topic) + ", function (message) {",
       "    try {",
-      "      var raw = message;",
-      "      if (message && typeof message === \"object\" && message.value !== undefined) raw = message.value;",
+      "      var raw = message && typeof message === \"object\" ? message.value : message;",
       "      var on = wbIsOn(raw);",
-      "      if (!__seen) { __seen = 1; __edge = on ? 0 : 1; return; }",
-      "      if (!on) { __edge = 1; return; }",
-      "      if (!__edge) return;",
-      "      __edge = 0;",
+      "      if (!__seen) { __seen = 1; __idle = on; __prev = on; return; }",
+      "      if (on === __prev) return;",
+      "      __prev = on;",
+      "      if (on === __idle) return;",
       body,
       deskRuleCatch(id),
       "  });",
