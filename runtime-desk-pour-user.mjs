@@ -2,7 +2,7 @@
  * Типовые со стола → defineRule в 40_rules_user.
  */
 import { cellId } from "./runtime-desk-pour-core.mjs";
-import { deskButtonCounter, deskPressEdgeLine, deskWhenSpec } from "./runtime-desk-marking.mjs";
+import { deskButtonCounter, deskEmitRule } from "./runtime-desk-marking.mjs";
 import { liveDeskDeviceKey } from "./runtime-desk-rules-marks.mjs";
 import { emitDeskClimate, isDeskClimateSolution } from "./runtime-desk-pour-climate.mjs";
 import { emitDeskCron, isDeskCronSolution } from "./runtime-desk-pour-cron.mjs";
@@ -169,8 +169,6 @@ function emitToggle(sol) {
   const loads = (sol.targets || []).map(pathOf).filter(Boolean);
   const cells = loads.map(virtCell).filter(Boolean);
   if (!when || !cells.length) return "";
-  const spec = deskWhenSpec(when);
-  const edge = spec.indexOf("asSoonAs") >= 0 || /Press Counter|\scounter$/i.test(when) ? "" : deskPressEdgeLine(when);
   const mode = String(sol?.params?.mode || "toggle").toLowerCase();
   let body;
   if (mode === "off" || mode === "on") {
@@ -183,17 +181,9 @@ function emitToggle(sol) {
       ...cells.map((c) => virtualAssign(c, "wantState")),
     ].join("\n");
   }
-  return [
-    `defineRule(${esc(id)}, {`,
-    spec,
-    "  then: function (newValue) {",
-    "    try {",
-    edge,
-    body,
-    "    } catch (e) { log(\"[CORE_ERROR] \" + " + esc(id) + " + \": \" + e); if (typeof wbRuleGuardCatch === 'function') wbRuleGuardCatch(" + esc(id) + ", e); }",
-    "  }",
-    "});",
-  ].join("\n");
+  return deskEmitRule(id, when, body, {
+    pressEdge: !/Press Counter|\scounter$/i.test(when),
+  });
 }
 
 function emitAllOff(sol) {
@@ -202,16 +192,7 @@ function emitAllOff(sol) {
   const loads = (sol.targets || []).map(pathOf).filter(Boolean);
   if (!when || !loads.length) return "";
   const sets = loads.map((p) => virtualAssign(virtCell(p), "false")).join("\n");
-  return [
-    `defineRule(${esc(id)}, {`,
-    deskWhenSpec(when),
-    "  then: function () {",
-    "    try {",
-    sets,
-    "    } catch (e) { log(\"[CORE_ERROR] \" + " + esc(id) + " + \": \" + e); if (typeof wbRuleGuardCatch === 'function') wbRuleGuardCatch(" + esc(id) + ", e); }",
-    "  }",
-    "});",
-  ].join("\n");
+  return deskEmitRule(id, when, sets);
 }
 
 /** Short: snapshot levels → OFF; next short: restore. */
@@ -257,22 +238,21 @@ function emitMasterOffRestore(sol) {
   return [
     `var ${flag} = false;`,
     `var ${snap} = {};`,
-    `defineRule(${esc(id)}, {`,
-    deskWhenSpec(when),
-    "  then: function (newValue) {",
-    "    try {",
-    deskPressEdgeLine(when),
-    `      if (!${flag}) {`,
-    save,
-    off,
-    `        ${flag} = true;`,
-    "      } else {",
-    restore,
-    `        ${flag} = false;`,
-    "      }",
-    "    } catch (e) { log(\"[CORE_ERROR] \" + " + esc(id) + " + \": \" + e); if (typeof wbRuleGuardCatch === 'function') wbRuleGuardCatch(" + esc(id) + ", e); }",
-    "  }",
-    "});",
+    deskEmitRule(
+      id,
+      when,
+      [
+        `      if (!${flag}) {`,
+        save,
+        off,
+        `        ${flag} = true;`,
+        "      } else {",
+        restore,
+        `        ${flag} = false;`,
+        "      }",
+      ].join("\n"),
+      { pressEdge: true },
+    ),
   ].join("\n");
 }
 
@@ -286,17 +266,7 @@ function emitCustomSet(sol) {
   const sets = loads
     .map((p) => `      wbActuatorSet(${esc(p)}, ${payload}, ${esc(id)}, 55);`)
     .join("\n");
-  return [
-    `defineRule(${esc(id)}, {`,
-    deskWhenSpec(when),
-    "  then: function (newValue) {",
-    "    try {",
-    deskPressEdgeLine(when),
-    sets,
-    "    } catch (e) { log(\"[CORE_ERROR] \" + " + esc(id) + " + \": \" + e); if (typeof wbRuleGuardCatch === 'function') wbRuleGuardCatch(" + esc(id) + ", e); }",
-    "  }",
-    "});",
-  ].join("\n");
+  return deskEmitRule(id, when, sets, { pressEdge: true });
 }
 
 export function supportedDeskSolution(sol) {

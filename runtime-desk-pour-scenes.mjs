@@ -1,7 +1,7 @@
 /**
  * Сцены / шторы / охрана со стола → defineRule (кнопка → уровни на линиях).
  */
-import { deskButtonCounter, deskPressEdgeLine, deskWhenSpec } from "./runtime-desk-marking.mjs";
+import { deskButtonCounter, deskEmitRule } from "./runtime-desk-marking.mjs";
 import { wbActuatorSetLines } from "./runtime-desk-pour-light.mjs";
 import { liveDeskDeviceKey } from "./runtime-desk-rules-marks.mjs";
 
@@ -82,17 +82,7 @@ function emitLevels(sol, level) {
       return wbActuatorSetLines(p, pct, id, 55).map((line) => "      " + line);
     })
     .join("\n");
-  return [
-    `defineRule(${esc(id)}, {`,
-    deskWhenSpec(when),
-    "  then: function (newValue) {",
-    "    try {",
-    deskPressEdgeLine(when),
-    sets,
-    "    } catch (e) { if (typeof wbRuleGuardCatch === 'function') wbRuleGuardCatch(" + esc(id) + ", e); }",
-    "  }",
-    "});",
-  ].join("\n");
+  return deskEmitRule(id, when, sets, { pressEdge: true });
 }
 
 /** Штора: Open/Close/Stop — пишем в выбранный привод (Open-путь или Close). */
@@ -113,17 +103,7 @@ function emitCurtain(sol, kind) {
     if (kind === "open" && / Close$/i.test(p)) path = p.replace(/ Close$/i, " Open");
     return [`      wbActuatorSet(${esc(path)}, 1, ${esc(id)}, 55);`];
   });
-  return [
-    `defineRule(${esc(id)}, {`,
-    deskWhenSpec(when),
-    "  then: function (newValue) {",
-    "    try {",
-    deskPressEdgeLine(when),
-    lines.join("\n"),
-    "    } catch (e) { if (typeof wbRuleGuardCatch === 'function') wbRuleGuardCatch(" + esc(id) + ", e); }",
-    "  }",
-    "});",
-  ].join("\n");
+  return deskEmitRule(id, when, lines.join("\n"), { pressEdge: true });
 }
 
 /** Замок — жест кнопки, не уровень входа. Счётчик не читаем через wbIsOn. */
@@ -133,17 +113,7 @@ function emitLock(sol) {
   if (!when || !loads.length) return "";
   const id = "desk_sol_" + sol.id + "_sec";
   const sets = loads.map((p) => `      wbActuatorSet(${esc(p)}, 1, ${esc(id)}, 55);`).join("\n");
-  return [
-    `defineRule(${esc(id)}, {`,
-    deskWhenSpec(when),
-    "  then: function (newValue) {",
-    "    try {",
-    deskPressEdgeLine(when),
-    sets,
-    "    } catch (e) { if (typeof wbRuleGuardCatch === 'function') wbRuleGuardCatch(" + esc(id) + ", e); }",
-    "  }",
-    "});",
-  ].join("\n");
+  return deskEmitRule(id, when, sets, { pressEdge: true });
 }
 
 function emitSensorOn(sol) {
@@ -154,17 +124,11 @@ function emitSensorOn(sol) {
   const sets = loads
     .map((p) => `      if (on) wbActuatorSet(${esc(p)}, 1, ${esc(id)}, 55);`)
     .join("\n");
-  return [
-    `defineRule(${esc(id)}, {`,
-    deskWhenSpec(when),
-    "  then: function () {",
-    "    try {",
-    `      var on = wbIsOn(readValue(${esc(when)}));`,
-    sets,
-    "    } catch (e) { if (typeof wbRuleGuardCatch === 'function') wbRuleGuardCatch(" + esc(id) + ", e); }",
-    "  }",
-    "});",
-  ].join("\n");
+  return deskEmitRule(
+    id,
+    when,
+    [`      var on = wbIsOn(readValue(${esc(when)}));`, sets].join("\n"),
+  );
 }
 
 export function isDeskSceneSolution(sol) {

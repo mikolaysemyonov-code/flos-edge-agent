@@ -321,29 +321,76 @@ export function deskButtonCounter(controlId, kind = "Short", _deviceTopicKey = "
   return String(controlId || "").trim();
 }
 
-/** Подписка на ячейку. Id с «:» (MIO-GPIO :3) нельзя класть в whenChanged — движок режет по двоеточию. */
-export function deskWhenSpec(whenPath) {
+/** Ячейка с «:» в id устройства (MIO-GPIO :3). whenChanged режет по двоеточию. */
+export function deskColonCell(whenPath) {
   const when = String(whenPath || "");
   const slash = when.indexOf("/");
   const deviceId = slash > 0 ? when.slice(0, slash) : "";
   const controlId = slash > 0 ? when.slice(slash + 1) : "";
-  if (deviceId.indexOf(":") >= 0 && controlId) {
-    const cell = deviceId + "/" + controlId;
+  if (deviceId.indexOf(":") < 0 || !controlId) return null;
+  return {
+    deviceId,
+    controlId,
+    topic: "/devices/" + deviceId + "/controls/" + controlId,
+  };
+}
+
+/** Подписка на ячейку без двоеточия в id. Colon — через deskEmitRule / trackMqtt. */
+export function deskWhenSpec(whenPath) {
+  if (deskColonCell(whenPath)) return "";
+  return "  whenChanged: " + JSON.stringify(String(whenPath || "")) + ",";
+}
+
+function deskRuleCatch(id) {
+  return (
+    "    } catch (e) { log(\"[CORE_ERROR] \" + " +
+    JSON.stringify(id) +
+    " + \": \" + e); if (typeof wbRuleGuardCatch === \"function\") wbRuleGuardCatch(" +
+    JSON.stringify(id) +
+    ", e); }"
+  );
+}
+
+/**
+ * Правило кнопки. MIO с «:» — trackMqtt на топик, фронт замыкания, взвод на размыкании.
+ * asSoonAs на таком id не подписан на MQTT: опрос → задержка и «выключило, не включает».
+ */
+export function deskEmitRule(id, whenPath, tryBody, opts = {}) {
+  const colon = deskColonCell(whenPath);
+  const body = String(tryBody || "").replace(/^\n+/, "");
+  if (colon) {
     return [
-      "  asSoonAs: function () {",
+      "(function () {",
+      "  var __edge = 0;",
+      "  var __seen = 0;",
+      "  trackMqtt(" + JSON.stringify(colon.topic) + ", function (message) {",
       "    try {",
-      "      var __v = readValue(" + JSON.stringify(cell) + ");",
-      "      if (__v === undefined && typeof getDevice === \"function\") {",
-      "        var __d = getDevice(" + JSON.stringify(deviceId) + ");",
-      "        var __c = __d && typeof __d.getControl === \"function\" ? __d.getControl(" + JSON.stringify(controlId) + ") : null;",
-      "        __v = __c && typeof __c.getValue === \"function\" ? __c.getValue() : __c;",
-      "      }",
-      "      return wbIsOn(__v);",
-      "    } catch (e) { return false; }",
-      "  },",
+      "      var raw = message;",
+      "      if (message && typeof message === \"object\" && message.value !== undefined) raw = message.value;",
+      "      var on = wbIsOn(raw);",
+      "      if (!__seen) { __seen = 1; __edge = on ? 0 : 1; return; }",
+      "      if (!on) { __edge = 1; return; }",
+      "      if (!__edge) return;",
+      "      __edge = 0;",
+      body,
+      deskRuleCatch(id),
+      "  });",
+      "})();",
     ].join("\n");
   }
-  return "  whenChanged: " + JSON.stringify(when) + ",";
+  const when = String(whenPath || "");
+  const edge = opts.pressEdge ? deskPressEdgeLine(when) : "";
+  const inner = [edge, body].filter(Boolean).join("\n");
+  return [
+    "defineRule(" + JSON.stringify(id) + ", {",
+    deskWhenSpec(when),
+    "  then: function (newValue) {",
+    "    try {",
+    inner,
+    deskRuleCatch(id),
+    "  }",
+    "});",
+  ].join("\n");
 }
 
 /** Строка в then: на уровне входа действуем только в момент нажатия, не на отпускании. */
