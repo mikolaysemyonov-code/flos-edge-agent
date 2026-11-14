@@ -299,6 +299,7 @@ export function deskInputBaseControl(controlId) {
   const pulse = /^(Input\s+[A-Z]?\d+)\s+counter$/i.exec(c);
   if (pulse) return pulse[1];
   if (/^Input\s+[A-Z]?\d+$/i.test(c)) return c;
+  if (/^IN\d+$/i.test(c)) return c;
   if (/^EXT\d+_IN\d+$/i.test(c) || /^[A-D]\d+_IN\d+$/i.test(c)) return c;
   return "";
 }
@@ -323,7 +324,7 @@ export function deskButtonCounter(controlId, kind = "Short", _deviceTopicKey = "
 /** Строка в then: на уровне входа действуем только в момент нажатия, не на отпускании. */
 export function deskPressEdgeLine(whenPath) {
   const when = String(whenPath || "");
-  if (/\/Input\s+[A-Z]?\d+$/i.test(when)) return "      if (!wbIsOn(newValue)) return;";
+  if (/\/Input\s+[A-Z]?\d+$/i.test(when) || /\/IN\d+$/i.test(when)) return "      if (!wbIsOn(newValue)) return;";
   if (/\scounter$/i.test(when) || /Press Counter$/i.test(when)) {
     return '      if (newValue === 0 || newValue === "0") return;';
   }
@@ -332,7 +333,7 @@ export function deskPressEdgeLine(whenPath) {
 
 export function isDeskDeviceKey(key) {
   const s = String(key ?? "").trim();
-  return /^[a-z0-9][a-z0-9._-]{0,79}$/i.test(s) && !/\/devices\//i.test(s);
+  return /^[a-z0-9][a-z0-9._:-]{0,79}$/i.test(s) && !/\/devices\//i.test(s);
 }
 
 /** Merge one contact. Never deletes sibling channels. Never writes wb-rules. */

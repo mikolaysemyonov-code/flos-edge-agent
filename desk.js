@@ -429,7 +429,7 @@
     function familyOf(s) {
       const k = String(s.deviceTopicKey || "");
       if (/led|ampled|dali|mdm/i.test(k)) return "light";
-      if (/mcm|gpio|mdi|mwac/i.test(k)) return "buttons";
+      if (/mcm|gpio|mdi|mwac|wd14|mio/i.test(k)) return "buttons";
       if (/mr6|mr12|mrm|mrps/i.test(k)) return "relays";
       return "";
     }

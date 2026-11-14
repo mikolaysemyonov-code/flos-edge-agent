@@ -17,6 +17,8 @@ const SKU = {
   "mdali-3": "WB-MDALI-3",
   mdali3: "WB-MDALI-3",
   gpio: "GPIO",
+  "mio-gpio": "WB-MIO-GPIO",
+  wd14: "WB-WD14",
   mcm8: "WB-MCM8",
   mcm16: "MCM16",
   mao4: "WB-MAO4",
@@ -41,6 +43,15 @@ export function parseDeskDeviceKey(raw) {
   const dali = /^(wb-(?:mdali(?:-3)?|dali))_(\d+)/i.exec(k);
   if (dali) {
     return { canonical: `${dali[1].toLowerCase()}_${dali[2]}`, type: "dali", slave: Number(dali[2]), copy: 0 };
+  }
+  const colon = /^wb-([a-z0-9-]+)_(\d+):(\d+)$/i.exec(k);
+  if (colon) {
+    return {
+      canonical: `wb-${colon[1].toLowerCase()}_${colon[2]}:${colon[3]}`,
+      type: colon[1].toLowerCase(),
+      slave: Number(colon[2]),
+      copy: Number(colon[3]),
+    };
   }
   const m = /^wb-([a-z0-9-]+)_(\d+)(?:_(\d+))?$/i.exec(k);
   if (!m) return null;
@@ -112,6 +123,8 @@ export function isDeskShelfChannelControl(controlId, deviceTopicKey) {
   if (/^Input [A-Z]?\d+$/i.test(c)) return true;
   // Для скана клавиш — счётчики MCM8. Короткое нажатие на проводе называется Single.
   if (/^Input [A-Z]?\d+ (?:Single|Shortlong|Short|Long|Double) Press Counter$/i.test(c)) return true;
+  // WD14 / MIO-GPIO: сухой контакт IN1…IN14, switch true/false, без Press Counter.
+  if (/^IN\d+$/i.test(c)) return true;
   if (/^EXT\d+_IN/i.test(c) || /^[A-D]\d+_IN/i.test(c)) return true;
   return false;
 }
@@ -168,7 +181,7 @@ function familyRank(type) {
   if (isRelayFamily(type)) return 10;
   if (/led|ampled|mdm|mao/i.test(type)) return 20;
   if (/dali/i.test(type)) return 30;
-  if (/gpio|mcm|mdi/i.test(type)) return 40;
+  if (/gpio|mcm|mdi|wd14|mio/i.test(type)) return 40;
   if (/map|mwac/i.test(type)) return 50;
   return 90;
 }
