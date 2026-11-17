@@ -39,11 +39,16 @@ export function parseDaliBridgeHostOut(text) {
   const pkg = lines.find((l) => /install ok installed|not-installed|missing/i.test(l) || l.includes("|")) || lines[0] || "";
   const activeLine = [...lines].reverse().find((l) => /^(active|inactive|failed|unknown|activating)/i.test(l)) || "";
   const installed = /install ok installed/i.test(pkg);
-  const version = installed ? String(pkg.split("|")[1] || "").trim() : "";
-  return { installed, version, active: activeLine.toLowerCase() === "active" };
+  let version = installed ? String(pkg.split("|")[1] || "").trim() : "";
+  let active = activeLine.toLowerCase() === "active";
+  if (/active$/i.test(version) && !/inactive$/i.test(version)) {
+    version = version.replace(/active$/i, "").trim();
+    active = true;
+  }
+  return { installed, version, active };
 }
 
-const STATUS_SCRIPT = `dpkg-query -W -f='\${Status}|\${Version}' wb-mqtt-dali 2>/dev/null || echo missing
+const STATUS_SCRIPT = `dpkg-query -W -f='\${Status}|\${Version}\\n' wb-mqtt-dali 2>/dev/null || echo missing
 systemctl is-active wb-mqtt-dali 2>/dev/null || true`;
 
 const INSTALL_SCRIPT = `set -e
@@ -256,7 +261,7 @@ export async function scanDaliBus(busId) {
     }
     const result = payload?.result || payload;
     const progressTopic = String(result?.progressTopic || "").trim();
-    const progress = progressTopic ? await waitMqttJson(progressTopic, 90_000, scanProgressDone) : { done: true };
+    const progress = progressTopic ? await waitMqttJson(progressTopic, 18_000, scanProgressDone) : { done: true };
     return {
       ok: true,
       result,

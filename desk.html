@@ -102,20 +102,22 @@
     <section id="panel-mark" class="panel glass" hidden data-tab="mark">
       <p class="meta" id="markIntro">Назовите комнату и то, что в ней включается.</p>
       <div id="daliScanDock" class="dali-mdali" hidden>
-        <p class="meta" id="daliBridgeHead">Пакет wb-mqtt-dali на щите. После скана адреса появятся ниже на этой же вкладке.</p>
-        <button id="daliBridgeInstall" class="ghost" type="button">Установить файлы конфигурации</button>
+        <p class="meta" id="daliBridgeHead">Драйвер DALI на контроллере. Скан шины ищет светильники на проводе — не реле и не LED.</p>
+        <button id="daliBridgeInstall" class="ghost" type="button">Поставить драйвер</button>
         <p class="meta" id="daliBridgeLog"></p>
-        <label class="meta" for="daliGateway" id="daliGatewayLab" hidden>Шлюз</label>
-        <select id="daliGateway" class="bind" hidden aria-label="Шлюз DALI"></select>
+        <p class="meta" id="daliGatewayHint" hidden></p>
+        <label class="meta" for="daliGateway" id="daliGatewayLab" hidden>Какой модуль MDALI</label>
+        <select id="daliGateway" class="bind" hidden aria-label="Модуль DALI"></select>
+        <p class="meta">Скан шины — поиск адресов на выбранном модуле. Шина 1 / 2 / 3 — три физических линии MDALI.</p>
         <div class="dali-scan-row">
-          <button class="ghost" type="button" data-dali-scan="1">Сканировать шину 1</button>
-          <button class="ghost" type="button" data-dali-scan="2">Сканировать шину 2</button>
-          <button class="ghost" type="button" data-dali-scan="3">Сканировать шину 3</button>
+          <button class="ghost" type="button" data-dali-scan="1">Шина 1</button>
+          <button class="ghost" type="button" data-dali-scan="2">Шина 2</button>
+          <button class="ghost" type="button" data-dali-scan="3">Шина 3</button>
         </div>
         <p class="meta" id="daliScanLog"></p>
       </div>
       <p id="benchReady" class="meta" hidden></p>
-      <details class="more">
+      <details id="markFiles" class="more">
         <summary>Файлы</summary>
         <div class="mark-actions">
           <button id="passportXlsx" class="ghost" type="button">Таблица для заказчика</button>
@@ -135,7 +137,7 @@
         <button type="button" data-fam="lines" aria-pressed="false">Светильники</button>
         <button type="button" data-fam="pair" aria-pressed="false">Прозвон</button>
       </div>
-      <input id="modSearch" class="mod-search" type="search" placeholder="WB-MR6CU №5" aria-label="Поиск модуля" hidden>
+      <input id="modSearch" class="mod-search" type="search" placeholder="Номер или имя" aria-label="Поиск модуля" hidden>
       <div id="rooms-mark" class="rooms" hidden aria-hidden="true"></div>
       <div id="mark-body" class="vitrine"></div>
     </section>

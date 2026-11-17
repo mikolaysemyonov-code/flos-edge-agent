@@ -578,7 +578,15 @@
       const famBar = $("modFamily");
       const modSearch = $("modSearch");
       const daliDock = $("daliScanDock");
-      if (modSearch) modSearch.hidden = !/^(light|relays|dali|mdm)$/.test(activeNav);
+      if (modSearch) {
+        modSearch.hidden = true;
+        if (/^(light|relays|dali|mdm)$/.test(activeNav)) {
+          modQuery = "";
+          modSearch.value = "";
+        }
+      }
+      const markFiles = $("markFiles");
+      if (markFiles) markFiles.hidden = /^(light|relays|dali|mdm)$/.test(activeNav);
       if (daliDock) daliDock.hidden = activeNav !== "dali";
       if (famBar) {
         famBar.hidden = !isPnr();
@@ -6807,7 +6815,7 @@
       const parts = !scan
         ? ["Обновите щит. Затем встаньте в комнате и нажмите кнопку три раза."]
         : [busText === "шина спокойна" ? "" : busText, keyText, lineText].filter(Boolean);
-      el.hidden = ready || parts.length === 0;
+      el.hidden = !isPnr() || ready || parts.length === 0;
       el.textContent = ready ? "" : parts.join(" · ");
       paintShieldClock();
     }
@@ -6857,7 +6865,7 @@
         : modFamily === "relays"
           ? "Реле появятся после обновления щита."
           : modFamily === "dali"
-            ? "Нет DALI на MQTT. Установите пакет и сканируйте шину на этой вкладке."
+            ? "Здесь только DALI. Реле — вкладка «Реле». Если карточки нет — нажмите шину 1, 2 или 3."
             : modFamily === "mdm"
               ? "MDM3 появится после обновления щита."
           : modFamily === "light"
@@ -6872,12 +6880,16 @@
     function paintDaliBridge(j) {
       const head = $("daliBridgeHead");
       const log = $("daliBridgeLog");
+      const install = $("daliBridgeInstall");
       if (!head) return;
-      if (j && j.installed) {
-        head.textContent = "wb-mqtt-dali " + (j.version || "") + (j.active ? " · работает" : " · пакет есть, сервис не active");
+      if (j && j.installed && j.active) {
+        head.textContent = "Драйвер DALI работает" + (j.version ? " (" + j.version + ")" : "") + ". Карточка ниже — шлюз. Кнопки шины ищут светильники на проводе.";
+      } else if (j && j.installed) {
+        head.textContent = "Драйвер стоит, но служба не запущена. Нажмите «Поставить драйвер» ещё раз.";
       } else {
-        head.textContent = "Пакет wb-mqtt-dali на щите. После скана адреса появятся ниже на этой же вкладке.";
+        head.textContent = "Драйвера DALI на щите нет. «Поставить драйвер» ставит wb-mqtt-dali. Затем скан шины.";
       }
+      if (install) install.hidden = Boolean(j && j.installed && j.active);
       if (log && j && (j.detail || j.error) && !j.installed) log.textContent = j.detail || j.error;
       paintDaliGateways(j && j.gateways);
     }
@@ -6911,8 +6923,14 @@
       }
       if (prev && [...sel.options].some((o) => o.value === prev)) sel.value = prev;
       const many = sel.options.length > 1;
-      sel.hidden = !sel.options.length;
+      const hint = $("daliGatewayHint");
+      sel.hidden = !many;
       if (lab) lab.hidden = !many;
+      if (hint) {
+        hint.hidden = many || !sel.options.length;
+        const id = sel.options.length ? sel.value || sel.options[0].value : "";
+        hint.textContent = id ? ("Модуль на шине: " + (shelfLabel(id) || id) + ". Это не реле.") : "";
+      }
     }
     async function loadDaliMdali() {
       try {
@@ -6959,7 +6977,7 @@
     async function scanDaliBusNow(bus) {
       const log = $("daliScanLog");
       const gw = $("daliGateway") && $("daliGateway").value;
-      if (log) log.textContent = "Сканирую шину " + bus + (gw ? " · " + gw : "") + "… жду конец скана";
+      if (log) log.textContent = "Ищу светильники на шине " + bus + "…";
       document.querySelectorAll("[data-dali-scan]").forEach((b) => { b.disabled = true; });
       try {
         const r = await fetch("/runtime/desk-dali-scan", {
