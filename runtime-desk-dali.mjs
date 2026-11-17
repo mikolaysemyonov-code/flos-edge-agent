@@ -50,11 +50,13 @@ export function isDaliActuateId(controlId) {
   return Boolean(p && (p.kind === "addr" || p.kind === "group" || p.kind === "broadcast"));
 }
 
-/** «гр 1 трек хол 1 эт» — номер группы, тип, комната. */
-export function formatDaliGroupName(group, type, room) {
-  const n = Number(group);
-  if (!Number.isFinite(n) || n < 0) return "";
-  return ["гр " + n, String(type || "").trim(), String(room || "").trim()].filter(Boolean).join(" ");
+/** Подпись адреса: bus 1 / 0. Группа на шине: bus 1 / g0. */
+export function formatDaliFixtureLabel(controlId) {
+  const p = parseDaliChannelId(controlId);
+  if (!p) return String(controlId || "").trim();
+  if (p.kind === "group") return "bus " + p.bus + " / g" + p.group;
+  if (p.kind === "broadcast") return "bus " + p.bus + " / all";
+  return "bus " + p.bus + " / " + p.addr;
 }
 
 export function daliBusUid(gatewayKey, bus) {

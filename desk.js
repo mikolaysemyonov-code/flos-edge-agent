@@ -125,11 +125,10 @@
     const DALI_TYPES = [
       "Трек", "DALI линия", "Точечные", "Люстра", "Подвес", "Потолочный", "Бра",
     ];
-    let daliPane = "walk";
+    let daliPane = "groups";
     let daliGroupEdit = "";
     let daliDraftMembers = [];
-    let daliWalkIdx = 0;
-    let daliWalkMeta = { room: "", type: "" };
+    let daliWalkMeta = { name: "" };
     const RELAY_TYPES = [
       "Свет 220 В", "Люстра", "Подвес", "Потолочный", "Точечные", "Трек",
       "Бра", "Торшер", "Гирлянда", "Ёлка",
@@ -306,8 +305,8 @@
     }
     function prettyControlId(id) {
       const dali = parseDaliCh(id);
-      if (dali && dali.kind === "group") return "шина " + dali.bus + " · гр " + dali.group;
-      if (dali && dali.kind === "addr") return "шина " + dali.bus + " · " + dali.addr;
+      if (dali && dali.kind === "group") return "bus " + dali.bus + " / g" + dali.group;
+      if (dali && dali.kind === "addr") return "bus " + dali.bus + " / " + dali.addr;
       const m = /^(?:Curtain|Actuator)\s+(\d+)\s+(Open|Close)$/i.exec(String(id || "").trim());
       if (!m) return id;
       return "Привод " + m[1];
@@ -465,11 +464,10 @@
       if (!openMod) return;
       openMod = "";
       openAssign = "";
-      daliPane = "walk";
+      daliPane = "groups";
       daliGroupEdit = "";
       daliDraftMembers = [];
-      daliWalkIdx = 0;
-      daliWalkMeta = { room: "", type: "" };
+      daliWalkMeta = { name: "" };
       markPending = {};
       renderMark();
     }
@@ -3590,7 +3588,7 @@
       markPending[k] = d;
       const dali = parseDaliCh(ch.controlId);
       const next = dali && dali.kind === "group"
-        ? (d.room || d.type ? ["гр " + dali.group, d.type, d.room].filter(Boolean).join(" ") : "")
+        ? String(d.type || d.room || "").trim()
         : composeMark(d.room, d.type);
       if (!next) {
         // Оба пусто — снять имя со стола (вернётся залитое с щита, если было).
@@ -4140,37 +4138,7 @@
           },
         }));
         const dali = parseDaliCh(ch.controlId);
-        if (dali && dali.kind === "group") {
-          const range = document.createElement("input");
-          range.type = "range";
-          range.className = "dali-range";
-          range.min = "0";
-          range.max = "100";
-          const cur = Number(ch.lastValue);
-          range.value = String(Number.isFinite(cur) ? Math.max(0, Math.min(100, cur)) : (on ? 100 : 0));
-          range.title = "Яркость";
-          range.addEventListener("change", () => {
-            const n = Number(range.value);
-            void actuateChannel(s.deviceTopicKey, ch.controlId, n <= 0 ? "off" : "level", { level: n });
-          });
-          act.appendChild(range);
-          if (ch.hasTemp) {
-            const temp = document.createElement("input");
-            temp.type = "range";
-            temp.className = "dali-range";
-            temp.min = "153";
-            temp.max = "370";
-            temp.value = "370";
-            temp.title = "Температура, mirek";
-            temp.addEventListener("change", () => {
-              void actuateChannel(s.deviceTopicKey, ch.controlId, "temp", {
-                temp: Number(temp.value),
-                tempControl: ch.tempControl || "wanted_colour_temperature",
-              });
-            });
-            act.appendChild(temp);
-          }
-        }
+        if (dali && dali.kind !== "broadcast") appendDaliActuators(act, s, ch);
       } else if (input) {
         act.appendChild(makeAppleSwitch({
           on: on,
@@ -4257,7 +4225,12 @@
           true,
         ));
         if (daliG && daliG.kind === "group") {
-          fields.appendChild(daliMemberPicker(s, ch, daliG, current));
+          const edit = document.createElement("button");
+          edit.type = "button";
+          edit.className = "ghost bind";
+          edit.textContent = "Состав группы";
+          edit.addEventListener("click", () => daliMemberPicker(s, ch, daliG));
+          fields.appendChild(edit);
         }
         row.appendChild(fields);
       }
@@ -4284,117 +4257,69 @@
       const { groups } = splitDaliChannels(s);
       return groups.find((g) => (g.members || []).indexOf(controlId) >= 0) || null;
     }
-    function daliUngrouped(s) {
-      const { addrs } = splitDaliChannels(s);
-      const taken = new Set(daliDraftMembers.map(String));
-      splitDaliChannels(s).groups.forEach((g) => {
-        (g.members || []).forEach((m) => taken.add(String(m)));
+    function appendDaliActuators(act, s, ch) {
+      const range = document.createElement("input");
+      range.type = "range";
+      range.className = "dali-range";
+      range.min = "0";
+      range.max = "100";
+      const on = channelIsOn(ch);
+      const cur = Number(ch.lastValue);
+      range.value = String(Number.isFinite(cur) ? Math.max(0, Math.min(100, cur)) : (on ? 100 : 0));
+      range.title = "Яркость";
+      range.addEventListener("change", () => {
+        const n = Number(range.value);
+        void actuateChannel(s.deviceTopicKey, ch.controlId, n <= 0 ? "off" : "level", { level: n });
       });
-      return addrs.filter((ch) => !taken.has(ch.controlId));
-    }
-    function daliBusesOf(s) {
-      const set = new Set();
-      splitDaliChannels(s).addrs.forEach((ch) => {
-        const p = parseDaliCh(ch.controlId);
-        if (p && p.bus) set.add(p.bus);
+      act.appendChild(range);
+      if (!ch.hasTemp) return;
+      const temp = document.createElement("input");
+      temp.type = "range";
+      temp.className = "dali-range";
+      temp.min = "153";
+      temp.max = "370";
+      temp.value = "370";
+      temp.title = "Температура";
+      temp.addEventListener("change", () => {
+        void actuateChannel(s.deviceTopicKey, ch.controlId, "temp", {
+          temp: Number(temp.value),
+          tempControl: ch.tempControl || "wanted_colour_temperature",
+        });
       });
-      return [...set].sort((a, b) => a - b);
+      act.appendChild(temp);
     }
-    async function daliAllOff(s) {
-      const buses = daliBusesOf(s);
-      for (let i = 0; i < buses.length; i += 1) {
-        await actuateChannel(s.deviceTopicKey, "bus_" + buses[i] + "_broadcast", "off");
-      }
-    }
-    async function daliShine(s, ch) {
-      if (!ch) return;
-      await daliAllOff(s);
-      await actuateChannel(s.deviceTopicKey, ch.controlId, "on");
+    function daliPickBus() {
+      const first = parseDaliCh(daliDraftMembers[0] || "");
+      return first && first.bus ? first.bus : 0;
     }
     function saveDaliGroupNow(s, extra) {
-      const parsed = parseDaliCh(daliGroupEdit);
-      if (!parsed || parsed.kind !== "group") return Promise.resolve();
       const members = extra && extra.members ? extra.members : daliDraftMembers.slice();
-      const room = (extra && extra.room) || daliWalkMeta.room;
-      const type = (extra && extra.type) || daliWalkMeta.type;
-      const name = ["гр " + parsed.group, type, room].filter(Boolean).join(" ");
+      const name = String((extra && extra.name) || daliWalkMeta.name || "").trim();
+      const bus = (parseDaliCh(members[0] || "") || {}).bus || 1;
+      const controlId = daliGroupEdit || nextDaliGroupId(s, bus);
+      const parsed = parseDaliCh(controlId);
+      if (!parsed || parsed.kind !== "group" || !name || !members.length) return Promise.resolve();
       return fetch("/runtime/desk-dali-group", {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
           gateway: s.deviceTopicKey,
           controlId: parsed.channelId,
-          members: members,
+          members: members.filter((id) => (parseDaliCh(id) || {}).bus === parsed.bus),
           name: name,
         }),
       }).then((r) => r.json()).then((j) => {
         if (j && j.ok) return loadLast();
       }).catch(() => {});
     }
-    function daliMemberPicker(s, groupCh, daliG, current) {
-      const box = document.createElement("div");
-      box.className = "dali-members";
-      const hint = document.createElement("p");
-      hint.className = "hint";
-      hint.textContent = "Вкл/выкл адрес — видно, какой светильник. Галочка — в эту группу.";
-      box.appendChild(hint);
-      const { addrs } = splitDaliChannels(s);
-      const busAddrs = addrs.filter((ch) => {
-        const p = parseDaliCh(ch.controlId);
-        return p && p.bus === daliG.bus;
-      });
-      const selected = new Set(
-        (daliDraftMembers.length ? daliDraftMembers : (groupCh.members || [])).map((m) => String(m)),
-      );
-      busAddrs.forEach((ch) => {
-        const line = document.createElement("div");
-        line.className = "dali-member" + (channelIsOn(ch) ? " lit" : "");
-        const ck = document.createElement("input");
-        ck.type = "checkbox";
-        ck.checked = selected.has(ch.controlId);
-        ck.addEventListener("change", () => {
-          const next = new Set(daliDraftMembers.length ? daliDraftMembers : (groupCh.members || []));
-          if (ck.checked) next.add(ch.controlId);
-          else next.delete(ch.controlId);
-          daliDraftMembers = [...next];
-        });
-        const lab = document.createElement("span");
-        lab.textContent = prettyControlId(ch.controlId) + (pairName(s, ch) ? " · " + prettyContactName(pairName(s, ch)) : "");
-        line.append(ck, lab, makeAppleSwitch({
-          on: channelIsOn(ch),
-          busy: Boolean(probeBusy[contactKey(s.deviceTopicKey, ch.controlId)]),
-          title: "Прозвонить адрес",
-          onToggle: (wantOn) => {
-            void actuateChannel(s.deviceTopicKey, ch.controlId, wantOn ? "on" : "off");
-          },
-        }));
-        box.appendChild(line);
-      });
-      const save = document.createElement("button");
-      save.type = "button";
-      save.className = "ghost bind";
-      save.textContent = "Сохранить группу";
-      save.addEventListener("click", () => {
-        const members = daliDraftMembers.length ? daliDraftMembers : (groupCh.members || []);
-        const name = ["гр " + daliG.group, current.type, current.room].filter(Boolean).join(" ");
-        void fetch("/runtime/desk-dali-group", {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({
-            gateway: s.deviceTopicKey,
-            controlId: daliG.channelId,
-            members: members,
-            name: name,
-          }),
-        }).then((r) => r.json()).then((j) => {
-          daliGroupEdit = "";
-          daliDraftMembers = [];
-          openAssign = "";
-          if (j && j.ok) return loadLast();
-        }).catch(() => {});
-      });
-      box.appendChild(save);
-      return box;
+    function daliMemberPicker(s, groupCh, daliG) {
+      daliPane = "pick";
+      daliGroupEdit = daliG.channelId;
+      daliDraftMembers = Array.isArray(groupCh.members) ? groupCh.members.slice() : [];
+      daliWalkMeta = { name: String(pairName(s, groupCh) || "").trim() };
+      openAssign = "";
+      renderMark();
+      return document.createElement("div");
     }
     function nextDaliGroupId(s, bus) {
       const used = new Set();
@@ -4402,141 +4327,141 @@
         const p = parseDaliCh(ch.controlId);
         if (p && p.bus === bus) used.add(p.group);
       });
+      if (daliGroupEdit) {
+        const cur = parseDaliCh(daliGroupEdit);
+        if (cur && cur.bus === bus) return daliGroupEdit;
+      }
       let n = 0;
       while (used.has(n) && n < 16) n += 1;
       if (n > 15) return "";
       return "bus_" + bus + "_g" + n;
     }
-    function startNewDaliGroup(s, busHint) {
-      const { addrs } = splitDaliChannels(s);
-      const bus = busHint || (parseDaliCh((addrs[0] || {}).controlId) || {}).bus || 1;
-      const controlId = nextDaliGroupId(s, bus);
-      if (!controlId) return;
-      daliGroupEdit = controlId;
+    function startNewDaliGroup() {
+      daliPane = "pick";
+      daliGroupEdit = "";
       daliDraftMembers = [];
-      daliWalkIdx = 0;
+      daliWalkMeta = { name: "" };
       openAssign = "";
       renderMark();
     }
-    function renderDaliWalk(box, s) {
-      const leftover = daliUngrouped(s);
+    function actuateDaliSelected(s, wantOn) {
+      const jobs = daliDraftMembers.map((id) => actuateChannel(s.deviceTopicKey, id, wantOn ? "on" : "off"));
+      return Promise.all(jobs);
+    }
+    function renderDaliPick(box, s) {
+      const { addrs } = splitDaliChannels(s);
+      const lockBus = daliPickBus();
+      const selected = new Set(daliDraftMembers.map(String));
       const card = document.createElement("div");
       card.className = "dali-walk";
       const intro = document.createElement("p");
       intro.className = "hint";
-      intro.textContent = leftover.length
-        ? "Горит один светильник. Если это нужный — в группу. Имя даём группе, не каждому адресу."
-        : "Все адреса уже в группах. Новую группу — когда появится свободный светильник.";
-      card.appendChild(intro);
-      if (!daliGroupEdit) {
-        const fields = document.createElement("div");
-        fields.className = "rows drill-fields";
-        fields.appendChild(makeField(
-          "Комната",
-          roomsFromBus(),
-          daliWalkMeta.room,
-          "Выбрать",
-          (v) => { daliWalkMeta = Object.assign({}, daliWalkMeta, { room: v }); renderMark(); },
-          "Новая комната…",
-          () => promptRoom().then((name) => { if (name) { daliWalkMeta = Object.assign({}, daliWalkMeta, { room: name }); renderMark(); } }),
-          !daliWalkMeta.room,
-          true,
-        ));
-        fields.appendChild(makeField(
-          "Тип",
-          DALI_TYPES,
-          daliWalkMeta.type,
-          "Выбрать",
-          (v) => { daliWalkMeta = Object.assign({}, daliWalkMeta, { type: v }); renderMark(); },
-          "",
-          null,
-          !!(daliWalkMeta.room && !daliWalkMeta.type),
-          true,
-        ));
-        card.appendChild(fields);
-        const go = document.createElement("button");
-        go.type = "button";
-        go.className = "ghost bind";
-        go.textContent = "Начать группу";
-        go.disabled = !(daliWalkMeta.room && daliWalkMeta.type) || leftover.length === 0;
-        go.addEventListener("click", () => {
-          const bus = (parseDaliCh((leftover[0] || {}).controlId) || {}).bus || 1;
-          startNewDaliGroup(s, bus);
-          void daliShine(s, leftover[0]);
+      intro.textContent = lockBus
+        ? "Группа DALI на одной шине (bus " + lockBus + "). Квадрат — в группу. Справа — прозвон на объекте."
+        : "Имя группы — как на объекте. Квадрат слева выделяет светильники, справа — вкл/яркость/температура.";
+      const name = document.createElement("input");
+      name.type = "text";
+      name.className = "dali-name";
+      name.placeholder = "трек холл 1 эт";
+      name.value = daliWalkMeta.name || "";
+      name.addEventListener("input", () => {
+        daliWalkMeta = { name: name.value };
+      });
+      card.append(intro, name);
+      if (selected.size) {
+        const bar = document.createElement("div");
+        bar.className = "dali-bulk";
+        const lab = document.createElement("span");
+        lab.textContent = "Выделено " + selected.size;
+        bar.appendChild(lab);
+        bar.appendChild(makeAppleSwitch({
+          on: addrs.filter((ch) => selected.has(ch.controlId)).some(channelIsOn),
+          title: "Вкл/выкл выделенных",
+          onToggle: (wantOn) => { void actuateDaliSelected(s, wantOn); },
+        }));
+        card.appendChild(bar);
+      }
+      const list = document.createElement("ul");
+      list.className = "channels drill-list";
+      let lastBus = null;
+      addrs.forEach((ch) => {
+        const p = parseDaliCh(ch.controlId) || {};
+        if (p.bus && p.bus !== lastBus) {
+          const h = document.createElement("li");
+          h.className = "roomh";
+          h.textContent = "bus " + p.bus;
+          list.appendChild(h);
+          lastBus = p.bus;
+        }
+        const row = document.createElement("li");
+        row.className = "dali-pick-row" + (channelIsOn(ch) ? " lit" : "") + (selected.has(ch.controlId) ? " on" : "");
+        const ck = document.createElement("button");
+        ck.type = "button";
+        ck.className = "dali-check" + (selected.has(ch.controlId) ? " on" : "");
+        ck.setAttribute("aria-pressed", selected.has(ch.controlId) ? "true" : "false");
+        const otherBus = lockBus && p.bus && p.bus !== lockBus;
+        if (otherBus) ck.disabled = true;
+        ck.addEventListener("click", () => {
+          const next = new Set(daliDraftMembers.map(String));
+          if (next.has(ch.controlId)) next.delete(ch.controlId);
+          else next.add(ch.controlId);
+          daliDraftMembers = [...next];
+          renderMark();
         });
-        card.appendChild(go);
-        box.appendChild(card);
-        return;
-      }
-      if (daliWalkIdx >= leftover.length) daliWalkIdx = Math.max(0, leftover.length - 1);
-      const cur = leftover[daliWalkIdx];
-      const parsed = parseDaliCh(daliGroupEdit);
-      const title = document.createElement("p");
-      title.className = "ttl";
-      title.textContent = ["гр " + (parsed && parsed.group), daliWalkMeta.type, daliWalkMeta.room].filter(Boolean).join(" ")
-        + " · в группе " + daliDraftMembers.length
-        + " · осталось " + leftover.length;
-      card.appendChild(title);
-      if (cur) {
-        const spot = document.createElement("div");
-        spot.className = "dali-spot";
-        const big = document.createElement("strong");
-        big.textContent = prettyControlId(cur.controlId);
-        const note = document.createElement("span");
-        note.className = "hint";
-        note.textContent = "сейчас горит";
-        spot.append(big, note);
-        card.appendChild(spot);
-      }
+        const lab = document.createElement("span");
+        lab.className = "ttl";
+        lab.textContent = prettyControlId(ch.controlId);
+        const act = document.createElement("div");
+        act.className = "drill-act";
+        act.appendChild(makeAppleSwitch({
+          on: channelIsOn(ch),
+          busy: Boolean(probeBusy[contactKey(s.deviceTopicKey, ch.controlId)]),
+          title: "Вкл/выкл",
+          onToggle: (wantOn) => {
+            void actuateChannel(s.deviceTopicKey, ch.controlId, wantOn ? "on" : "off");
+          },
+        }));
+        appendDaliActuators(act, s, ch);
+        row.append(ck, lab, act);
+        list.appendChild(row);
+      });
       const row = document.createElement("div");
       row.className = "dali-walk-act";
-      const add = document.createElement("button");
-      add.type = "button";
-      add.className = "ghost bind";
-      add.textContent = "Этот в группу";
-      add.disabled = !cur;
-      add.addEventListener("click", () => {
-        if (!cur) return;
-        daliDraftMembers = daliDraftMembers.concat([cur.controlId]);
-        const nextList = leftover.filter((ch) => ch.controlId !== cur.controlId);
-        void saveDaliGroupNow(s, { members: daliDraftMembers }).then(() => {
-          daliWalkIdx = 0;
-          renderMark();
-          void daliShine(s, nextList[0]);
-        });
+      const save = document.createElement("button");
+      save.type = "button";
+      save.className = "ghost bind";
+      save.textContent = "Создать группу";
+      const syncSave = () => {
+        save.disabled = !name.value.trim() || !daliDraftMembers.length;
+      };
+      name.addEventListener("input", () => {
+        daliWalkMeta = { name: name.value };
+        syncSave();
       });
-      const skip = document.createElement("button");
-      skip.type = "button";
-      skip.className = "ghost";
-      skip.textContent = "Не этот";
-      skip.disabled = leftover.length < 2;
-      skip.addEventListener("click", () => {
-        daliWalkIdx = leftover.length ? (daliWalkIdx + 1) % leftover.length : 0;
-        renderMark();
-        void daliShine(s, leftover[(daliWalkIdx) % leftover.length]);
-      });
-      const done = document.createElement("button");
-      done.type = "button";
-      done.className = "ghost";
-      done.textContent = "Группа готова";
-      done.disabled = daliDraftMembers.length === 0;
-      done.addEventListener("click", () => {
+      syncSave();
+      save.addEventListener("click", () => {
+        daliWalkMeta = { name: name.value.trim() };
         void saveDaliGroupNow(s).then(() => {
           daliGroupEdit = "";
           daliDraftMembers = [];
-          daliWalkIdx = 0;
+          daliWalkMeta = { name: "" };
           daliPane = "groups";
           renderMark();
         });
       });
-      const off = document.createElement("button");
-      off.type = "button";
-      off.className = "ghost";
-      off.textContent = "Все выкл";
-      off.addEventListener("click", () => { void daliAllOff(s); });
-      row.append(add, skip, done, off);
+      const back = document.createElement("button");
+      back.type = "button";
+      back.className = "ghost";
+      back.textContent = "Отмена";
+      back.addEventListener("click", () => {
+        daliPane = "groups";
+        daliGroupEdit = "";
+        daliDraftMembers = [];
+        renderMark();
+      });
+      row.append(save, back);
       card.appendChild(row);
-      box.appendChild(card);
+      box.append(card, list);
     }
     function renderModuleDrill(box, s) {
       const back = document.createElement("button");
@@ -4563,10 +4488,10 @@
       if (daliMod) {
         const tabs = document.createElement("div");
         tabs.className = "dali-tabs";
-        [["walk", "Сбор"], ["groups", "Группы"], ["addr", "Адреса"]].forEach(([id, ru]) => {
+        [["groups", "Группы"], ["addr", "Адреса"]].forEach(([id, ru]) => {
           const b = document.createElement("button");
           b.type = "button";
-          b.className = "ghost" + (daliPane === id ? " on" : "");
+          b.className = "ghost" + (daliPane === id || (id === "groups" && daliPane === "pick") ? " on" : "");
           b.textContent = ru;
           b.addEventListener("click", () => {
             daliPane = id;
@@ -4577,20 +4502,16 @@
         });
         box.append(back, head, tabs);
         const { addrs, groups } = splitDaliChannels(s);
-        if (daliPane === "walk") {
-          renderDaliWalk(box, s);
+        if (daliPane === "pick") {
+          renderDaliPick(box, s);
           return;
         }
         if (daliPane === "groups") {
           const add = document.createElement("button");
           add.type = "button";
           add.className = "ghost dali-add";
-          add.textContent = "Собрать группу";
-          add.addEventListener("click", () => {
-            daliPane = "walk";
-            daliGroupEdit = "";
-            renderMark();
-          });
+          add.textContent = "Создать группу";
+          add.addEventListener("click", () => startNewDaliGroup());
           box.appendChild(add);
           const shown = groups.slice();
           if (daliGroupEdit && !shown.some((ch) => ch.controlId === daliGroupEdit)) {
@@ -4604,7 +4525,7 @@
             if (bus && bus !== lastBus) {
               const h = document.createElement("li");
               h.className = "roomh";
-              h.textContent = "Шина " + bus;
+              h.textContent = "bus " + bus;
               chs.appendChild(h);
               lastBus = bus;
             }
