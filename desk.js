@@ -93,14 +93,19 @@
     let deskNavLive = false;
     const NAV = {
       guide: { tab: "intro", title: "Туториал" },
-      remote: { tab: "mark", fam: "all", title: "Удалённая ПНР" },
-      site: { tab: "mark", fam: "site", title: "ПНР по месту" },
+      pnr: { tab: "mark", fam: "keys", title: "Пусконаладка" },
+      light: { tab: "mark", fam: "light", title: "Подсветка" },
+      relays: { tab: "mark", fam: "relays", title: "Реле" },
+      dali: { tab: "mark", fam: "dali", title: "DALI" },
+      mdm: { tab: "mark", fam: "mdm", title: "MDM3" },
       climate: { tab: "cards", filter: "Климат", title: "Климат" },
       scenes: { tab: "cards", title: "Сценарии" },
       history: { tab: "poured", pane: "hist", title: "История" },
       board: { tab: "poured", pane: "send", title: "На контроллере" },
-      dali: { tab: "dali", title: "WB-MDALI" },
     };
+    function isPnr() {
+      return activeNav === "pnr";
+    }
     let siteBeaconOn = false;
     let siteLoadsKey = "";
     let siteLoads = [];
@@ -448,13 +453,15 @@
     }
     function familyOf(s) {
       const k = String(s.deviceTopicKey || "");
-      if (/led|ampled|dali|mdm/i.test(k)) return "light";
+      if (/dali/i.test(k)) return "dali";
+      if (/mdm/i.test(k)) return "mdm";
+      if (/led|ampled|mao/i.test(k)) return "light";
       if (/mcm|gpio|mdi|mwac|wd14|mio/i.test(k)) return "buttons";
       if (/mr6|mr12|mrm|mrps/i.test(k)) return "relays";
       return "";
     }
     function splitShelves(rows) {
-      const out = { light: [], buttons: [], relays: [] };
+      const out = { light: [], buttons: [], relays: [], dali: [], mdm: [] };
       (rows || []).forEach((s) => {
         const f = familyOf(s);
         if (out[f]) out[f].push(s);
@@ -530,8 +537,8 @@
       if (kicker) kicker.hidden = tab !== "intro";
       if (busLine) busLine.hidden = tab === "intro" || tab === "poured";
       if (ritual) {
-        ritual.hidden = activeNav !== "site";
-        ritual.textContent = activeNav === "site" ? "При сканировании следуйте подсказкам." : "";
+        ritual.hidden = !isPnr();
+        ritual.textContent = isPnr() ? "При сканировании следуйте подсказкам." : "";
       }
       if (tab === "mark") renderMark();
       if (tab === "cards") {
@@ -545,36 +552,42 @@
         // Тихая диагностика при входе на «Залить» — без блокировки UI.
         void runDeskHealthQuiet();
       }
-      if (tab === "dali") void loadDaliMdali();
       const hash = activeNav || tab;
       if (location.hash.replace("#", "") !== hash) history.replaceState(null, "", "#" + hash);
     }
     function openNav(id) {
-      if (id === "keys" || id === "light" || id === "lines") id = "site";
+      let pnrFam = "";
+      if (id === "remote" || id === "site" || id === "keys" || id === "pair") id = "pnr";
+      if (id === "lines") {
+        id = "pnr";
+        pnrFam = "lines";
+      }
       const spec = NAV[id] || NAV.guide;
       activeNav = NAV[id] ? id : "guide";
       if (spec.fam) {
-        modFamily = spec.fam;
+        modFamily = pnrFam || spec.fam;
         openMod = "";
         markPath = "modules";
-        if (spec.fam !== "site") {
-          stopKeyScan();
-          siteBeaconOn = false;
-          stopLineBeacon();
-        }
+      }
+      if (!isPnr()) {
+        stopKeyScan();
+        siteBeaconOn = false;
+        stopLineBeacon();
+        stopPairListen();
       }
       if (spec.filter) cardFilter = spec.filter;
       if (id === "scenes" && cardFilter === "Климат") cardFilter = "Свет";
       if (spec.pane) pouredPane = spec.pane;
       const famBar = $("modFamily");
       const modSearch = $("modSearch");
-      if (modSearch) modSearch.hidden = activeNav !== "remote";
+      const daliDock = $("daliScanDock");
+      if (modSearch) modSearch.hidden = !/^(light|relays|dali|mdm)$/.test(activeNav);
+      if (daliDock) daliDock.hidden = activeNav !== "dali";
       if (famBar) {
-        const remote = activeNav === "remote";
-        famBar.hidden = !remote;
+        famBar.hidden = !isPnr();
         famBar.querySelectorAll("[data-fam]").forEach((btn) => {
-          const id = btn.dataset.fam;
-          btn.hidden = remote && (id === "keys" || id === "lines" || id === "pair");
+          const fam = btn.dataset.fam;
+          btn.hidden = !/^(keys|lines|pair)$/.test(fam);
         });
       }
       setTab(spec.tab, true);
@@ -582,10 +595,11 @@
       if (cardBar) cardBar.hidden = activeNav === "climate";
       const tree = document.querySelector(".rail-tree");
       if (tree && (activeNav === "history" || activeNav === "board")) tree.dataset.open = "1";
-      if (spec.fam === "site" || spec.fam === "remote") {
+      if (isPnr()) {
         Promise.all([loadKeyPlan(), loadLinePlan(), loadSolutions()]).then(() => renderMark());
       }
-      if (id === "remote" && deskNavLive) {
+      if (activeNav === "dali") void loadDaliMdali();
+      if (deskNavLive && /^(pnr|light|relays|dali|mdm)$/.test(id) && !(lastShelvesRows || []).length) {
         const scanBtn = $("scan");
         if (!scanBtn || !scanBtn.disabled) void scanNow();
       }
@@ -3561,9 +3575,14 @@
       const room = ch ? nameRoom(pairName(shelf, ch)) : "";
       if (room) roomFilter = room;
       else markPath = "modules";
+      const fam = familyOf({ deviceTopicKey: key }) || "light";
+      const nav = fam === "dali" ? "dali"
+        : fam === "mdm" ? "mdm"
+        : fam === "relays" ? "relays"
+        : fam === "light" ? "light"
+        : "pnr";
+      openNav(nav);
       openMod = key;
-      modFamily = familyOf({ deviceTopicKey: key }) || "light";
-      setTab("mark", true);
       renderMark();
       const want = contactKey(key, cid);
       const go = () => {
@@ -4787,7 +4806,9 @@
       freeH.className = "mark-free-title";
       freeH.textContent = "Добавить с шины";
       freeWrap.appendChild(freeH);
-      appendUnboundPicker(freeWrap, "Свет", split.light);
+      appendUnboundPicker(freeWrap, "Подсветка", split.light);
+      appendUnboundPicker(freeWrap, "DALI", split.dali);
+      appendUnboundPicker(freeWrap, "MDM3", split.mdm);
       appendUnboundPicker(freeWrap, "Кнопки", split.buttons);
       appendUnboundPicker(freeWrap, "Реле", split.relays);
       if (freeWrap.querySelector("details")) box.appendChild(freeWrap);
@@ -5406,7 +5427,7 @@
         a.click();
       });
       body.appendChild(file);
-      if (activeNav === "site") {
+      if (isPnr()) {
         const seen = [];
         (keyPlan || []).forEach((k) => {
           const room = String(k && k.room || "").trim();
@@ -5516,7 +5537,7 @@
       keyCatch = null;
       siteBeaconOn = false;
       stopLineBeacon();
-      if (activeNav === "site") startKeyScan(null, { ignoreKey });
+      if (isPnr()) startKeyScan(null, { ignoreKey });
       else renderMark();
     }
     function solutionForKey(key) {
@@ -5758,7 +5779,7 @@
         });
       });
       act.append(save, bind, skip);
-      if (activeNav === "site") {
+      if (isPnr()) {
         const find = document.createElement("button");
         find.type = "button";
         find.className = "ghost";
@@ -5788,7 +5809,7 @@
         act.append(find, zone);
       }
       card.append(topic, room.wrap, code.wrap, pair, where.wrap, purpose, custom, lightHead, lightList);
-      if (activeNav === "site" && siteBeaconOn) {
+      if (isPnr() && siteBeaconOn) {
         const dots = document.createElement("div");
         dots.className = "line-beacon-dots";
         if (lineBeaconLoading) {
@@ -5814,7 +5835,7 @@
         });
         card.appendChild(dots);
       }
-      if (activeNav === "remote") {
+      if (isPnr()) {
         const pick = document.createElement("select");
         pick.className = "bind";
         pick.setAttribute("aria-label", "Свет с шины");
@@ -5855,9 +5876,7 @@
       if (!rows.length) {
         const empty = document.createElement("p");
         empty.className = "meta orphan";
-        empty.textContent = activeNav === "remote"
-          ? "Добавьте клавишу из списка шины."
-          : "Нажмите «Сканировать». После трёх нажатий откроется карточка этой клавиши.";
+        empty.textContent = "Нажмите «Сканировать» или выберите клавишу с шины.";
         wrap.appendChild(empty);
         return wrap;
       }
@@ -6856,8 +6875,8 @@
       paintMarkPath();
       const intro = $("markIntro");
       if (intro) {
-        intro.hidden = modFamily === "keys" || modFamily === "lines" || modFamily === "site" || modFamily === "remote";
-        intro.textContent = modFamily === "keys" || modFamily === "lines" || modFamily === "site" || modFamily === "remote"
+        intro.hidden = modFamily === "keys" || modFamily === "lines" || modFamily === "dali";
+        intro.textContent = modFamily === "keys" || modFamily === "lines"
           ? ""
             : modFamily === "pair"
               ? "1 · Прозвон: нажмите физ. кнопку — увидите имя и импульс связанных линий."
@@ -6885,8 +6904,12 @@
         ? "Встаньте у кнопки и нажмите её три раза."
         : modFamily === "relays"
           ? "Реле появятся после обновления щита."
+          : modFamily === "dali"
+            ? "Нет DALI на MQTT. Установите пакет и сканируйте шину на этой вкладке."
+            : modFamily === "mdm"
+              ? "MDM3 появится после обновления щита."
           : modFamily === "light"
-            ? "Включите линию и назовите то, что загорелось."
+            ? "Подсветка (LED) появится после обновления щита."
             : "Встаньте в комнате и нажмите кнопку три раза.";
       fillModuleVitrine(body, famRows, empty);
     }
@@ -6901,7 +6924,7 @@
       if (j && j.installed) {
         head.textContent = "wb-mqtt-dali " + (j.version || "") + (j.active ? " · работает" : " · пакет есть, сервис не active");
       } else {
-        head.textContent = "Пакет wb-mqtt-dali на щите. После установки сканируйте шину — светильники появятся на полке.";
+        head.textContent = "Пакет wb-mqtt-dali на щите. После скана адреса появятся ниже на этой же вкладке.";
       }
       if (log && j && (j.detail || j.error) && !j.installed) log.textContent = j.detail || j.error;
     }
@@ -7839,16 +7862,18 @@
         if (go === "poured" || go === "board") { openNav("board"); return; }
         if (go === "climate") { openNav("climate"); return; }
         if (go === "history") { openNav("history"); return; }
-        if (go === "keys" || go === "site") { openNav("site"); return; }
-        if (go === "lines" || go === "light") { openNav("site"); return; }
-        if (go === "remote") { openNav("remote"); return; }
+        if (go === "keys" || go === "site" || go === "remote" || go === "pnr") { openNav("pnr"); return; }
+        if (go === "lines") { openNav("lines"); return; }
+        if (go === "light") { openNav("light"); return; }
+        if (go === "dali") { openNav("dali"); return; }
+        if (go === "mdm") { openNav("mdm"); return; }
+        if (go === "relays") { openNav("relays"); return; }
         openNav("guide");
       });
     });
     const fromHash = location.hash.replace("#", "");
     const hashNav = fromHash === "intro" ? "guide"
-      : fromHash === "mark" || fromHash === "keys" || fromHash === "light" || fromHash === "lines" ? "site"
-      : fromHash === "remote" ? "remote"
+      : fromHash === "mark" || fromHash === "keys" || fromHash === "site" || fromHash === "remote" || fromHash === "lines" || fromHash === "pair" ? "pnr"
       : fromHash === "cards" ? "scenes"
       : fromHash === "poured" ? "board"
       : fromHash;

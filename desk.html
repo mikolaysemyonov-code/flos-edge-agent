@@ -74,30 +74,24 @@
         </li>
         <li>
           <span class="step">2</span>
-          <strong>Удалённая ПНР</strong>
-          <span>Модули шины. Откройте модуль и назовите канал: комната и что включает. Счётчики нажатий здесь не показываются. Запись на щит — одна, в конце.</span>
-          <button type="button" class="ghost" data-go="remote">Открыть</button>
+          <strong>Пусконаладка</strong>
+          <span>Одна вкладка: три нажатия на месте или имена с шины за столом. Клавиша, свет, прозвон. Слева отдельно подсветка, реле, DALI и MDM3.</span>
+          <button type="button" class="ghost" data-go="pnr">Открыть</button>
         </li>
         <li>
           <span class="step">3</span>
-          <strong>ПНР по месту</strong>
-          <span>Три нажатия, карточка клавиши, из неё скан света. Комнату записываете один раз и проверяете рукой.</span>
-          <button type="button" class="ghost" data-go="site">Открыть</button>
-        </li>
-        <li>
-          <span class="step">4</span>
           <strong>Климат</strong>
           <span>Тепло, вытяжка и пол. Датчик называется там, где он стоит.</span>
           <button type="button" class="ghost" data-go="climate">Открыть</button>
         </li>
         <li>
-          <span class="step">5</span>
+          <span class="step">4</span>
           <strong>Сценарии</strong>
           <span>Когда кнопки и свет уже названы, соберите «Я дома» и типовые карточки.</span>
           <button type="button" class="ghost" data-go="scenes">Открыть</button>
         </li>
         <li>
-          <span class="step">6</span>
+          <span class="step">5</span>
           <strong>Контроллер</strong>
           <span>Слева, внизу колонки. «На контроллере» — что уже записано. «История» — прошлые записи. Запись на щит — один раз, в конце.</span>
           <button type="button" class="ghost" data-go="board">Открыть</button>
@@ -107,6 +101,17 @@
 
     <section id="panel-mark" class="panel glass" hidden data-tab="mark">
       <p class="meta" id="markIntro">Назовите комнату и то, что в ней включается.</p>
+      <div id="daliScanDock" class="dali-mdali" hidden>
+        <p class="meta" id="daliBridgeHead">Пакет wb-mqtt-dali на щите. После скана адреса появятся ниже на этой же вкладке.</p>
+        <button id="daliBridgeInstall" class="ghost" type="button">Установить файлы конфигурации</button>
+        <p class="meta" id="daliBridgeLog"></p>
+        <div class="dali-scan-row">
+          <button class="ghost" type="button" data-dali-scan="1">Сканировать шину 1</button>
+          <button class="ghost" type="button" data-dali-scan="2">Сканировать шину 2</button>
+          <button class="ghost" type="button" data-dali-scan="3">Сканировать шину 3</button>
+        </div>
+        <p class="meta" id="daliScanLog"></p>
+      </div>
       <p id="benchReady" class="meta" hidden></p>
       <details class="more">
         <summary>Файлы</summary>
@@ -179,24 +184,14 @@
         <ul id="pouredMarks"></ul>
       </details>
     </section>
-    <section id="panel-dali" class="panel glass" hidden data-tab="dali">
-      <p class="meta" id="daliBridgeHead">Пакет wb-mqtt-dali на щите. После установки сканируйте шину — светильники появятся на полке.</p>
-      <div class="dali-mdali">
-        <button id="daliBridgeInstall" class="ghost" type="button">Установить файлы конфигурации</button>
-        <p class="meta" id="daliBridgeLog"></p>
-        <div class="dali-scan-row">
-          <button class="ghost" type="button" data-dali-scan="1">Сканировать шину 1</button>
-          <button class="ghost" type="button" data-dali-scan="2">Сканировать шину 2</button>
-          <button class="ghost" type="button" data-dali-scan="3">Сканировать шину 3</button>
-        </div>
-        <p class="meta" id="daliScanLog"></p>
-      </div>
-    </section>
   </main>
   <nav class="rail" role="tablist" aria-label="Пуск">
     <button class="tab" type="button" role="tab" data-nav="guide" data-tab="intro" aria-selected="true">Туториал</button>
-    <button class="tab" type="button" role="tab" data-nav="remote" data-tab="mark" aria-selected="false">Удалённая ПНР</button>
-    <button class="tab" type="button" role="tab" data-nav="site" data-tab="mark" aria-selected="false">ПНР по месту <span class="n" id="n-mark"></span></button>
+    <button class="tab" type="button" role="tab" data-nav="pnr" data-tab="mark" aria-selected="false">Пусконаладка <span class="n" id="n-mark"></span></button>
+    <button class="tab" type="button" role="tab" data-nav="light" data-tab="mark" aria-selected="false">Подсветка</button>
+    <button class="tab" type="button" role="tab" data-nav="relays" data-tab="mark" aria-selected="false">Реле</button>
+    <button class="tab" type="button" role="tab" data-nav="dali" data-tab="mark" aria-selected="false">DALI</button>
+    <button class="tab" type="button" role="tab" data-nav="mdm" data-tab="mark" aria-selected="false">MDM3</button>
     <button class="tab" type="button" role="tab" data-nav="climate" data-tab="cards" aria-selected="false">Климат</button>
     <button class="tab" type="button" role="tab" data-nav="scenes" data-tab="cards" aria-selected="false">Сценарии <span class="n" id="n-cards"></span></button>
     <div class="rail-tree" data-open="1">
@@ -204,7 +199,6 @@
       <div class="rail-sub">
         <button class="tab" type="button" role="tab" data-nav="history" data-tab="poured" aria-selected="false">История</button>
         <button class="tab" type="button" role="tab" data-nav="board" data-tab="poured" aria-selected="false">На контроллере <span class="n" id="n-poured"></span></button>
-        <button class="tab" type="button" role="tab" data-nav="dali" data-tab="dali" aria-selected="false">WB-MDALI</button>
       </div>
     </div>
   </nav>
