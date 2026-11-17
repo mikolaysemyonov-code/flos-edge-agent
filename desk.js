@@ -558,10 +558,7 @@
     function openNav(id) {
       let pnrFam = "";
       if (id === "remote" || id === "site" || id === "keys" || id === "pair") id = "pnr";
-      if (id === "lines") {
-        id = "pnr";
-        pnrFam = "lines";
-      }
+      if (id === "lines") id = "light";
       const spec = NAV[id] || NAV.guide;
       activeNav = NAV[id] ? id : "guide";
       if (spec.fam) {
@@ -587,7 +584,7 @@
         famBar.hidden = !isPnr();
         famBar.querySelectorAll("[data-fam]").forEach((btn) => {
           const fam = btn.dataset.fam;
-          btn.hidden = !/^(keys|lines|pair)$/.test(fam);
+          btn.hidden = !/^(keys|pair)$/.test(fam);
         });
       }
       setTab(spec.tab, true);
@@ -5780,61 +5777,14 @@
       });
       act.append(save, bind, skip);
       if (isPnr()) {
-        const find = document.createElement("button");
-        find.type = "button";
-        find.className = "ghost";
-        find.textContent = siteBeaconOn ? "Скрыть свет" : "Найти свет";
-        find.addEventListener("click", () => {
-          if (siteBeaconOn) {
-            siteBeaconOn = false;
-            stopLineBeacon();
-            renderMark();
-            return;
-          }
-          siteBeaconOn = true;
-          lineBeaconLoading = true;
-          renderMark();
-          fetchBeaconCandidates(true, "all").then((rows) => {
-            lineBeaconLoading = false;
-            lineBeaconCandidates = rows;
-            lineBeaconFamilyLoaded = "all";
-            renderMark();
-          });
-        });
         const zone = document.createElement("button");
         zone.type = "button";
         zone.className = "ghost";
         zone.textContent = "Записать зону";
         zone.addEventListener("click", () => pourZone(room.input.value.trim(), zone));
-        act.append(find, zone);
+        act.append(zone);
       }
       card.append(topic, room.wrap, code.wrap, pair, where.wrap, purpose, custom, lightHead, lightList);
-      if (isPnr() && siteBeaconOn) {
-        const dots = document.createElement("div");
-        dots.className = "line-beacon-dots";
-        if (lineBeaconLoading) {
-          const wait = document.createElement("p");
-          wait.className = "meta";
-          wait.textContent = "Смотрю каналы на щите.";
-          card.appendChild(wait);
-        }
-        (lineBeaconCandidates || []).forEach((ch) => {
-          const on = siteLoads.some((t) => t.deviceTopicKey === ch.deviceTopicKey && t.controlId === ch.controlId);
-          const circle = document.createElement("button");
-          circle.type = "button";
-          circle.className = "line-beacon-circle sm" + (on ? " on" : "");
-          circle.title = shelfLabel(ch.deviceTopicKey) + " · " + prettyControlId(ch.controlId);
-          circle.textContent = beaconDotLabel(ch.controlId);
-          circle.addEventListener("click", () => {
-            const i = siteLoads.findIndex((t) => t.deviceTopicKey === ch.deviceTopicKey && t.controlId === ch.controlId);
-            if (i >= 0) siteLoads.splice(i, 1);
-            else siteLoads.push({ deviceTopicKey: ch.deviceTopicKey, controlId: ch.controlId });
-            void pickBeaconChannel(ch);
-          });
-          dots.appendChild(circle);
-        });
-        card.appendChild(dots);
-      }
       if (isPnr()) {
         const pick = document.createElement("select");
         pick.className = "bind";
@@ -7907,7 +7857,7 @@
         if (go === "climate") { openNav("climate"); return; }
         if (go === "history") { openNav("history"); return; }
         if (go === "keys" || go === "site" || go === "remote" || go === "pnr") { openNav("pnr"); return; }
-        if (go === "lines") { openNav("lines"); return; }
+        if (go === "lines") { openNav("light"); return; }
         if (go === "light") { openNav("light"); return; }
         if (go === "dali") { openNav("dali"); return; }
         if (go === "mdm") { openNav("mdm"); return; }
@@ -7917,7 +7867,8 @@
     });
     const fromHash = location.hash.replace("#", "");
     const hashNav = fromHash === "intro" ? "guide"
-      : fromHash === "mark" || fromHash === "keys" || fromHash === "site" || fromHash === "remote" || fromHash === "lines" || fromHash === "pair" ? "pnr"
+      : fromHash === "mark" || fromHash === "keys" || fromHash === "site" || fromHash === "remote" || fromHash === "pair" ? "pnr"
+      : fromHash === "lines" ? "light"
       : fromHash === "cards" ? "scenes"
       : fromHash === "poured" ? "board"
       : fromHash;
