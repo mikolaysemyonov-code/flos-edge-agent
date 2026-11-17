@@ -77,7 +77,16 @@ export function firstDaliGatewayFromShelves(shelves) {
 export function pickDaliScanBusId(gateways, bus, fallbackGateway) {
   const n = Number(bus);
   if (!Number.isFinite(n) || n < 1) return "";
-  for (const g of Array.isArray(gateways) ? gateways : []) {
+  const want = String(fallbackGateway || "").trim();
+  const list = Array.isArray(gateways) ? gateways : [];
+  const hit = want
+    ? list.filter((g) => {
+        const gid = String(g?.id || g?.gatewayId || "").trim();
+        return gid && (gid === want || want.startsWith(`${gid}_`) || gid.startsWith(want));
+      })
+    : [];
+  const pool = hit.length ? hit : list;
+  for (const g of pool) {
     const gid = String(g?.id || g?.gatewayId || "").trim();
     const buses = Array.isArray(g?.buses) ? g.buses : [];
     for (const b of buses) {
@@ -87,6 +96,78 @@ export function pickDaliScanBusId(gateways, bus, fallbackGateway) {
     if (gid) return `${gid}_bus_${n}`;
   }
   return daliBusUid(fallbackGateway, n);
+}
+
+export function daliGatewaysFromShelves(shelves) {
+  const seen = new Set();
+  const out = [];
+  for (const s of Array.isArray(shelves) ? shelves : []) {
+    const k = String(s?.deviceTopicKey || "").trim();
+    if (!/dali/i.test(k) || seen.has(k)) continue;
+    seen.add(k);
+    out.push({ id: k, name: k });
+  }
+  return out;
+}
+
+export function countDaliBusAddresses(shelves, bus, gateway) {
+  const n = Number(bus);
+  const gw = String(gateway || "").trim();
+  let count = 0;
+  for (const s of Array.isArray(shelves) ? shelves : []) {
+    const key = String(s?.deviceTopicKey || "").trim();
+    if (gw && key !== gw) continue;
+    for (const ch of Array.isArray(s?.channels) ? s.channels : []) {
+      const p = parseDaliChannelId(ch?.controlId);
+      if (p?.kind === "addr" && p.bus === n) count += 1;
+    }
+  }
+  return count;
+}
+
+export function parseDaliGroupConfig(result, bus) {
+  const n = Number(bus);
+  const root = result && typeof result === "object" ? result : {};
+  const cfg = root.config && typeof root.config === "object" ? root.config : root;
+  const raw = cfg.devices || cfg.members || cfg.shortAddresses || root.devices || root.members || [];
+  const addrs = [];
+  for (const item of Array.isArray(raw) ? raw : []) {
+    if (typeof item === "number" && Number.isFinite(item)) {
+      addrs.push(item);
+      continue;
+    }
+    const id = String(item?.id || item?.deviceId || item || "").trim();
+    const mqtt = parseDaliMqttId(id);
+    if (mqtt) {
+      const p = parseDaliChannelId(mqtt.channelId);
+      if (p?.kind === "addr") addrs.push(p.addr);
+      continue;
+    }
+    const ch = parseDaliChannelId(id);
+    if (ch?.kind === "addr") addrs.push(ch.addr);
+    else {
+      const m = /(?:^|[^\d])(\d{1,3})$/.exec(id);
+      if (m && !/_group_/i.test(id)) addrs.push(Number(m[1]));
+    }
+  }
+  if (!Number.isFinite(n) || n < 1) return [];
+  return [...new Set(addrs)]
+    .filter((a) => Number.isInteger(a) && a >= 0 && a <= 63)
+    .map((a) => `bus_${n}_${a}`);
+}
+
+export function scanProgressDone(msg) {
+  if (msg == null) return false;
+  if (typeof msg === "string") {
+    const s = msg.toLowerCase();
+    return /complete|finished|done|success|idle/.test(s) || /100\s*%/.test(s);
+  }
+  const s = String(msg.status || msg.state || msg.stage || "").toLowerCase();
+  if (/(fail|error|cancel)/.test(s)) return true;
+  if (/(complete|finished|done|success|idle)/.test(s) && s !== "already_running") return true;
+  if (msg.finished === true || msg.done === true) return true;
+  const pct = Number(msg.progress ?? msg.percent);
+  return Number.isFinite(pct) && pct >= 100;
 }
 
 export function isDaliLevelControl(controlId) {

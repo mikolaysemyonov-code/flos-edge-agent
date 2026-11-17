@@ -93,8 +93,10 @@ export function isDeskBeaconLoad(controlId, deviceTopicKey) {
     return false;
   }
   if (/^Channel\s+\d+$/i.test(c) || /^CCT\d+$/i.test(c) || /^RGB\d+$/i.test(c)) return true;
+  if (/^bus_\d+_\d+$/i.test(c) && /dali/i.test(key)) return true;
   if (/^K\d+$/i.test(c)) {
-    if (/mwac|msw|mcm|mdi|map12|mao|mdm/i.test(key) && !/mr|relay|gpio|led|wu|wb-mr/i.test(key)) {
+    if (/mdm3/i.test(key)) return true;
+    if (/mwac|msw|mcm|mdi|map12|mao|mdm/i.test(key) && !/mr|relay|gpio|led|wu|wb-mr|mdm3/i.test(key)) {
       return false;
     }
     return true;

@@ -6069,6 +6069,8 @@
       return "";
     }
     function beaconDotLabel(controlId) {
+      const dali = parseDaliCh(controlId);
+      if (dali && dali.kind === "addr") return dali.bus + "/" + dali.addr;
       const ch = /^Channel\s+(\d+)$/i.exec(String(controlId || "").trim());
       return ch ? ch[1] : String(controlId || "");
     }
@@ -6927,6 +6929,40 @@
         head.textContent = "Пакет wb-mqtt-dali на щите. После скана адреса появятся ниже на этой же вкладке.";
       }
       if (log && j && (j.detail || j.error) && !j.installed) log.textContent = j.detail || j.error;
+      paintDaliGateways(j && j.gateways);
+    }
+    function paintDaliGateways(list) {
+      const sel = $("daliGateway");
+      const lab = $("daliGatewayLab");
+      if (!sel) return;
+      const rows = Array.isArray(list) ? list : [];
+      const prev = sel.value;
+      sel.replaceChildren();
+      rows.forEach((g) => {
+        const id = String(g && (g.id || g.gatewayId) || "").trim();
+        if (!id) return;
+        const opt = document.createElement("option");
+        opt.value = id;
+        opt.textContent = String(g.name || id);
+        sel.appendChild(opt);
+      });
+      if (!sel.options.length) {
+        const fromBus = [];
+        (lastShelvesRows || []).forEach((s) => {
+          const k = String(s && s.deviceTopicKey || "");
+          if (/dali/i.test(k) && fromBus.indexOf(k) < 0) fromBus.push(k);
+        });
+        fromBus.forEach((id) => {
+          const opt = document.createElement("option");
+          opt.value = id;
+          opt.textContent = id;
+          sel.appendChild(opt);
+        });
+      }
+      if (prev && [...sel.options].some((o) => o.value === prev)) sel.value = prev;
+      const many = sel.options.length > 1;
+      sel.hidden = !sel.options.length;
+      if (lab) lab.hidden = !many;
     }
     async function loadDaliMdali() {
       try {
@@ -6946,6 +6982,7 @@
         const r = await fetch("/runtime/desk-dali-bridge", { method: "POST" });
         const j = await r.json();
         paintDaliBridge(j);
+        if (j.ok && j.installed) await loadDaliMdali();
         if (log) {
           log.textContent = j.ok && j.installed
             ? ("Готово · " + (j.version || "wb-mqtt-dali") + (j.active ? "" : " · сервис ещё не active"))
@@ -6957,9 +6994,11 @@
         if (btn) btn.disabled = false;
       }
     }
-    function countDaliBusAddrs(bus) {
+    function countDaliBusAddrs(bus, gateway) {
       let n = 0;
+      const gw = String(gateway || "").trim();
       for (const s of lastShelvesRows || []) {
+        if (gw && s.deviceTopicKey !== gw) continue;
         for (const ch of s.channels || []) {
           const p = parseDaliCh(ch.controlId);
           if (p && p.kind === "addr" && p.bus === bus) n += 1;
@@ -6969,25 +7008,30 @@
     }
     async function scanDaliBusNow(bus) {
       const log = $("daliScanLog");
-      if (log) log.textContent = "Сканирую шину " + bus + "…";
+      const gw = $("daliGateway") && $("daliGateway").value;
+      if (log) log.textContent = "Сканирую шину " + bus + (gw ? " · " + gw : "") + "… жду конец скана";
       document.querySelectorAll("[data-dali-scan]").forEach((b) => { b.disabled = true; });
       try {
         const r = await fetch("/runtime/desk-dali-scan", {
           method: "POST",
           headers: { "content-type": "application/json" },
-          body: JSON.stringify({ bus: Number(bus) }),
+          body: JSON.stringify({ bus: Number(bus), gateway: gw || undefined }),
         });
         const j = await r.json();
         if (!j.ok) {
           if (log) log.textContent = j.detail || j.error || "Скан не пошёл";
           return;
         }
-        if (log) log.textContent = "Шина " + bus + " · " + (j.result && j.result.status ? j.result.status : "ок") + ". Обновляю полки…";
-        await scanNow();
-        const n = countDaliBusAddrs(Number(bus));
-        if (log) log.textContent = n
-          ? ("Шина " + bus + ": на полках " + n + " адресов")
-          : ("Шина " + bus + " отсканирована. Если адресов нет — подождите и нажмите Обновить.");
+        if (Array.isArray(j.shelves)) showShelves(j);
+        else await scanNow();
+        const n = Number(j.addrCount);
+        const found = Number.isFinite(n) ? n : countDaliBusAddrs(Number(bus), j.gateway || gw);
+        const groups = Array.isArray(j.groups) ? j.groups.length : 0;
+        if (log) {
+          log.textContent = found
+            ? ("Шина " + bus + ": " + found + " адресов" + (groups ? " · групп " + groups : "") + (j.progressTimedOut ? " · скан ещё шёл, обновите полки" : ""))
+            : ("Шина " + bus + " отсканирована. Адресов пока нет — Обновить.");
+        }
       } catch (e) {
         if (log) log.textContent = String(e.message || e);
       } finally {

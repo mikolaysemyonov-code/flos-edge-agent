@@ -3,7 +3,13 @@
  */
 import { execSync } from "node:child_process";
 import mqtt from "mqtt";
-import { daliBusUid, parseDaliChannelId } from "./runtime-desk-dali.mjs";
+import {
+  daliBusUid,
+  daliMqttFromChannel,
+  parseDaliChannelId,
+  parseDaliGroupConfig,
+  scanProgressDone,
+} from "./runtime-desk-dali.mjs";
 
 function brokerUrl() {
   const host = (
@@ -190,6 +196,56 @@ export async function listDaliGateways() {
   }
 }
 
+export async function waitMqttJson(topic, timeoutMs, isDone) {
+  const tpc = String(topic || "").trim();
+  if (!tpc) return { done: false };
+  const client = mqtt.connect(brokerUrl(), {
+    connectTimeout: 4_000,
+    reconnectPeriod: 0,
+    protocolVersion: 4,
+    clean: true,
+  });
+  try {
+    await new Promise((resolve, reject) => {
+      const t = setTimeout(() => reject(new Error("mqtt_connect_timeout")), 5_000);
+      client.on("error", (err) => {
+        clearTimeout(t);
+        reject(err instanceof Error ? err : new Error(String(err)));
+      });
+      client.on("connect", () => {
+        clearTimeout(t);
+        resolve();
+      });
+    });
+    return await new Promise((resolve) => {
+      const t = setTimeout(() => resolve({ done: false, timedOut: true }), timeoutMs);
+      const finish = (msg) => {
+        clearTimeout(t);
+        resolve({ done: true, msg });
+      };
+      client.subscribe(tpc, { qos: 1 }, () => {});
+      client.on("message", (topicGot, buf) => {
+        if (topicGot !== tpc && topicGot !== tpc.replace(/^\//, "") && `/${topicGot}` !== tpc) return;
+        let msg = String(buf || "");
+        try {
+          msg = JSON.parse(msg);
+        } catch {
+          /* plain text progress */
+        }
+        if (typeof isDone === "function" ? isDone(msg) : scanProgressDone(msg)) finish(msg);
+      });
+    });
+  } catch (e) {
+    return { done: false, error: e?.message || "progress" };
+  } finally {
+    try {
+      client.end(true);
+    } catch {
+      /* ignore */
+    }
+  }
+}
+
 export async function scanDaliBus(busId) {
   const bus = String(busId || "").trim();
   if (!bus) return { ok: false, error: "need_bus" };
@@ -198,9 +254,30 @@ export async function scanDaliBus(busId) {
     if (payload?.error) {
       return { ok: false, error: payload.error?.message || "scan_bus", busId: bus };
     }
-    return { ok: true, result: payload?.result || payload, busId: bus };
+    const result = payload?.result || payload;
+    const progressTopic = String(result?.progressTopic || "").trim();
+    const progress = progressTopic ? await waitMqttJson(progressTopic, 90_000, scanProgressDone) : { done: true };
+    return {
+      ok: true,
+      result,
+      busId: bus,
+      progress: progress.msg || null,
+      progressTimedOut: progress.timedOut === true,
+    };
   } catch (e) {
     return { ok: false, error: e?.message || "scan_bus", busId: bus };
+  }
+}
+
+export async function readDaliGroupMembers(gateway, bus, group) {
+  const groupId = daliMqttFromChannel(gateway, `bus_${bus}_g${group}`);
+  if (!groupId) return { ok: false, members: [] };
+  try {
+    const payload = await daliMqttRpc("Editor/GetGroup", { groupId }, 8_000);
+    if (payload?.error) return { ok: false, members: [], error: payload.error?.message || "get_group" };
+    return { ok: true, members: parseDaliGroupConfig(payload?.result, bus), groupId };
+  } catch (e) {
+    return { ok: false, members: [], error: e?.message || "get_group" };
   }
 }
 

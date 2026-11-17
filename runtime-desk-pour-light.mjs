@@ -101,6 +101,8 @@ function autoChangeOf(channelPath) {
   const p = String(channelPath || "").trim();
   if (!p) return "";
   if (/\/wanted_level$/i.test(p)) return "";
+  const mqtt = p.replace(/\/[^/]+$/, "");
+  if (parseDaliMqttId(mqtt)) return "";
   if (/\s+Auto-Change$/i.test(p)) return p;
   if (/\s+Brightness$/i.test(p)) return p.replace(/\s+Brightness$/i, " Auto-Change");
   if (/\/(Channel \d+|CCT\d+)$/i.test(p)) return p + " Auto-Change";

@@ -39,13 +39,20 @@ import {
   deskInputClosed,
   isDeskInputControl,
 } from "./runtime-desk-actuate.mjs";
-import { firstDaliGatewayFromShelves, parseDaliChannelId, pickDaliScanBusId } from "./runtime-desk-dali.mjs";
+import {
+  countDaliBusAddresses,
+  daliGatewaysFromShelves,
+  firstDaliGatewayFromShelves,
+  parseDaliChannelId,
+  pickDaliScanBusId,
+} from "./runtime-desk-dali.mjs";
 import {
   applyDaliGroupMembers,
   daliBridgeStatus,
   installDaliBridge,
   listDaliGateways,
   memberAddrsOf,
+  readDaliGroupMembers,
   scanDaliBus,
 } from "./runtime-desk-dali-rpc.mjs";
 import {
@@ -920,7 +927,19 @@ export async function handleRuntimeDeskDaliGroup(req, res) {
 export async function handleRuntimeDeskDaliBridge(req, res) {
   const method = (req.method ?? "GET").toUpperCase();
   if (method === "GET") {
-    jsonEnd(res, 200, daliBridgeStatus());
+    const host = daliBridgeStatus();
+    const listed = await listDaliGateways();
+    const fromMqtt = Array.isArray(listed.gateways) ? listed.gateways : [];
+    const fromShelves = daliGatewaysFromShelves(readLastDeskShelves().shelves);
+    const seen = new Set();
+    const gateways = [];
+    for (const g of [...fromMqtt, ...fromShelves]) {
+      const id = String(g?.id || g?.gatewayId || "").trim();
+      if (!id || seen.has(id)) continue;
+      seen.add(id);
+      gateways.push({ id, name: String(g?.name || id), buses: Array.isArray(g?.buses) ? g.buses : undefined });
+    }
+    jsonEnd(res, 200, { ...host, gateways, listError: listed.ok ? undefined : listed.error });
     return;
   }
   if (method !== "POST") {
@@ -975,5 +994,55 @@ export async function handleRuntimeDeskDaliScan(req, res) {
     return;
   }
   const out = await scanDaliBus(busId);
-  jsonEnd(res, out.ok ? 200 : 409, { ...out, gateway: gateway || busId.replace(/_bus_\d+$/, ""), bus, busId });
+  const gw = gateway || busId.replace(/_bus_\d+$/, "");
+  if (!out.ok) {
+    jsonEnd(res, 409, { ...out, gateway: gw, bus, busId });
+    return;
+  }
+  let shelves = readLastDeskShelves().shelves || [];
+  if (typeof mqttScanHandler === "function") {
+    try {
+      const snap = await mqttScanHandler({ scanMs: 10_000 });
+      if (snap?.ok && Array.isArray(snap.snapshot?.entries)) {
+        const grouped = groupDeskShelves(snap.snapshot.entries);
+        const prev = readLastDeskShelves();
+        const merged = applyDeskScanShelves(prev.shelves || [], grouped, { partial: false, ready: true });
+        shelves = withPouredHints(applyMarksToShelves(merged));
+        writeLastDeskShelves(
+          shelves.map(({ name: _n, room: _r, channels, ...row }) => ({
+            ...row,
+            channels: Array.isArray(channels)
+              ? channels.map(({ name: _cn, room: _cr, hints: _h, cards: _c, binds: _b, buttons: _bt, loads: _l, ...ch }) => ch)
+              : [],
+          })),
+          prev.brokerLabel,
+        );
+      }
+    } catch {
+      /* скан шины уже прошёл */
+    }
+  }
+  const groups = [];
+  const shelf = (shelves || []).find((s) => s.deviceTopicKey === gw);
+  for (const ch of shelf?.channels || []) {
+    const parsedG = parseDaliChannelId(ch.controlId);
+    if (parsedG?.kind !== "group" || parsedG.bus !== bus) continue;
+    const got = await readDaliGroupMembers(gw, parsedG.bus, parsedG.group);
+    if (got.ok) {
+      upsertDeskShelfMark({ deviceTopicKey: gw, controlId: parsedG.channelId, members: got.members });
+      groups.push({ controlId: parsedG.channelId, members: got.members });
+    }
+  }
+  shelves = withPouredHints(applyMarksToShelves(readLastDeskShelves().shelves || shelves));
+  const addrCount = countDaliBusAddresses(shelves, bus, gw);
+  jsonEnd(res, 200, {
+    ...out,
+    ok: true,
+    gateway: gw,
+    bus,
+    busId,
+    addrCount,
+    groups,
+    shelves,
+  });
 }
