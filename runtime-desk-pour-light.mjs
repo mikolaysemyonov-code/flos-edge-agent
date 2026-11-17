@@ -2,9 +2,10 @@
  * L1 свет со стола → defineRule (motion/reed/night + dim Auto-Change).
  * Параметры: level (%), offDelay (сек; 0 = гасить сразу при уходе).
  */
-import { cellId } from "./runtime-desk-pour-core.mjs";
+import { cellId, physPath } from "./runtime-desk-pour-core.mjs";
 import { deskButtonCounter } from "./runtime-desk-marking.mjs";
 import { liveDeskDeviceKey } from "./runtime-desk-rules-marks.mjs";
+import { parseDaliMqttId } from "./runtime-desk-dali.mjs";
 
 const LIGHT = new Set([
   "light_dim_hold_mcm",
@@ -24,7 +25,7 @@ function esc(s) {
 
 function pathOf(c) {
   if (!c?.deviceTopicKey || !c?.controlId) return "";
-  return liveDeskDeviceKey(c.deviceTopicKey) + "/" + String(c.controlId).trim();
+  return physPath(c.deviceTopicKey, c.controlId);
 }
 
 function num(params, key, fallback) {
@@ -76,6 +77,13 @@ export function wbActuatorSetLines(path, pct, ruleId, priority = 50) {
     if (n <= 0) return [virtSet(cell, "false")];
     return [virtSet(cell + "_bri", String(n)), virtSet(cell, "true")];
   }
+  const mqtt = p.replace(/\/wanted_level$/i, "");
+  const dali = parseDaliMqttId(mqtt);
+  if (dali && /\/wanted_level$/i.test(p)) {
+    const cell = cellId(dali.gateway, dali.channelId);
+    if (n <= 0) return [virtSet(cell, "false")];
+    return [virtSet(cell + "_bri", String(n)), virtSet(cell, "true")];
+  }
   if (isSwitchPath(p)) {
     return [`wbActuatorSet(${topic}, ${n <= 0 ? 0 : 1}, ${id}, ${pri});`];
   }
@@ -92,6 +100,7 @@ function setLines(paths, pct, ruleId, priority, indent) {
 function autoChangeOf(channelPath) {
   const p = String(channelPath || "").trim();
   if (!p) return "";
+  if (/\/wanted_level$/i.test(p)) return "";
   if (/\s+Auto-Change$/i.test(p)) return p;
   if (/\s+Brightness$/i.test(p)) return p.replace(/\s+Brightness$/i, " Auto-Change");
   if (/\/(Channel \d+|CCT\d+)$/i.test(p)) return p + " Auto-Change";

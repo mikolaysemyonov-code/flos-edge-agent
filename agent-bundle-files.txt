@@ -7,6 +7,7 @@ reactor-edge-agent.mjs
 runtime-control-plane-http.mjs
 runtime-desk-http.mjs
 runtime-desk-shelves.mjs
+runtime-desk-dali.mjs
 runtime-desk-marking.mjs
 runtime-desk-solutions.mjs
 runtime-desk-rules-marks.mjs

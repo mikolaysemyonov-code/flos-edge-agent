@@ -3,6 +3,7 @@
  * Новые ячейки не плодим, если физика уже в 00_core — иначе дубли в UI.
  */
 import { liveDeskDeviceKey } from "./runtime-desk-rules-marks.mjs";
+import { deskPhysPath, isDaliChannelId } from "./runtime-desk-dali.mjs";
 
 function esc(s) {
   return JSON.stringify(String(s ?? ""));
@@ -21,7 +22,9 @@ export function cellId(deviceTopicKey, controlId) {
 }
 
 export function physPath(deviceTopicKey, controlId) {
-  return liveDeskDeviceKey(deviceTopicKey) + "/" + String(controlId || "").trim();
+  const key = liveDeskDeviceKey(deviceTopicKey);
+  if (isDaliChannelId(controlId)) return deskPhysPath(key, controlId);
+  return key + "/" + String(controlId || "").trim();
 }
 
 function isDriveClose(controlId) {
@@ -55,6 +58,12 @@ function applyNameTitles(src, id, name) {
     src = bri.src;
     if (bri.changed) changed = true;
   }
+  const tempId = id + "_temp";
+  if (src.includes(`"${tempId}"`) || src.includes(`'${tempId}'`)) {
+    const temp = patchCellTitle(src, tempId, name + " · температура");
+    src = temp.src;
+    if (temp.changed) changed = true;
+  }
   return { src, changed };
 }
 
@@ -79,11 +88,30 @@ function cellIdForPhysPath(src, deviceTopicKey, controlId) {
   return m ? m[1] : "";
 }
 
-function emitLoad(deviceTopicKey, controlId, name) {
+function emitLoad(deviceTopicKey, controlId, name, extra = {}) {
   const id = cellId(deviceTopicKey, controlId);
   const dev = liveDeskDeviceKey(deviceTopicKey);
   const sw = String(controlId || "").trim();
   const cellLines = [];
+  if (isDaliChannelId(controlId)) {
+    const briId = id + "_bri";
+    const mqtt = deskPhysPath(dev, controlId).split("/")[0];
+    cellLines.push(
+      `    ${esc(id)}: { type: "switch", title: ${esc(name)}, value: false },`,
+      `    ${esc(briId)}: { type: "range", title: ${esc(name + " · яркость")}, value: 100, max: 100, min: 0 },`,
+    );
+    const row = { kind: "dimmer", vSw: id, vBri: briId, pDev: mqtt, pSw: "wanted_level", pBri: "wanted_level" };
+    const tempCtl = String(extra?.tempControl || "").trim();
+    if (tempCtl) {
+      const tempId = id + "_temp";
+      cellLines.push(
+        `    ${esc(tempId)}: { type: "range", title: ${esc(name + " · температура")}, value: 370, max: 1000, min: 153 },`,
+      );
+      row.vTemp = tempId;
+      row.pTemp = tempCtl;
+    }
+    return { id, cellLines, row };
+  }
   if (isLedChannel(controlId)) {
     const briId = id + "_bri";
     cellLines.push(
@@ -103,7 +131,7 @@ function emitLoad(deviceTopicKey, controlId, name) {
 function removeDeskRuleBlocks(text, id) {
   const idEsc = String(id).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   const blockRe = new RegExp(
-    `defineRule\\s*\\(\\s*['"]fl_rt_(?:cmd|mir)_${idEsc}['"][\\s\\S]*?\\n\\}\\);\\n?`,
+        `defineRule\\s*\\(\\s*['"]fl_rt_(?:cmd_|mir_|temp_|tmir_)${idEsc}['"][\\s\\S]*?\\n\\}\\);\\n?`,
     "g",
   );
   return String(text || "").replace(blockRe, "");
@@ -128,6 +156,8 @@ function parseRows(arraySrc, kind) {
     if (kind === "dimmer") {
       row.vBri = readJsonField(m[0], "vBri");
       row.pBri = readJsonField(m[0], "pBri");
+      row.vTemp = readJsonField(m[0], "vTemp");
+      row.pTemp = readJsonField(m[0], "pTemp");
     }
     rows.push(row);
   }
@@ -144,7 +174,9 @@ function parseMap(src) {
 
 function renderRow(row) {
   if (row.kind === "dimmer") {
-    return `  { vSw: ${esc(row.vSw)}, vBri: ${esc(row.vBri)}, pDev: ${esc(row.pDev)}, pSw: ${esc(row.pSw)}, pBri: ${esc(row.pBri)} },`;
+    const temp =
+      row.vTemp && row.pTemp ? `, vTemp: ${esc(row.vTemp)}, pTemp: ${esc(row.pTemp)}` : "";
+    return `  { vSw: ${esc(row.vSw)}, vBri: ${esc(row.vBri)}, pDev: ${esc(row.pDev)}, pSw: ${esc(row.pSw)}, pBri: ${esc(row.pBri)}${temp} },`;
   }
   return `  { vSw: ${esc(row.vSw)}, pDev: ${esc(row.pDev)}, pSw: ${esc(row.pSw)} },`;
 }
@@ -175,10 +207,11 @@ const FL_RT_ENGINE = [
   '          dev["form_logic_os"][cfg.vSw] = true;',
   "          setTimeout(function () { flRtEcho[key] = 0; }, 160);",
   "        }",
+  "        var levelOnly = cfg.pSw === cfg.pBri;",
   "        var wantSw = on ? 1 : 0;",
   "        var wantBr = on ? (bri > 0 ? bri : 100) : 0;",
-  '        var curSw = wbIsOn(readValue(cfg.pDev + "/" + cfg.pSw)) ? 1 : 0;',
   '        var curBr = Number(readValue(cfg.pDev + "/" + cfg.pBri)); if (isNaN(curBr)) curBr = 0;',
+  "        var curSw = levelOnly ? (curBr > 0 ? 1 : 0) : (wbIsOn(readValue(cfg.pDev + \"/\" + cfg.pSw)) ? 1 : 0);",
   "        if (curSw === wantSw && curBr === wantBr) return;",
   "        flRtEcho[key] = 1;",
   "        if (on) {",
@@ -190,7 +223,7 @@ const FL_RT_ENGINE = [
   "            flRtLastBri[key] = bri;",
   "          }",
   '          wbActuatorSet(cfg.pDev + "/" + cfg.pBri, wantBr, "fl_rt_cmd_" + key, 50);',
-  '          wbActuatorSet(cfg.pDev + "/" + cfg.pSw, true, "fl_rt_cmd_" + key, 50);',
+  "          if (!levelOnly) wbActuatorSet(cfg.pDev + \"/\" + cfg.pSw, true, \"fl_rt_cmd_\" + key, 50);",
   "        } else {",
   "          if (bri > 0) {",
   "            flRtLastBri[key] = bri;",
@@ -198,7 +231,7 @@ const FL_RT_ENGINE = [
   "            flRtLastBri[key] = curBr;",
   "          }",
   '          wbActuatorSet(cfg.pDev + "/" + cfg.pBri, 0, "fl_rt_cmd_" + key, 50);',
-  '          wbActuatorSet(cfg.pDev + "/" + cfg.pSw, false, "fl_rt_cmd_" + key, 50);',
+  "          if (!levelOnly) wbActuatorSet(cfg.pDev + \"/\" + cfg.pSw, false, \"fl_rt_cmd_\" + key, 50);",
   "        }",
   "        setTimeout(function () { flRtEcho[key] = 0; }, 160);",
   '      } catch (e) { if (typeof wbRuleGuardCatch === "function") wbRuleGuardCatch("fl_rt_cmd_" + key, e); }',
@@ -220,6 +253,39 @@ const FL_RT_ENGINE = [
   '      } catch (e) { if (typeof wbRuleGuardCatch === "function") wbRuleGuardCatch("fl_rt_mir_" + key, e); }',
   "    }",
   "  });",
+  "  if (cfg.vTemp && cfg.pTemp) {",
+  '    defineRule("fl_rt_temp_" + key, {',
+  '      whenChanged: "form_logic_os/" + cfg.vTemp,',
+  "      then: function () {",
+  "        try {",
+  "          if (flRtEcho[key]) return;",
+  '          var t = Number(readValue("form_logic_os/" + cfg.vTemp));',
+  "          if (isNaN(t)) return;",
+  '          var cur = Number(readValue(cfg.pDev + "/" + cfg.pTemp));',
+  "          if (!isNaN(cur) && cur === t) return;",
+  "          flRtEcho[key] = 1;",
+  '          wbActuatorSet(cfg.pDev + "/" + cfg.pTemp, t, "fl_rt_temp_" + key, 50);',
+  "          setTimeout(function () { flRtEcho[key] = 0; }, 160);",
+  '        } catch (e) { if (typeof wbRuleGuardCatch === "function") wbRuleGuardCatch("fl_rt_temp_" + key, e); }',
+  "      }",
+  "    });",
+  '    defineRule("fl_rt_tmir_" + key, {',
+  "      whenChanged: cfg.pDev + \"/\" + cfg.pTemp,",
+  "      then: function () {",
+  "        try {",
+  "          if (flRtEcho[key]) return;",
+  '          var t = Number(readValue(cfg.pDev + "/" + cfg.pTemp));',
+  "          if (isNaN(t)) return;",
+  '          var cur = Number(readValue("form_logic_os/" + cfg.vTemp));',
+  "          if (isNaN(cur) || cur !== t) {",
+  "            flRtEcho[key] = 1;",
+  '            dev["form_logic_os"][cfg.vTemp] = t;',
+  "            setTimeout(function () { flRtEcho[key] = 0; }, 160);",
+  "          }",
+  '        } catch (e) { if (typeof wbRuleGuardCatch === "function") wbRuleGuardCatch("fl_rt_tmir_" + key, e); }',
+  "      }",
+  "    });",
+  "  }",
   "});",
   "relaysConfig.forEach(function (cfg) {",
   "  var key = cfg.vSw;",
@@ -292,7 +358,7 @@ function pathQuotedIn(src, path) {
 function removeCellAndRules(text, id) {
   const idEsc = id.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   const blockRe = new RegExp(
-    `defineRule\\s*\\(\\s*['"]fl_rt_(?:cmd|mir)_${idEsc}['"][\\s\\S]*?(?=defineRule\\s*\\(|$)`,
+        `defineRule\\s*\\(\\s*['"]fl_rt_(?:cmd_|mir_|temp_|tmir_)${idEsc}['"][\\s\\S]*?(?=defineRule\\s*\\(|$)`,
     "g",
   );
   let next = text.replace(blockRe, "");
@@ -300,7 +366,10 @@ function removeCellAndRules(text, id) {
   const briRe = new RegExp(
     `\\s*${esc(id + "_bri").replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\s*:\\s*\\{[^}]*\\},?\\n?`,
   );
-  next = next.replace(cellRe, "\n").replace(briRe, "\n");
+  const tempRe = new RegExp(
+    `\\s*${esc(id + "_temp").replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\s*:\\s*\\{[^}]*\\},?\\n?`,
+  );
+  next = next.replace(cellRe, "\n").replace(briRe, "\n").replace(tempRe, "\n");
   return next;
 }
 
@@ -330,7 +399,7 @@ export function stripDuplicateDeskBridges(src) {
   for (const id of deskCmd) {
     const idEsc = id.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
     const blockRe = new RegExp(
-      `defineRule\\s*\\(\\s*['"]fl_rt_(?:cmd|mir)_${idEsc}['"][\\s\\S]*?(?=defineRule\\s*\\(|$)`,
+        `defineRule\\s*\\(\\s*['"]fl_rt_(?:cmd_|mir_|temp_|tmir_)${idEsc}['"][\\s\\S]*?(?=defineRule\\s*\\(|$)`,
       "g",
     );
     const blocks = [...text.matchAll(blockRe)].map((m) => m[0]);
@@ -460,7 +529,7 @@ export function mergeDeskNamesIntoCore(coreSrc, named) {
     const id = cellId(row.deviceTopicKey, row.controlId);
     if (seen.has(id)) continue;
     seen.add(id);
-    const load = emitLoad(row.deviceTopicKey, row.controlId, name);
+    const load = emitLoad(row.deviceTopicKey, row.controlId, name, row);
     if (src.includes(`"${id}"`) || src.includes(`'${id}'`)) {
       const next = applyNameTitles(src, id, name);
       src = next.src;
@@ -571,7 +640,7 @@ const FL_RT_HELPERS = [
   "    var switchLike = false;",
   '    if (/^K\\d+$/i.test(controlId)) switchLike = true;',
   '    else if (/^wb-(led|ampled)/i.test(deviceId) && /^Channel \\d+$/i.test(controlId)) switchLike = true;',
-  '    else if (deviceId === "form_logic_os" && !/_bri$/i.test(controlId)) switchLike = true;',
+  '    else if (deviceId === "form_logic_os" && !/_bri$|_temp$/i.test(controlId)) switchLike = true;',
   "    if (switchLike) {",
   "      if (wbIsOn(cur) === wbIsOn(value)) return;",
   "      dev[deviceId][controlId] = wbIsOn(value);",

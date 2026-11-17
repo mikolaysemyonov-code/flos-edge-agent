@@ -282,7 +282,7 @@ export function exclusiveDeskCards(ids) {
 
 export function isLoadControl(controlId) {
   const c = String(controlId ?? "").trim();
-  return /^Channel \d+$/i.test(c) || /^K\d+$/i.test(c) || isDeskDriveControl(c);
+  return /^Channel \d+$/i.test(c) || /^K\d+$/i.test(c) || isDeskDriveControl(c) || /^bus_\d+_(?:g\d+|\d+)$/i.test(c);
 }
 
 /** «Спальня · линия 1» + «Спальня · линия 2» → «Спальня · линия 1 · 2». */

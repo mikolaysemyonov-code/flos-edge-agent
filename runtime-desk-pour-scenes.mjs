@@ -3,6 +3,7 @@
  */
 import { deskButtonCounter, deskEmitRule } from "./runtime-desk-marking.mjs";
 import { wbActuatorSetLines } from "./runtime-desk-pour-light.mjs";
+import { physPath } from "./runtime-desk-pour-core.mjs";
 import { liveDeskDeviceKey } from "./runtime-desk-rules-marks.mjs";
 
 /** Уровень света 0…100; реле трактует как on/off. */
@@ -43,7 +44,7 @@ function esc(s) {
 
 function pathOf(c) {
   if (!c?.deviceTopicKey || !c?.controlId) return "";
-  return liveDeskDeviceKey(c.deviceTopicKey) + "/" + String(c.controlId).trim();
+  return physPath(c.deviceTopicKey, c.controlId);
 }
 
 function triggerWhen(trig) {

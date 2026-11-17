@@ -2,6 +2,7 @@
  * Полки стола: один модуль DIN = одна строка. Каналы — силовые выходы, не всё MQTT.
  */
 import { isMarkShieldDiscoverableDeviceKey } from "./lib/mark-shield-discoverable-device.mjs";
+import { isDaliChannelId, isDaliLevelControl, isDaliTempControl, parseDaliMqttId } from "./runtime-desk-dali.mjs";
 
 const SKU = {
   mr6cu: "WB-MR6CU",
@@ -111,6 +112,7 @@ function slavedKByDrives(controlId, driveIds) {
 export function isDeskShelfChannelControl(controlId, deviceTopicKey) {
   const c = String(controlId ?? "").trim();
   if (!c) return false;
+  if (isDaliChannelId(c)) return true;
   if (/brightness|temperature|palette|error|voltage|current|power|frequency|energy|status|offline|dapc|bulk_send|wanted_level|go_to_scene|actual_level/i.test(c)) {
     return false;
   }
@@ -202,6 +204,8 @@ function ruShiny(n) {
 function controlOrder(id) {
   const d = /^(?:Curtain|Actuator)\s+(\d+)\s+(Open|Close)$/i.exec(String(id ?? ""));
   if (d) return Number(d[1]) * 2 - (d[2].toLowerCase() === "open" ? 1.5 : 1.4);
+  const bus = /^bus_(\d+)_(?:g)?(\d+)$/i.exec(String(id ?? ""));
+  if (bus) return Number(bus[1]) * 1000 + Number(bus[2]);
   return Number((/(\d+)\s*$/.exec(String(id ?? "")) || [])[1] || 0);
 }
 
@@ -254,6 +258,7 @@ export function groupDeskShelves(entries) {
         buses: new Set(),
         type: parsed?.type ?? "",
         slave: parsed?.slave ?? 0,
+        tempBy: new Map(),
       };
       map.set(key, row);
     }
@@ -261,6 +266,19 @@ export function groupDeskShelves(entries) {
     if (bus) row.buses.add(bus);
     if (/\/meta\//i.test(String(entry?.topicPath ?? ""))) continue;
     const cid = controlIdOf(entry);
+    const dali = parseDaliMqttId(raw);
+    if (dali && isDaliLevelControl(cid)) {
+      if (!row.controls.has(dali.channelId)) row.controls.add(dali.channelId);
+      if (entry && Object.prototype.hasOwnProperty.call(entry, "lastValue")) {
+        row.values.set(dali.channelId, entry.lastValue);
+      }
+      continue;
+    }
+    if (dali && isDaliTempControl(cid)) {
+      const prev = row.tempBy.get(dali.channelId);
+      if (!prev || /^(wanted_|set_)/i.test(cid)) row.tempBy.set(dali.channelId, cid);
+      continue;
+    }
     if (isDeskShelfChannelControl(cid, raw) && !row.controls.has(cid)) {
       row.controls.add(cid);
     }
@@ -281,12 +299,17 @@ export function groupDeskShelves(entries) {
     row.channelCount = row.controls.size;
   }
   return [...map.values()]
-    .map(({ controls, values, buses, type: _t, slave: _s, ...rest }) => ({
+    .map(({ controls, values, buses, type: _t, slave: _s, tempBy, ...rest }) => ({
       ...rest,
       hint: buses.size > 0 ? ruShiny(buses.size) : null,
       channels: [...controls].sort(sortControlIds).map((controlId) => {
         const ch = { controlId };
         if (values.has(controlId)) ch.lastValue = values.get(controlId);
+        const tempControl = tempBy instanceof Map ? tempBy.get(controlId) : "";
+        if (tempControl) {
+          ch.hasTemp = true;
+          ch.tempControl = tempControl;
+        }
         return ch;
       }),
     }))

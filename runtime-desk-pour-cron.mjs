@@ -3,7 +3,7 @@
  * Время контроллера (Wirenboard); сумерки/рассвет — фиксированные часы, не астрономия.
  */
 import { wbActuatorSetLines } from "./runtime-desk-pour-light.mjs";
-import { liveDeskDeviceKey } from "./runtime-desk-rules-marks.mjs";
+import { physPath } from "./runtime-desk-pour-core.mjs";
 
 const CRON_ON = new Set([
   "cron_presence_on",
@@ -31,7 +31,7 @@ function esc(s) {
 
 function pathOf(c) {
   if (!c?.deviceTopicKey || !c?.controlId) return "";
-  return liveDeskDeviceKey(c.deviceTopicKey) + "/" + String(c.controlId).trim();
+  return physPath(c.deviceTopicKey, c.controlId);
 }
 
 function num(params, key, fallback) {

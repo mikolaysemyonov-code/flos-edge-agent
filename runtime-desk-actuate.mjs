@@ -3,6 +3,7 @@
  * Локальный MQTT на щите — без облака.
  */
 import mqtt from "mqtt";
+import { deskPhysPath, isDaliChannelId } from "./runtime-desk-dali.mjs";
 
 function brokerUrl() {
   const host = (
@@ -30,12 +31,15 @@ function cleanControl(raw) {
   return s;
 }
 
-/** Реле / LED Channel — switch 0/1; DALI level — 0…255. */
+/** Реле / LED Channel — switch 0/1; DALI wanted_level — 0…100%. */
 export function deskActuatePayloads(deviceTopicKey, controlId) {
   const key = String(deviceTopicKey || "").toLowerCase();
   const cid = String(controlId || "");
+  if (isDaliChannelId(cid) || /wanted_level/i.test(cid)) {
+    return { on: "100", off: "0", pulseMs: 2200, kind: "dali" };
+  }
   if (/dali|mdali|mao/i.test(key) || /actual_level|brightness/i.test(cid)) {
-    return { on: "255", off: "0", pulseMs: 2200, kind: "level" };
+    return { on: "100", off: "0", pulseMs: 2200, kind: "level" };
   }
   // WB-LED часто с плавным Auto-Change — короткий pulse не успевает разгореться.
   if (/led|ampled/i.test(key) || /^Channel\s+\d+/i.test(cid) || /^CCT/i.test(cid) || /^RGB/i.test(cid)) {
@@ -47,8 +51,15 @@ export function deskActuatePayloads(deviceTopicKey, controlId) {
 /** Канал без яркости зажигает лампу на 1%. Яркость пишем до ключа и ещё раз после. */
 export function deskActuateWrites(deviceTopicKey, controlId, desired) {
   const pay = deskActuatePayloads(deviceTopicKey, controlId);
-  const base = `/devices/${deviceTopicKey}/controls/${controlId}`;
   const off = desired === "off";
+  if (isDaliChannelId(controlId) || pay.kind === "dali") {
+    const phys = deskPhysPath(deviceTopicKey, controlId);
+    const slash = phys.indexOf("/");
+    const dev = slash > 0 ? phys.slice(0, slash) : deviceTopicKey;
+    const ctl = slash > 0 ? phys.slice(slash + 1) : "wanted_level";
+    return [{ topic: `/devices/${dev}/controls/${ctl}`, payload: off ? pay.off : pay.on }];
+  }
+  const base = `/devices/${deviceTopicKey}/controls/${controlId}`;
   const writes = [];
   const level = { topic: `${base} Brightness`, payload: off ? "0" : pay.brightness || "100" };
   const led = pay.kind === "led_switch" && /^Channel\s+\d+$/i.test(String(controlId || ""));

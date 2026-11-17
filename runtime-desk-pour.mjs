@@ -5,7 +5,8 @@
 import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
-import { buildDeskPourPreview, readDeskDocument, readDeskMarking } from "./runtime-desk-marking.mjs";
+import { buildDeskPourPreview, deskMarkingPath, readDeskDocument, readDeskMarking } from "./runtime-desk-marking.mjs";
+import { isDaliChannelId } from "./runtime-desk-dali.mjs";
 import { findContinuousOutputClash, findScheduleOutputClash, listDeskSolutions } from "./runtime-desk-solutions.mjs";
 import {
   isLoadControl,
@@ -42,8 +43,33 @@ function isDriveClose(controlId) {
   return /^(Curtain|Actuator)\s+\d+\s+Close$/i.test(String(controlId || "").trim());
 }
 
+function lastLiveChannelMap() {
+  try {
+    const file = path.join(path.dirname(deskMarkingPath()), "desk-last-shelves.json");
+    const json = JSON.parse(fs.readFileSync(file, "utf8"));
+    const map = new Map();
+    for (const s of Array.isArray(json?.shelves) ? json.shelves : []) {
+      const key = liveDeskDeviceKey(s?.deviceTopicKey);
+      for (const c of Array.isArray(s?.channels) ? s.channels : []) {
+        if (c?.controlId) map.set(key + "\0" + String(c.controlId).trim(), c);
+      }
+    }
+    return map;
+  } catch {
+    return new Map();
+  }
+}
+
+function withDaliTemp(row, live) {
+  if (!row || !isDaliChannelId(row.controlId) || row.tempControl) return row;
+  const ch = live.get(row.deviceTopicKey + "\0" + row.controlId);
+  const tempControl = typeof ch?.tempControl === "string" ? ch.tempControl.trim() : "";
+  return tempControl ? { ...row, tempControl } : row;
+}
+
 function namedLoadsFromDesk() {
   const shelves = readDeskMarking()?.shelves || {};
+  const live = lastLiveChannelMap();
   const out = [];
   const seenNamePath = new Set();
   for (const [deviceTopicKey, shelf] of Object.entries(shelves)) {
@@ -57,7 +83,8 @@ function namedLoadsFromDesk() {
       const pathKey = key + "/" + String(controlId).trim();
       if (seenNamePath.has(pathKey)) continue;
       seenNamePath.add(pathKey);
-      out.push({ deviceTopicKey: key, controlId, name });
+      const tempControl = typeof ch?.tempControl === "string" ? ch.tempControl.trim() : "";
+      out.push(withDaliTemp({ deviceTopicKey: key, controlId, name, tempControl }, live));
     }
   }
   return out;
@@ -66,6 +93,7 @@ function namedLoadsFromDesk() {
 /** Цель правила без имени всё равно получает ячейку и мост. Подпись — тип и номер. */
 function unnamedTargetsForBridge(solutions, named) {
   const have = new Set((named || []).map((r) => r.deviceTopicKey + "\0" + r.controlId));
+  const live = lastLiveChannelMap();
   const out = [];
   const seen = new Set();
   for (const sol of solutions || []) {
@@ -77,7 +105,7 @@ function unnamedTargetsForBridge(solutions, named) {
       if (have.has(key) || seen.has(key)) continue;
       seen.add(key);
       const mod = formatDeskShelfLabel(deviceTopicKey) || deviceTopicKey;
-      out.push({ deviceTopicKey, controlId, name: mod + " · " + controlId });
+      out.push(withDaliTemp({ deviceTopicKey, controlId, name: mod + " · " + controlId }, live));
     }
   }
   return out;
