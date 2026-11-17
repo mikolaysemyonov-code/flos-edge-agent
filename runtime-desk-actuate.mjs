@@ -3,7 +3,7 @@
  * Локальный MQTT на щите — без облака.
  */
 import mqtt from "mqtt";
-import { deskPhysPath, isDaliChannelId } from "./runtime-desk-dali.mjs";
+import { deskPhysPath, isDaliActuateId, isDaliChannelId } from "./runtime-desk-dali.mjs";
 
 function brokerUrl() {
   const host = (
@@ -35,7 +35,7 @@ function cleanControl(raw) {
 export function deskActuatePayloads(deviceTopicKey, controlId) {
   const key = String(deviceTopicKey || "").toLowerCase();
   const cid = String(controlId || "");
-  if (isDaliChannelId(cid) || /wanted_level/i.test(cid)) {
+  if (isDaliActuateId(cid) || isDaliChannelId(cid) || /wanted_level/i.test(cid)) {
     return { on: "100", off: "0", pulseMs: 2200, kind: "dali" };
   }
   if (/dali|mdali|mao/i.test(key) || /actual_level|brightness/i.test(cid)) {
@@ -52,7 +52,7 @@ export function deskActuatePayloads(deviceTopicKey, controlId) {
 export function deskActuateWrites(deviceTopicKey, controlId, desired, extra = {}) {
   const pay = deskActuatePayloads(deviceTopicKey, controlId);
   const off = desired === "off";
-  if (isDaliChannelId(controlId) || pay.kind === "dali") {
+  if (isDaliActuateId(controlId) || isDaliChannelId(controlId) || pay.kind === "dali") {
     const phys = deskPhysPath(deviceTopicKey, controlId);
     const slash = phys.indexOf("/");
     const dev = slash > 0 ? phys.slice(0, slash) : deviceTopicKey;

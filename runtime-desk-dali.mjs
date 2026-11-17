@@ -13,6 +13,14 @@ export function parseDaliMqttId(raw) {
       channelId: `bus_${g[2]}_g${n}`,
     };
   }
+  const b = /^(wb-(?:mdali(?:-3)?|dali)_\d+)_bus_(\d+)_broadcast$/i.exec(k);
+  if (b) {
+    return {
+      gateway: b[1].toLowerCase(),
+      mqttId: `${b[1].toLowerCase()}_bus_${b[2]}_broadcast`,
+      channelId: `bus_${b[2]}_broadcast`,
+    };
+  }
   const a = /^(wb-(?:mdali(?:-3)?|dali)_\d+)_bus_(\d+)_(\d+)$/i.exec(k);
   if (!a) return null;
   return {
@@ -30,9 +38,16 @@ export function parseDaliChannelId(controlId) {
   const cid = String(controlId ?? "").trim();
   const g = /^bus_(\d+)_g(\d+)$/i.exec(cid);
   if (g) return { kind: "group", bus: Number(g[1]), group: Number(g[2]), channelId: `bus_${g[1]}_g${Number(g[2])}` };
+  const b = /^bus_(\d+)_broadcast$/i.exec(cid);
+  if (b) return { kind: "broadcast", bus: Number(b[1]), channelId: `bus_${b[1]}_broadcast` };
   const a = /^bus_(\d+)_(\d+)$/i.exec(cid);
   if (!a) return null;
   return { kind: "addr", bus: Number(a[1]), addr: Number(a[2]), channelId: `bus_${a[1]}_${a[2]}` };
+}
+
+export function isDaliActuateId(controlId) {
+  const p = parseDaliChannelId(controlId);
+  return Boolean(p && (p.kind === "addr" || p.kind === "group" || p.kind === "broadcast"));
 }
 
 /** «гр 1 трек хол 1 эт» — номер группы, тип, комната. */
@@ -63,6 +78,8 @@ export function daliMqttFromChannel(gatewayKey, controlId) {
   const cid = String(controlId ?? "").trim();
   const g = /^bus_(\d+)_g(\d+)$/i.exec(cid);
   if (g && gw) return `${gw}_bus_${g[1]}_group_${String(Number(g[2])).padStart(2, "0")}`;
+  const b = /^bus_(\d+)_broadcast$/i.exec(cid);
+  if (b && gw) return `${gw}_bus_${b[1]}_broadcast`;
   const a = /^bus_(\d+)_(\d+)$/i.exec(cid);
   if (a && gw) return `${gw}_bus_${a[1]}_${a[2]}`;
   return "";
