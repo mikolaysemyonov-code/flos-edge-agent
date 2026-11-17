@@ -472,8 +472,13 @@ export function upsertDeskShelfMark(input) {
     if (!cards || cards.length === 0) delete cur.cards;
     else cur.cards = cards;
   }
+  if (input?.members !== undefined) {
+    const members = [...new Set((Array.isArray(input.members) ? input.members : []).map((m) => String(m || "").trim()).filter(Boolean))];
+    if (!members.length) delete cur.members;
+    else cur.members = members.slice(0, 64);
+  }
   delete cur.binds;
-  if (!cur.name && !(cur.cards && cur.cards.length)) {
+  if (!cur.name && !(cur.cards && cur.cards.length) && !(cur.members && cur.members.length)) {
     delete channels[controlId];
   } else channels[controlId] = cur;
   if (Object.keys(channels).length === 0) delete doc.shelves[key];
@@ -511,6 +516,7 @@ export function applyMarksToShelves(shelves, doc = readDeskMarking(), poured = r
       const pouredName = typeof fromRules[ch.controlId] === "string" ? fromRules[ch.controlId] : "";
       const name = typed || pouredName;
       const deskCards = Array.isArray(local?.[ch.controlId]?.cards) ? local[ch.controlId].cards : [];
+      const members = Array.isArray(local?.[ch.controlId]?.members) ? local[ch.controlId].members : [];
       return {
         ...ch,
         name,
@@ -518,8 +524,23 @@ export function applyMarksToShelves(shelves, doc = readDeskMarking(), poured = r
         cards: deskCards,
         cardsSource: deskCards.length ? "desk" : "",
         binds: [],
+        ...(members.length ? { members } : {}),
       };
     });
+    const have = new Set(channels.map((c) => c.controlId));
+    for (const cid of Object.keys(local || {})) {
+      if (have.has(cid)) continue;
+      if (!/^bus_\d+_g\d+$/i.test(cid)) continue;
+      const row = local[cid] || {};
+      channels.push({
+        controlId: cid,
+        name: typeof row.name === "string" ? row.name : "",
+        source: row.name ? "desk" : "",
+        cards: Array.isArray(row.cards) ? row.cards : [],
+        members: Array.isArray(row.members) ? row.members : [],
+        silent: true,
+      });
+    }
     return { ...s, channels, name: "" };
   });
 }

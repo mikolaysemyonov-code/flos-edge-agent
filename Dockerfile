@@ -10,6 +10,7 @@ COPY runtime-control-plane-http.mjs /app/runtime-control-plane-http.mjs
 COPY runtime-desk-http.mjs /app/runtime-desk-http.mjs
 COPY runtime-desk-shelves.mjs /app/runtime-desk-shelves.mjs
 COPY runtime-desk-dali.mjs /app/runtime-desk-dali.mjs
+COPY runtime-desk-dali-rpc.mjs /app/runtime-desk-dali-rpc.mjs
 COPY runtime-desk-marking.mjs /app/runtime-desk-marking.mjs
 COPY runtime-desk-solutions.mjs /app/runtime-desk-solutions.mjs
 COPY runtime-desk-rules-marks.mjs /app/runtime-desk-rules-marks.mjs

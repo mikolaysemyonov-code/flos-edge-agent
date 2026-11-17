@@ -39,6 +39,8 @@ import {
   deskInputClosed,
   isDeskInputControl,
 } from "./runtime-desk-actuate.mjs";
+import { parseDaliChannelId } from "./runtime-desk-dali.mjs";
+import { applyDaliGroupMembers, memberAddrsOf } from "./runtime-desk-dali-rpc.mjs";
 import {
   bindDeskKeyPlanItem,
   captureDeskKeyPlanItem,
@@ -832,7 +834,7 @@ export async function handleRuntimeDeskActuate(req, res) {
   const out = await actuateDeskChannel(body);
   if (out.ok && body.deviceTopicKey && body.controlId) {
     const desired = String(body.desired || out.desired || "").toLowerCase();
-    if (desired === "on" || desired === "off") {
+    if (desired === "on" || desired === "off" || desired === "level") {
       const shelves = readLastDeskShelves().shelves || [];
       const next = shelves.map((s) => {
         if (!s || s.deviceTopicKey !== body.deviceTopicKey) return s;
@@ -840,10 +842,9 @@ export async function handleRuntimeDeskActuate(req, res) {
           ...s,
           channels: (s.channels || []).map((c) => {
             if (!c || c.controlId !== body.controlId) return c;
-            return {
-              ...c,
-              lastValue: desired === "on" ? (out.value ?? "1") : "0",
-            };
+            const lastValue =
+              desired === "off" ? "0" : desired === "level" ? String(body.level ?? out.value ?? "0") : (out.value ?? "1");
+            return { ...c, lastValue };
           }),
         };
       });
@@ -851,4 +852,59 @@ export async function handleRuntimeDeskActuate(req, res) {
     }
   }
   jsonEnd(res, out.ok ? 200 : 409, out);
+}
+
+/** POST /runtime/desk-dali-group — состав группы на шине + имя на столе. */
+export async function handleRuntimeDeskDaliGroup(req, res) {
+  if ((req.method ?? "GET").toUpperCase() !== "POST") {
+    jsonEnd(res, 405, { ok: false, error: "method" });
+    return;
+  }
+  const blocked = markingBlocked();
+  if (blocked) {
+    jsonEnd(res, 409, blocked);
+    return;
+  }
+  const chunks = [];
+  for await (const c of req) chunks.push(c);
+  let body = {};
+  try {
+    const raw = Buffer.concat(chunks).toString("utf8");
+    if (raw.trim()) body = JSON.parse(raw);
+  } catch {
+    jsonEnd(res, 400, { ok: false, error: "invalid_json" });
+    return;
+  }
+  const gateway = String(body.gateway || body.deviceTopicKey || "").trim();
+  const parsed = parseDaliChannelId(body.controlId);
+  if (!gateway || parsed?.kind !== "group") {
+    jsonEnd(res, 400, { ok: false, error: "need_group" });
+    return;
+  }
+  const members = [...new Set((Array.isArray(body.members) ? body.members : []).map((m) => String(m || "").trim()))]
+    .filter((m) => parseDaliChannelId(m)?.kind === "addr" && parseDaliChannelId(m).bus === parsed.bus);
+  const prev = readDeskMarking()?.shelves?.[gateway]?.channels?.[parsed.channelId]?.members;
+  const prevSet = new Set(Array.isArray(prev) ? prev : []);
+  const nextSet = new Set(members);
+  const addAddrs = memberAddrsOf(members.filter((m) => !prevSet.has(m)));
+  const removeAddrs = memberAddrsOf([...prevSet].filter((m) => !nextSet.has(m)));
+  const bus = await applyDaliGroupMembers({
+    gateway,
+    bus: parsed.bus,
+    group: parsed.group,
+    addAddrs,
+    removeAddrs,
+  });
+  if (!bus.ok && !bus.skipped) {
+    jsonEnd(res, 409, { ok: false, error: bus.error || "dali_group", bus });
+    return;
+  }
+  const name = typeof body.name === "string" ? body.name : undefined;
+  const marked = upsertDeskShelfMark({
+    deviceTopicKey: gateway,
+    controlId: parsed.channelId,
+    name,
+    members,
+  });
+  jsonEnd(res, 200, { ok: true, controlId: parsed.channelId, members, marked: marked.ok, bus });
 }

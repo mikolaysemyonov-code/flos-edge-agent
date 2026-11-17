@@ -26,6 +26,29 @@ export function isDaliChannelId(controlId) {
   return /^bus_\d+_(?:g\d+|\d+)$/i.test(String(controlId ?? "").trim());
 }
 
+export function parseDaliChannelId(controlId) {
+  const cid = String(controlId ?? "").trim();
+  const g = /^bus_(\d+)_g(\d+)$/i.exec(cid);
+  if (g) return { kind: "group", bus: Number(g[1]), group: Number(g[2]), channelId: `bus_${g[1]}_g${Number(g[2])}` };
+  const a = /^bus_(\d+)_(\d+)$/i.exec(cid);
+  if (!a) return null;
+  return { kind: "addr", bus: Number(a[1]), addr: Number(a[2]), channelId: `bus_${a[1]}_${a[2]}` };
+}
+
+/** «гр 1 трек хол 1 эт» — номер группы, тип, комната. */
+export function formatDaliGroupName(group, type, room) {
+  const n = Number(group);
+  if (!Number.isFinite(n) || n < 0) return "";
+  return ["гр " + n, String(type || "").trim(), String(room || "").trim()].filter(Boolean).join(" ");
+}
+
+export function daliBusUid(gatewayKey, bus) {
+  const gw = String(gatewayKey ?? "").trim();
+  const n = Number(bus);
+  if (!gw || !Number.isFinite(n) || n < 1) return "";
+  return `${gw}_bus_${n}`;
+}
+
 export function isDaliLevelControl(controlId) {
   return /^(actual_level|wanted_level)$/i.test(String(controlId ?? "").trim());
 }

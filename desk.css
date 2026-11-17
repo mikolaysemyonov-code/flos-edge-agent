@@ -968,6 +968,16 @@
       box-shadow: none !important; padding-left: .2rem !important;
     }
     .ghost-back:hover { color: rgb(186 230 253) !important; }
+    .dali-tabs { display: flex; gap: .35rem; margin: .55rem 0 .15rem; }
+    .dali-tabs .ghost.on { background: rgb(var(--sky) / .22); color: rgb(186 230 253); }
+    .dali-add { margin: .35rem 0 .15rem; }
+    .dali-range { width: 6.2rem; accent-color: #fbbf24; }
+    .dali-members { display: flex; flex-direction: column; gap: .4rem; margin-top: .35rem; }
+    .dali-member {
+      display: grid; grid-template-columns: auto 1fr auto; gap: .45rem; align-items: center;
+      padding: .35rem .2rem; border-radius: .6rem;
+    }
+    .dali-member.lit { background: rgb(251 191 36 / .1); }
     .drill-list { margin-top: .35rem; }
     .drill-ch {
       list-style: none; margin: 0; padding: .7rem .15rem;

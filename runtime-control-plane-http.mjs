@@ -31,6 +31,7 @@ import {
   buildDeskPourPackage,
   assessDeskCanPour,
   handleRuntimeDeskActuate,
+  handleRuntimeDeskDaliGroup,
   handleRuntimeDeskKeyPlan,
   handleRuntimeDeskLinePlan,
   handleRuntimeDeskHealth,
@@ -879,6 +880,7 @@ function deskWriteLocked(method, urlPath) {
     urlPath === "/runtime/desk-marking" ||
     urlPath === "/runtime/desk-marking.json" ||
     urlPath === "/runtime/desk-actuate" ||
+    urlPath === "/runtime/desk-dali-group" ||
     urlPath === "/runtime/desk-key-plan" ||
     urlPath === "/runtime/desk-line-plan" ||
     urlPath === "/runtime/desk-audit" ||
@@ -1125,6 +1127,17 @@ export function runtimeHttpPathHandler(req, res) {
   if ((method === "GET" || method === "POST") && urlPath === "/runtime/desk-actuate") {
     void handleRuntimeDeskActuate(req, res).catch((err) => {
       console.error("[runtime-control-plane] desk-actuate:", err?.message ?? err);
+      if (!res.headersSent) {
+        res.statusCode = 500;
+        res.setHeader("content-type", "application/json; charset=utf-8");
+        res.end(JSON.stringify({ ok: false, error: "INTERNAL" }));
+      }
+    });
+    return true;
+  }
+  if (method === "POST" && urlPath === "/runtime/desk-dali-group") {
+    void handleRuntimeDeskDaliGroup(req, res).catch((err) => {
+      console.error("[runtime-control-plane] desk-dali-group:", err?.message ?? err);
       if (!res.headersSent) {
         res.statusCode = 500;
         res.setHeader("content-type", "application/json; charset=utf-8");

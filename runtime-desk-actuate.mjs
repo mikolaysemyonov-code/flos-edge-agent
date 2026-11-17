@@ -49,7 +49,7 @@ export function deskActuatePayloads(deviceTopicKey, controlId) {
 }
 
 /** Канал без яркости зажигает лампу на 1%. Яркость пишем до ключа и ещё раз после. */
-export function deskActuateWrites(deviceTopicKey, controlId, desired) {
+export function deskActuateWrites(deviceTopicKey, controlId, desired, extra = {}) {
   const pay = deskActuatePayloads(deviceTopicKey, controlId);
   const off = desired === "off";
   if (isDaliChannelId(controlId) || pay.kind === "dali") {
@@ -57,6 +57,16 @@ export function deskActuateWrites(deviceTopicKey, controlId, desired) {
     const slash = phys.indexOf("/");
     const dev = slash > 0 ? phys.slice(0, slash) : deviceTopicKey;
     const ctl = slash > 0 ? phys.slice(slash + 1) : "wanted_level";
+    if (desired === "level") {
+      const n = Math.max(0, Math.min(100, Number(extra.level)));
+      const payload = Number.isFinite(n) ? String(n) : "0";
+      return [{ topic: `/devices/${dev}/controls/${ctl}`, payload }];
+    }
+    if (desired === "temp") {
+      const n = Math.max(153, Math.min(1000, Number(extra.temp)));
+      const tempCtl = String(extra.tempControl || "wanted_colour_temperature").trim() || "wanted_colour_temperature";
+      return [{ topic: `/devices/${dev}/controls/${tempCtl}`, payload: String(Number.isFinite(n) ? n : 370) }];
+    }
     return [{ topic: `/devices/${dev}/controls/${ctl}`, payload: off ? pay.off : pay.on }];
   }
   const base = `/devices/${deviceTopicKey}/controls/${controlId}`;
@@ -149,11 +159,20 @@ export async function actuateDeskChannel(input) {
   if (isDeskInputControl(controlId, deviceTopicKey)) {
     return { ok: false, error: "input_not_actuatable" };
   }
-  const desired = /^(on|off|pulse)$/i.test(String(input?.desired || ""))
+  const desired = /^(on|off|pulse|level|temp)$/i.test(String(input?.desired || ""))
     ? String(input.desired).toLowerCase()
     : "pulse";
   const pay = deskActuatePayloads(deviceTopicKey, controlId);
-  const writesFor = (want) => deskActuateWrites(deviceTopicKey, controlId, want);
+  const writesFor = (want) => deskActuateWrites(deviceTopicKey, controlId, want, input);
+  if (desired === "level" || desired === "temp") {
+    const pub = await publishWrites(writesFor(desired));
+    return {
+      ...pub,
+      desired,
+      kind: pay.kind,
+      value: desired === "level" ? String(input?.level ?? "") : String(input?.temp ?? ""),
+    };
+  }
   if (desired === "on") {
     const pub = await publishWrites(writesFor("on"));
     return { ...pub, desired: "on", kind: pay.kind, value: pay.on };
