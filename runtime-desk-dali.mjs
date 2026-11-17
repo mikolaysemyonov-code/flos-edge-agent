@@ -66,6 +66,29 @@ export function daliBusUid(gatewayKey, bus) {
   return `${gw}_bus_${n}`;
 }
 
+export function firstDaliGatewayFromShelves(shelves) {
+  for (const s of Array.isArray(shelves) ? shelves : []) {
+    const k = String(s?.deviceTopicKey || "").trim();
+    if (/dali/i.test(k)) return k;
+  }
+  return "";
+}
+
+export function pickDaliScanBusId(gateways, bus, fallbackGateway) {
+  const n = Number(bus);
+  if (!Number.isFinite(n) || n < 1) return "";
+  for (const g of Array.isArray(gateways) ? gateways : []) {
+    const gid = String(g?.id || g?.gatewayId || "").trim();
+    const buses = Array.isArray(g?.buses) ? g.buses : [];
+    for (const b of buses) {
+      const bid = String(b?.id || "").trim();
+      if (bid && (bid.endsWith(`_bus_${n}`) || Number(b?.number) === n || Number(b?.index) === n)) return bid;
+    }
+    if (gid) return `${gid}_bus_${n}`;
+  }
+  return daliBusUid(fallbackGateway, n);
+}
+
 export function isDaliLevelControl(controlId) {
   return /^(actual_level|wanted_level)$/i.test(String(controlId ?? "").trim());
 }

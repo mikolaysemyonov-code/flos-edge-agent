@@ -99,6 +99,7 @@
       scenes: { tab: "cards", title: "Сценарии" },
       history: { tab: "poured", pane: "hist", title: "История" },
       board: { tab: "poured", pane: "send", title: "На контроллере" },
+      dali: { tab: "dali", title: "WB-MDALI" },
     };
     let siteBeaconOn = false;
     let siteLoadsKey = "";
@@ -544,6 +545,7 @@
         // Тихая диагностика при входе на «Залить» — без блокировки UI.
         void runDeskHealthQuiet();
       }
+      if (tab === "dali") void loadDaliMdali();
       const hash = activeNav || tab;
       if (location.hash.replace("#", "") !== hash) history.replaceState(null, "", "#" + hash);
     }
@@ -6892,6 +6894,83 @@
       lastShelvesRows = rows || [];
       renderMark();
     }
+    function paintDaliBridge(j) {
+      const head = $("daliBridgeHead");
+      const log = $("daliBridgeLog");
+      if (!head) return;
+      if (j && j.installed) {
+        head.textContent = "wb-mqtt-dali " + (j.version || "") + (j.active ? " · работает" : " · пакет есть, сервис не active");
+      } else {
+        head.textContent = "Пакет wb-mqtt-dali на щите. После установки сканируйте шину — светильники появятся на полке.";
+      }
+      if (log && j && (j.detail || j.error) && !j.installed) log.textContent = j.detail || j.error;
+    }
+    async function loadDaliMdali() {
+      try {
+        const r = await fetch("/runtime/desk-dali-bridge");
+        paintDaliBridge(await r.json());
+      } catch (e) {
+        const log = $("daliBridgeLog");
+        if (log) log.textContent = String(e.message || e);
+      }
+    }
+    async function installDaliBridgeNow() {
+      const btn = $("daliBridgeInstall");
+      const log = $("daliBridgeLog");
+      if (btn) btn.disabled = true;
+      if (log) log.textContent = "Ставлю wb-mqtt-dali на щит…";
+      try {
+        const r = await fetch("/runtime/desk-dali-bridge", { method: "POST" });
+        const j = await r.json();
+        paintDaliBridge(j);
+        if (log) {
+          log.textContent = j.ok && j.installed
+            ? ("Готово · " + (j.version || "wb-mqtt-dali") + (j.active ? "" : " · сервис ещё не active"))
+            : (j.detail || j.error || "Не установилось");
+        }
+      } catch (e) {
+        if (log) log.textContent = String(e.message || e);
+      } finally {
+        if (btn) btn.disabled = false;
+      }
+    }
+    function countDaliBusAddrs(bus) {
+      let n = 0;
+      for (const s of lastShelvesRows || []) {
+        for (const ch of s.channels || []) {
+          const p = parseDaliCh(ch.controlId);
+          if (p && p.kind === "addr" && p.bus === bus) n += 1;
+        }
+      }
+      return n;
+    }
+    async function scanDaliBusNow(bus) {
+      const log = $("daliScanLog");
+      if (log) log.textContent = "Сканирую шину " + bus + "…";
+      document.querySelectorAll("[data-dali-scan]").forEach((b) => { b.disabled = true; });
+      try {
+        const r = await fetch("/runtime/desk-dali-scan", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ bus: Number(bus) }),
+        });
+        const j = await r.json();
+        if (!j.ok) {
+          if (log) log.textContent = j.detail || j.error || "Скан не пошёл";
+          return;
+        }
+        if (log) log.textContent = "Шина " + bus + " · " + (j.result && j.result.status ? j.result.status : "ок") + ". Обновляю полки…";
+        await scanNow();
+        const n = countDaliBusAddrs(Number(bus));
+        if (log) log.textContent = n
+          ? ("Шина " + bus + ": на полках " + n + " адресов")
+          : ("Шина " + bus + " отсканирована. Если адресов нет — подождите и нажмите Обновить.");
+      } catch (e) {
+        if (log) log.textContent = String(e.message || e);
+      } finally {
+        document.querySelectorAll("[data-dali-scan]").forEach((b) => { b.disabled = false; });
+      }
+    }
     async function scanNow() {
       $("scan").disabled = true;
       try {
@@ -6920,6 +6999,10 @@
       }
     }
     $("scan").onclick = () => { void scanNow(); };
+    if ($("daliBridgeInstall")) $("daliBridgeInstall").onclick = () => { void installDaliBridgeNow(); };
+    document.querySelectorAll("[data-dali-scan]").forEach((btn) => {
+      btn.addEventListener("click", () => { void scanDaliBusNow(btn.dataset.daliScan); });
+    });
     if ($("fieldCert")) $("fieldCert").onclick = () => { void openFieldCert(); };
     if ($("settingsToggle")) {
       $("settingsToggle").onclick = async () => {

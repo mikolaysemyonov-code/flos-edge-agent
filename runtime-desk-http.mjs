@@ -39,8 +39,15 @@ import {
   deskInputClosed,
   isDeskInputControl,
 } from "./runtime-desk-actuate.mjs";
-import { parseDaliChannelId } from "./runtime-desk-dali.mjs";
-import { applyDaliGroupMembers, memberAddrsOf } from "./runtime-desk-dali-rpc.mjs";
+import { firstDaliGatewayFromShelves, parseDaliChannelId, pickDaliScanBusId } from "./runtime-desk-dali.mjs";
+import {
+  applyDaliGroupMembers,
+  daliBridgeStatus,
+  installDaliBridge,
+  listDaliGateways,
+  memberAddrsOf,
+  scanDaliBus,
+} from "./runtime-desk-dali-rpc.mjs";
 import {
   bindDeskKeyPlanItem,
   captureDeskKeyPlanItem,
@@ -907,4 +914,66 @@ export async function handleRuntimeDeskDaliGroup(req, res) {
     members,
   });
   jsonEnd(res, 200, { ok: true, controlId: parsed.channelId, members, marked: marked.ok, bus });
+}
+
+/** GET/POST /runtime/desk-dali-bridge — статус / apt wb-mqtt-dali на хосте щита. */
+export async function handleRuntimeDeskDaliBridge(req, res) {
+  const method = (req.method ?? "GET").toUpperCase();
+  if (method === "GET") {
+    jsonEnd(res, 200, daliBridgeStatus());
+    return;
+  }
+  if (method !== "POST") {
+    jsonEnd(res, 405, { ok: false, error: "method" });
+    return;
+  }
+  const blocked = markingBlocked();
+  if (blocked) {
+    jsonEnd(res, 409, blocked);
+    return;
+  }
+  jsonEnd(res, 200, installDaliBridge());
+}
+
+/** POST /runtime/desk-dali-scan — Editor/ScanBus шины 1/2/3. */
+export async function handleRuntimeDeskDaliScan(req, res) {
+  if ((req.method ?? "GET").toUpperCase() !== "POST") {
+    jsonEnd(res, 405, { ok: false, error: "method" });
+    return;
+  }
+  const blocked = markingBlocked();
+  if (blocked) {
+    jsonEnd(res, 409, blocked);
+    return;
+  }
+  const chunks = [];
+  for await (const c of req) chunks.push(c);
+  let body = {};
+  try {
+    const raw = Buffer.concat(chunks).toString("utf8");
+    if (raw.trim()) body = JSON.parse(raw);
+  } catch {
+    jsonEnd(res, 400, { ok: false, error: "invalid_json" });
+    return;
+  }
+  const bus = Number(body.bus);
+  if (!Number.isFinite(bus) || bus < 1 || bus > 3) {
+    jsonEnd(res, 400, { ok: false, error: "need_bus" });
+    return;
+  }
+  let gateway = String(body.gateway || "").trim();
+  const listed = await listDaliGateways();
+  if (!gateway) gateway = String(listed.gateways?.[0]?.id || "").trim();
+  if (!gateway) gateway = firstDaliGatewayFromShelves(readLastDeskShelves().shelves);
+  const busId = pickDaliScanBusId(listed.gateways, bus, gateway);
+  if (!busId) {
+    jsonEnd(res, 409, {
+      ok: false,
+      error: "need_gateway",
+      detail: listed.error || "Сначала установите wb-mqtt-dali и дождитесь шлюза на MQTT.",
+    });
+    return;
+  }
+  const out = await scanDaliBus(busId);
+  jsonEnd(res, out.ok ? 200 : 409, { ...out, gateway: gateway || busId.replace(/_bus_\d+$/, ""), bus, busId });
 }
