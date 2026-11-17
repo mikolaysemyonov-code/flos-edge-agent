@@ -1294,6 +1294,7 @@
     .key-table th { color: rgb(var(--mute)); font-size: .72rem; font-weight: 560; letter-spacing: .02em; }
     .key-plan-add select.bind, .key-plan-add input.bind { margin: .25rem .35rem .25rem 0; }
     .dali-mdali { display: grid; gap: .7rem; max-width: 28rem; }
+    .dali-mdali[hidden], #daliScanDock[hidden], #markFiles[hidden] { display: none !important; }
     .dali-mdali select.bind { width: 100%; }
     .dali-scan-row { display: flex; flex-wrap: wrap; gap: .45rem; }
    

@@ -334,6 +334,13 @@
         !isDriveClose(ch.controlId) && !/(?:Single|Short|Long|Shortlong|Double) Press Counter$/i.test(String(ch.controlId || "")),
       );
     }
+    /** На плитке DALI — только адреса, не группы и не broadcast. */
+    function faceChannels(s) {
+      const vis = visibleChannels(s);
+      const dali = vis.filter((ch) => parseDaliCh(ch.controlId));
+      if (!dali.length) return vis;
+      return dali.filter((ch) => parseDaliCh(ch.controlId).kind === "addr");
+    }
     function pairName(s, ch) {
       const name = String(ch.name || "").trim();
       if (name) return name;
@@ -534,6 +541,7 @@
         const named = NAV[activeNav];
         pageTitle.textContent = named ? named.title : "Туториал";
       }
+      paintMarkChrome();
       if (kicker) kicker.hidden = tab !== "intro";
       if (busLine) busLine.hidden = tab === "intro" || tab === "poured";
       if (ritual) {
@@ -576,18 +584,7 @@
       if (id === "scenes" && cardFilter === "Климат") cardFilter = "Свет";
       if (spec.pane) pouredPane = spec.pane;
       const famBar = $("modFamily");
-      const modSearch = $("modSearch");
-      const daliDock = $("daliScanDock");
-      if (modSearch) {
-        modSearch.hidden = true;
-        if (/^(light|relays|dali|mdm)$/.test(activeNav)) {
-          modQuery = "";
-          modSearch.value = "";
-        }
-      }
-      const markFiles = $("markFiles");
-      if (markFiles) markFiles.hidden = /^(light|relays|dali|mdm)$/.test(activeNav);
-      if (daliDock) daliDock.hidden = activeNav !== "dali";
+      paintMarkChrome();
       if (famBar) {
         famBar.hidden = !isPnr();
         famBar.querySelectorAll("[data-fam]").forEach((btn) => {
@@ -3951,7 +3948,7 @@
       return "LED";
     }
     function namedCount(s) {
-      return visibleChannels(s).filter((c) => String(pairName(s, c) || "").trim()).length;
+      return faceChannels(s).filter((c) => String(pairName(s, c) || "").trim()).length;
     }
     function moduleRoomsOf(s) {
       return [...new Set(visibleChannels(s).map((ch) => nameRoom(pairName(s, ch))).filter(Boolean))];
@@ -3980,11 +3977,26 @@
       return false;
     }
     function litCount(s) {
-      return visibleChannels(s).filter(channelIsOn).length;
+      return faceChannels(s).filter(channelIsOn).length;
+    }
+    function paintMarkChrome() {
+      const hardware = /^(light|relays|dali|mdm)$/.test(activeNav);
+      const daliDock = $("daliScanDock");
+      const modSearch = $("modSearch");
+      const markFiles = $("markFiles");
+      if (daliDock) daliDock.hidden = activeNav !== "dali";
+      if (modSearch) {
+        modSearch.hidden = true;
+        if (hardware) {
+          modQuery = "";
+          modSearch.value = "";
+        }
+      }
+      if (markFiles) markFiles.hidden = hardware;
     }
     function paintModuleFace(el, s, opts) {
       const drill = opts && opts.drill;
-      const n = visibleChannels(s).length || s.channelCount || 0;
+      const n = faceChannels(s).length;
       const named = namedCount(s);
       const free = Math.max(0, n - named);
       const lit = litCount(s);
@@ -4004,7 +4016,7 @@
       top.append(ico, cat);
       const rooms = [];
       const lineNames = [];
-      visibleChannels(s).forEach((ch) => {
+      faceChannels(s).forEach((ch) => {
         const nm = pairName(s, ch);
         const room = nameRoom(nm);
         if (room && rooms.indexOf(room) < 0) rooms.push(room);
@@ -4028,7 +4040,7 @@
       const bars = document.createElement("div");
       bars.className = "ch-bars";
       bars.setAttribute("aria-hidden", "true");
-      visibleChannels(s).forEach((ch) => {
+      faceChannels(s).forEach((ch) => {
         const b = document.createElement("span");
         const on = channelIsOn(ch);
         const namedCh = Boolean(pairName(s, ch));
