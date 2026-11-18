@@ -102,13 +102,12 @@
     <section id="panel-mark" class="panel glass" hidden data-tab="mark">
       <p class="meta" id="markIntro">Назовите комнату и то, что в ней включается.</p>
       <div id="daliScanDock" class="dali-mdali" hidden>
-        <p class="meta" id="daliBridgeHead">Драйвер DALI на контроллере. Скан шины ищет светильники на проводе — не реле и не LED.</p>
+        <p class="meta" id="daliBridgeHead">DALI на щите</p>
         <button id="daliBridgeInstall" class="ghost" type="button">Поставить драйвер</button>
-        <p class="meta" id="daliBridgeLog"></p>
+        <p class="meta" id="daliBridgeLog" hidden></p>
         <p class="meta" id="daliGatewayHint" hidden></p>
-        <label class="meta" for="daliGateway" id="daliGatewayLab" hidden>Какой модуль MDALI</label>
+        <label class="meta" for="daliGateway" id="daliGatewayLab" hidden>Модуль</label>
         <select id="daliGateway" class="bind" hidden aria-label="Модуль DALI"></select>
-        <p class="meta">Скан шины — поиск адресов на выбранном модуле. Шина 1 / 2 / 3 — три физических линии MDALI.</p>
         <div class="dali-scan-row">
           <button class="ghost" type="button" data-dali-scan="1">Шина 1</button>
           <button class="ghost" type="button" data-dali-scan="2">Шина 2</button>

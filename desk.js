@@ -543,7 +543,7 @@
       }
       paintMarkChrome();
       if (kicker) kicker.hidden = tab !== "intro";
-      if (busLine) busLine.hidden = tab === "intro" || tab === "poured";
+      if (busLine) busLine.hidden = tab === "intro" || tab === "poured" || activeNav === "dali";
       if (ritual) {
         ritual.hidden = !isPnr();
         ritual.textContent = isPnr() ? "При сканировании следуйте подсказкам." : "";
@@ -4035,18 +4035,32 @@
       } else {
         vs.textContent = lineNames.length
           ? lineNames.slice(0, 3).join(" · ")
-          : "Назовите комнату и линию";
+          : (/dali/i.test(String(s.deviceTopicKey || ""))
+            ? (n ? (n + " адресов на шине") : "Нет адресов — нажмите шину 1, 2 или 3")
+            : "Назовите комнату и линию");
       }
       const bars = document.createElement("div");
       bars.className = "ch-bars";
       bars.setAttribute("aria-hidden", "true");
-      faceChannels(s).forEach((ch) => {
-        const b = document.createElement("span");
-        const on = channelIsOn(ch);
-        const namedCh = Boolean(pairName(s, ch));
-        b.className = "ch-bar" + (on ? " lit" : namedCh ? " named" : "");
-        bars.appendChild(b);
-      });
+      const face = faceChannels(s);
+      if (face.length > 24) {
+        const onN = face.filter(channelIsOn).length;
+        const fill = document.createElement("span");
+        fill.className = "ch-bar lit";
+        fill.style.flex = String(Math.max(onN, 0.01));
+        const rest = document.createElement("span");
+        rest.className = "ch-bar";
+        rest.style.flex = String(Math.max(face.length - onN, 0.01));
+        bars.append(fill, rest);
+      } else {
+        face.forEach((ch) => {
+          const b = document.createElement("span");
+          const on = channelIsOn(ch);
+          const namedCh = Boolean(pairName(s, ch));
+          b.className = "ch-bar" + (on ? " lit" : namedCh ? " named" : "");
+          bars.appendChild(b);
+        });
+      }
       if (!n) {
         const b = document.createElement("span");
         b.className = "ch-bar";
@@ -4313,7 +4327,7 @@
       if (!ch.hasTemp) return;
       const temp = document.createElement("input");
       temp.type = "range";
-      temp.className = "dali-range";
+      temp.className = "dali-range dali-range-temp";
       temp.min = "153";
       temp.max = "370";
       temp.value = "370";
@@ -4395,8 +4409,8 @@
       const intro = document.createElement("p");
       intro.className = "hint";
       intro.textContent = lockBus
-        ? "Группа DALI на одной шине (bus " + lockBus + "). Квадрат — в группу. Справа — прозвон на объекте."
-        : "Имя группы — как на объекте. Квадрат слева выделяет светильники, справа — вкл/яркость/температура.";
+        ? "Шина " + lockBus + " · квадрат — в группу"
+        : "Имя группы, квадрат — состав, справа — свет";
       const name = document.createElement("input");
       name.type = "text";
       name.className = "dali-name";
@@ -4427,7 +4441,7 @@
         if (p.bus && p.bus !== lastBus) {
           const h = document.createElement("li");
           h.className = "roomh";
-          h.textContent = "bus " + p.bus;
+          h.textContent = "Шина " + p.bus;
           list.appendChild(h);
           lastBus = p.bus;
         }
@@ -4525,11 +4539,13 @@
       const daliMod = /dali/i.test(String(s.deviceTopicKey || ""));
       if (daliMod) {
         const tabs = document.createElement("div");
-        tabs.className = "dali-tabs";
+        tabs.className = "filters dali-tabs";
+        tabs.setAttribute("role", "tablist");
         [["groups", "Группы"], ["addr", "Адреса"]].forEach(([id, ru]) => {
           const b = document.createElement("button");
           b.type = "button";
-          b.className = "ghost" + (daliPane === id || (id === "groups" && daliPane === "pick") ? " on" : "");
+          const on = daliPane === id || (id === "groups" && daliPane === "pick");
+          b.setAttribute("aria-pressed", on ? "true" : "false");
           b.textContent = ru;
           b.addEventListener("click", () => {
             daliPane = id;
@@ -4563,7 +4579,7 @@
             if (bus && bus !== lastBus) {
               const h = document.createElement("li");
               h.className = "roomh";
-              h.textContent = "bus " + bus;
+              h.textContent = "Шина " + bus;
               chs.appendChild(h);
               lastBus = bus;
             }
@@ -4670,10 +4686,12 @@
         return a.localeCompare(b, "ru");
       });
       order.forEach((room) => {
-        const h = document.createElement("p");
-        h.className = "sech";
-        h.textContent = room;
-        box.appendChild(h);
+        if (!(order.length === 1 && room === "Без имени")) {
+          const h = document.createElement("p");
+          h.className = "sech";
+          h.textContent = room;
+          box.appendChild(h);
+        }
         grouped.get(room).forEach((s) => box.appendChild(moduleTile(s)));
       });
     }
@@ -6895,14 +6913,18 @@
       const install = $("daliBridgeInstall");
       if (!head) return;
       if (j && j.installed && j.active) {
-        head.textContent = "Драйвер DALI работает" + (j.version ? " (" + j.version + ")" : "") + ". Карточка ниже — шлюз. Кнопки шины ищут светильники на проводе.";
+        head.textContent = "DALI на щите" + (j.version ? " · " + j.version : "");
       } else if (j && j.installed) {
-        head.textContent = "Драйвер стоит, но служба не запущена. Нажмите «Поставить драйвер» ещё раз.";
+        head.textContent = "Драйвер стоит, служба не запущена";
       } else {
-        head.textContent = "Драйвера DALI на щите нет. «Поставить драйвер» ставит wb-mqtt-dali. Затем скан шины.";
+        head.textContent = "Нет драйвера DALI на щите";
       }
       if (install) install.hidden = Boolean(j && j.installed && j.active);
-      if (log && j && (j.detail || j.error) && !j.installed) log.textContent = j.detail || j.error;
+      if (log) {
+        const err = j && (j.detail || j.error) && !j.installed;
+        log.hidden = !err;
+        if (err) log.textContent = j.detail || j.error;
+      }
       paintDaliGateways(j && j.gateways);
     }
     function paintDaliGateways(list) {
@@ -6917,7 +6939,7 @@
         if (!id) return;
         const opt = document.createElement("option");
         opt.value = id;
-        opt.textContent = String(g.name || id);
+        opt.textContent = shelfLabel(id) || String(g.name || id);
         sel.appendChild(opt);
       });
       if (!sel.options.length) {
@@ -6929,7 +6951,7 @@
         fromBus.forEach((id) => {
           const opt = document.createElement("option");
           opt.value = id;
-          opt.textContent = id;
+          opt.textContent = shelfLabel(id) || id;
           sel.appendChild(opt);
         });
       }
@@ -6941,7 +6963,8 @@
       if (hint) {
         hint.hidden = many || !sel.options.length;
         const id = sel.options.length ? sel.value || sel.options[0].value : "";
-        hint.textContent = id ? ("Модуль на шине: " + (shelfLabel(id) || id) + ". Это не реле.") : "";
+        hint.textContent = "";
+        hint.hidden = true;
       }
     }
     async function loadDaliMdali() {
