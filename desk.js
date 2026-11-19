@@ -81,6 +81,7 @@
     let markPending = {};
     let roomFilter = "";
     let modQuery = "";
+    let solQuery = "";
     let openMod = "";
     let pouredPane = "send";
     let rulesFileText = "";
@@ -595,6 +596,8 @@
       setTab(spec.tab, true);
       const cardBar = $("cardFilters");
       if (cardBar) cardBar.hidden = activeNav === "climate";
+      const solSearch = $("solSearch");
+      if (solSearch) solSearch.hidden = spec.tab !== "cards";
       const tree = document.querySelector(".rail-tree");
       if (tree && (activeNav === "history" || activeNav === "board")) tree.dataset.open = "1";
       if (isPnr()) {
@@ -2559,11 +2562,47 @@
       const card = deskCatalog.find((c) => c.id === sol.solutionId);
       return (card && card.cat) || "";
     }
+    function solHay(sol) {
+      const bits = [];
+      const add = (c) => {
+        if (!c) return;
+        bits.push(c.deviceTopicKey, c.controlId, solContactLabel(c), solContactHuman(c));
+      };
+      add(sol.trigger);
+      (sol.targets || []).forEach(add);
+      bits.push(sol.solutionId, sol.title);
+      const card = deskCatalog.find((c) => c.id === sol.solutionId);
+      if (card) bits.push(card.title, card.id);
+      return bits.filter(Boolean).join(" ");
+    }
+    function solMatchesQuery(sol, q) {
+      const fold = (s) => String(s || "").toLowerCase().replace(/[_/\-]+/g, " ").replace(/\s+/g, " ").trim();
+      const raw = fold(q);
+      if (!raw) return true;
+      const hay = fold(solHay(sol));
+      const compact = hay.replace(/\s+/g, "");
+      return raw.split(" ").every((tok) => hay.includes(tok) || compact.includes(tok.replace(/\s+/g, "")));
+    }
     function renderDeskSolutions() {
       const ul = $("deskSols");
       ul.innerHTML = "";
       paintCardsRoomBanner();
-      deskSolutions.filter((sol) => catOfSol(sol) === cardFilter).forEach((sol) => {
+      const inCat = deskSolutions.filter((sol) => catOfSol(sol) === cardFilter);
+      const shown = inCat.filter((sol) => solMatchesQuery(sol, solQuery));
+      const miss = $("solMiss");
+      if (miss) {
+        if (solQuery.trim() && !shown.length) {
+          miss.hidden = false;
+          miss.textContent = "Нет сценария на «" + solQuery.trim() + "».";
+        } else if (solQuery.trim()) {
+          miss.hidden = false;
+          miss.textContent = shown.length + " из " + inCat.length;
+        } else {
+          miss.hidden = true;
+          miss.textContent = "";
+        }
+      }
+      shown.forEach((sol) => {
         const li = document.createElement("li");
         const tHuman = (sol.targets || []).map(solContactHuman).join(" · ");
         const tFull = (sol.targets || []).map(solContactLabel).join(" · ");
@@ -2572,10 +2611,14 @@
         const left = document.createElement("div");
         left.innerHTML = "<strong></strong><div class=\"meta\"></div>";
         const cardRow = deskCatalog.find((c) => c.id === sol.solutionId);
-        left.querySelector("strong").textContent = (cardRow && cardRow.title) || sol.title || sol.solutionId;
+        const cardTitle = (cardRow && cardRow.title) || sol.title || sol.solutionId;
+        const keyTitle = trigH && trigH !== "по расписанию" ? trigH : cardTitle;
+        left.querySelector("strong").textContent = keyTitle;
         const paramH = solParamsHuman(sol, cardRow);
         left.querySelector(".meta").textContent =
-          trigH + (tHuman ? " → " + tHuman : "") + (paramH ? " · " + paramH : "");
+          [keyTitle !== cardTitle ? cardTitle : "", tHuman ? "→ " + tHuman : "", paramH]
+            .filter(Boolean)
+            .join(" · ");
         left.title = trigF + (tFull ? " → " + tFull : "") + (paramH ? " · " + paramH : "");
         const onDisk = (pouredRules || []).some((r) => String(r.id || "").indexOf("desk_sol_" + sol.id) === 0);
         const pourOne = document.createElement("button");
@@ -7473,6 +7516,13 @@
         openNav(btn.dataset.nav);
       });
     });
+    const solSearch = $("solSearch");
+    if (solSearch) {
+      solSearch.addEventListener("input", () => {
+        solQuery = solSearch.value;
+        if (activeNav === "scenes" || activeNav === "climate") renderDeskSolutions();
+      });
+    }
     const modSearch = $("modSearch");
     if (modSearch) {
       modSearch.addEventListener("input", () => {

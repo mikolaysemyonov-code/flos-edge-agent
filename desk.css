@@ -1294,6 +1294,7 @@
       appearance: none;
     }
     .picks label.pick-lvl .lvl:disabled { opacity: .35; }
+    #panel-cards .mod-search { margin: 0 0 .65rem; max-width: 28rem; }
     #deskSols { margin: 0 0 .85rem; }
     #deskSols:empty { display: none; }
     #deskSols li {
