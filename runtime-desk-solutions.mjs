@@ -484,13 +484,24 @@ const LATCHING_CARDS = new Set([
 /** Две одинаковые карточки с одной клавиши на один выход гоняются.
  *  Другая клавиша на ту же линию — проходной выключатель, её пишем.
  */
-function latchClash(solutions, id, solutionId, targets, trigger) {
+function solPress(s) {
+  return String(s?.params?.press || "single").toLowerCase();
+}
+
+function latchClash(solutions, id, solutionId, targets, trigger, press) {
   if (!LATCHING_CARDS.has(solutionId)) return null;
   const passThrough = solutionId === "light_button_toggle" || solutionId === "socket_button_toggle";
+  const wantPress = String(press || "single").toLowerCase();
   for (const s of solutions || []) {
     if (!s || s.id === id || s.solutionId !== solutionId) continue;
     if (passThrough && trigger && s.trigger
       && (s.trigger.deviceTopicKey !== trigger.deviceTopicKey || s.trigger.controlId !== trigger.controlId)) {
+      continue;
+    }
+    if (passThrough && trigger && s.trigger
+      && s.trigger.deviceTopicKey === trigger.deviceTopicKey
+      && s.trigger.controlId === trigger.controlId
+      && solPress(s) !== wantPress) {
       continue;
     }
     for (const t of Array.isArray(s.targets) ? s.targets : []) {
@@ -635,7 +646,7 @@ export function upsertDeskSolution(input) {
     savedAt: new Date().toISOString(),
   };
   const clash =
-    latchClash(doc.solutions, id, card.id, targets, trigger) ||
+    latchClash(doc.solutions, id, card.id, targets, trigger, params.press) ||
     continuousClash(doc.solutions, id, card.id, targets) ||
     scheduleClash(doc.solutions, id, card.id, targets);
   if (clash) return clash;

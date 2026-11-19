@@ -1262,7 +1262,13 @@
     }
     .raw-toggle[aria-pressed="true"] { color: #fff; background: #3a3a3c; border-color: transparent; }
     .sheet .fld { display: block; margin: .7rem 0 .2rem; font-size: .68rem; letter-spacing: .07em; text-transform: uppercase; color: var(--mute); }
-    .sheet .actions { flex: none; display: flex; gap: .5rem; margin-top: .75rem; }
+    .press-row { display: flex; flex-wrap: wrap; gap: .35rem; margin: .35rem 0 .15rem; }
+    .press-row .ghost { font-size: .78rem; padding: .28rem .75rem; }
+    .press-row .ghost[aria-pressed="true"] {
+      color: #fff; background: rgb(56 189 248 / .28); border: 1px solid rgb(56 189 248 / .45);
+    }
+    .sol-path { font-variant-numeric: tabular-nums; letter-spacing: .01em; }
+    .sheet .actions { flex: none; display: flex; flex-wrap: wrap; gap: .5rem; margin-top: .75rem; }
     .sheet select.bind {
       background: rgb(255 255 255 / .06);
       border: 1px solid rgb(255 255 255 / .12);

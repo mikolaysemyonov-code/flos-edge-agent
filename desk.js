@@ -2562,11 +2562,77 @@
       const card = deskCatalog.find((c) => c.id === sol.solutionId);
       return (card && card.cat) || "";
     }
+    function stripWbKey(key) {
+      return String(key || "").replace(/^wb-/i, "");
+    }
+    function solTopicPath(c) {
+      if (!c) return "";
+      const key = stripWbKey(c.deviceTopicKey);
+      const ctrl = String(c.controlId || "").trim().toLowerCase();
+      if (key && ctrl) return key + "/" + ctrl;
+      return key || ctrl;
+    }
+    function parseDeviceAddr(key) {
+      const k = stripWbKey(key).toLowerCase();
+      const m = /^([a-z][a-z0-9]*?)(?:_(\d+))?$/.exec(k);
+      return { family: m ? m[1] : k, addr: m && m[2] ? String(Number(m[2])) : "" };
+    }
+    function controlKindOf(cid) {
+      const c = String(cid || "").trim().toLowerCase();
+      const inp = /^input\s*(\d+)$/.exec(c);
+      if (inp) return { kind: "input", n: String(Number(inp[1])) };
+      const k = /^k(\d+)$/.exec(c);
+      if (k) return { kind: "k", n: String(Number(k[1])) };
+      const ch = /^channel\s*(\d+)$/.exec(c);
+      if (ch) return { kind: "ch", n: String(Number(ch[1])) };
+      return { kind: "", n: "" };
+    }
+    function parseSolQuery(q) {
+      let s = String(q || "").trim().toLowerCase().replace(/^wb-/, "");
+      s = s.replace(/[/]+/g, " / ").replace(/[_-]+/g, " ");
+      const parts = s.split(/\s+/).filter(Boolean);
+      const FAM = /^(mcm\d*|mr\d*[a-z]*|led|gpio|mdm\d*|dali[a-z0-9]*)$/;
+      const out = { family: "", addr: "", controlKind: "", controlN: "", words: [] };
+      for (let i = 0; i < parts.length; i++) {
+        const t = parts[i];
+        if (t === "/") continue;
+        const kn = /^k(\d+)$/.exec(t);
+        if (kn) { out.controlKind = "k"; out.controlN = String(Number(kn[1])); continue; }
+        const inp = /^(?:input|in)(\d+)$/.exec(t);
+        if (inp) { out.controlKind = "input"; out.controlN = String(Number(inp[1])); continue; }
+        if (/^(input|in)$/.test(t)) {
+          out.controlKind = "input";
+          if (parts[i + 1] && /^\d+$/.test(parts[i + 1])) out.controlN = String(Number(parts[++i]));
+          continue;
+        }
+        if (t === "k" && parts[i + 1] && /^\d+$/.test(parts[i + 1])) {
+          out.controlKind = "k";
+          out.controlN = String(Number(parts[++i]));
+          continue;
+        }
+        if (FAM.test(t)) { out.family = t; continue; }
+        if (/^\d+$/.test(t)) { out.addr = String(Number(t)); continue; }
+        out.words.push(t);
+      }
+      return out;
+    }
+    function contactMatchesQuery(c, p) {
+      if (!c) return false;
+      const dev = parseDeviceAddr(c.deviceTopicKey);
+      const ctl = controlKindOf(c.controlId);
+      if (p.family && !(dev.family === p.family || dev.family.startsWith(p.family))) return false;
+      if (p.addr && dev.addr !== p.addr) return false;
+      if (p.controlKind) {
+        if (ctl.kind !== p.controlKind) return false;
+        if (p.controlN && ctl.n !== p.controlN) return false;
+      }
+      return true;
+    }
     function solHay(sol) {
       const bits = [];
       const add = (c) => {
         if (!c) return;
-        bits.push(c.deviceTopicKey, c.controlId, solContactLabel(c), solContactHuman(c));
+        bits.push(solTopicPath(c), c.deviceTopicKey, c.controlId, solContactLabel(c), solContactHuman(c));
       };
       add(sol.trigger);
       (sol.targets || []).forEach(add);
@@ -2576,12 +2642,24 @@
       return bits.filter(Boolean).join(" ");
     }
     function solMatchesQuery(sol, q) {
-      const fold = (s) => String(s || "").toLowerCase().replace(/[_/\-]+/g, " ").replace(/\s+/g, " ").trim();
-      const raw = fold(q);
-      if (!raw) return true;
-      const hay = fold(solHay(sol));
-      const compact = hay.replace(/\s+/g, "");
-      return raw.split(" ").every((tok) => hay.includes(tok) || compact.includes(tok.replace(/\s+/g, "")));
+      const p = parseSolQuery(q);
+      if (!p.family && !p.addr && !p.controlKind && !p.words.length) return true;
+      const contacts = [sol.trigger].concat(sol.targets || []).filter(Boolean);
+      if (p.family || p.addr || p.controlKind) {
+        if (!contacts.some((c) => contactMatchesQuery(c, p))) return false;
+      }
+      if (!p.words.length) return true;
+      const hay = " " + solHay(sol).toLowerCase() + " ";
+      return p.words.every((w) => {
+        const esc = w.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+        return new RegExp("(^|[^a-zа-яё0-9])" + esc + "([^a-zа-яё0-9]|$)", "i").test(hay);
+      });
+    }
+    function solPressOf(sol) {
+      return String((sol && sol.params && sol.params.press) || "single").toLowerCase();
+    }
+    function isTogglePressCard(card) {
+      return card && (card.id === "light_button_toggle" || card.id === "socket_button_toggle");
     }
     function renderDeskSolutions() {
       const ul = $("deskSols");
@@ -2605,21 +2683,25 @@
       shown.forEach((sol) => {
         const li = document.createElement("li");
         const tHuman = (sol.targets || []).map(solContactHuman).join(" · ");
-        const tFull = (sol.targets || []).map(solContactLabel).join(" · ");
-        const trigH = solContactHuman(sol.trigger);
-        const trigF = solContactLabel(sol.trigger);
+        const tPath = (sol.targets || []).map(solTopicPath).filter(Boolean).join(" · ");
+        const trigPath = solTopicPath(sol.trigger);
         const left = document.createElement("div");
-        left.innerHTML = "<strong></strong><div class=\"meta\"></div>";
+        left.innerHTML = "<strong class=\"sol-path\"></strong><div class=\"meta\"></div>";
         const cardRow = deskCatalog.find((c) => c.id === sol.solutionId);
         const cardTitle = (cardRow && cardRow.title) || sol.title || sol.solutionId;
-        const keyTitle = trigH && trigH !== "по расписанию" ? trigH : cardTitle;
-        left.querySelector("strong").textContent = keyTitle;
+        const press = solPressOf(sol);
+        const pressH = press === "double" ? "двойное" : press === "long" ? "долгое" : "";
+        left.querySelector("strong").textContent = trigPath
+          ? (pressH ? trigPath + " · " + pressH : trigPath)
+          : cardTitle;
         const paramH = solParamsHuman(sol, cardRow);
         left.querySelector(".meta").textContent =
-          [keyTitle !== cardTitle ? cardTitle : "", tHuman ? "→ " + tHuman : "", paramH]
+          [tPath ? "→ " + tPath : (tHuman ? "→ " + tHuman : ""), tHuman && tPath ? tHuman : "", paramH]
             .filter(Boolean)
             .join(" · ");
-        left.title = trigF + (tFull ? " → " + tFull : "") + (paramH ? " · " + paramH : "");
+        left.title = (trigPath || solContactLabel(sol.trigger))
+          + (tPath ? " → " + tPath : "")
+          + (paramH ? " · " + paramH : "");
         const onDisk = (pouredRules || []).some((r) => String(r.id || "").indexOf("desk_sol_" + sol.id) === 0);
         const pourOne = document.createElement("button");
         pourOne.type = "button";
@@ -2849,6 +2931,9 @@
       lead.append(p, rawBtn);
       const needTrig = card.needTrig !== false;
       const needAux = card.needAux === true;
+      const togglePress = isTogglePressCard(card);
+      let pressKindUi = solPressOf(draft);
+      if (togglePress && pressKindUi !== "double") pressKindUi = "single";
       const disposers = [];
       let trigPicker = null;
       let auxPicker = null;
@@ -2989,7 +3074,8 @@
       const collectTargets = () => tgtPicker.collect();
       cardSheetDispose = () => disposers.forEach((fn) => { try { fn(); } catch (_e) {} });
       const fields = (Array.isArray(card.fields) ? card.fields : [])
-        .filter((f) => !(perLoadLevel && f.key === "level"));
+        .filter((f) => !(perLoadLevel && f.key === "level"))
+        .filter((f) => !(togglePress && f.key === "press"));
       const paramBox = document.createElement("div");
       paramBox.className = "sheet-params";
       const paramInputs = {};
@@ -3035,6 +3121,7 @@
           out[f.key] = Number.isFinite(n) ? n : Number(f.def);
         });
         if (perLoadLevel) out.level = defLevel;
+        if (togglePress) out.press = pressKindUi;
         return out;
       };
       const actions = document.createElement("div");
@@ -3106,6 +3193,43 @@
       cancel.textContent = "Закрыть";
       cancel.addEventListener("click", closeCardSheet);
       actions.append(save, cancel);
+      if (togglePress) {
+        const twin = document.createElement("button");
+        twin.type = "button";
+        twin.className = "ghost";
+        const twinPress = () => (pressKindUi === "double" ? "single" : "double");
+        const paintTwin = () => {
+          twin.textContent = pressKindUi === "double"
+            ? "Ещё правило на одиночное"
+            : "Ещё правило на двойное";
+        };
+        paintTwin();
+        twin.addEventListener("click", () => {
+          const trigContact = trigPicker ? (trigPicker.collect()[0] || null) : null;
+          if (!trigContact) {
+            err.textContent = "Сначала выберите клавишу";
+            return;
+          }
+          const want = twinPress();
+          const hit = (deskSolutions || []).find((s) =>
+            s && s.solutionId === card.id && s.trigger
+            && s.trigger.deviceTopicKey === trigContact.deviceTopicKey
+            && String(s.trigger.controlId || "") === String(trigContact.controlId || "")
+            && solPressOf(s) === want
+            && (!draft || s.id !== draft.id),
+          );
+          const snap = {
+            id: hit ? hit.id : "",
+            solutionId: card.id,
+            trigger: trigContact,
+            targets: hit ? (hit.targets || collectTargets()) : collectTargets(),
+            params: Object.assign({}, hit && hit.params ? hit.params : collectParams(), { press: want }),
+          };
+          closeCardSheet();
+          openCardSheet(card, snap);
+        });
+        actions.appendChild(twin);
+      }
       const head = document.createElement("div");
       head.className = "sheet-head";
       head.append(h, lead);
@@ -3123,6 +3247,31 @@
       const body = document.createElement("div");
       body.className = "sheet-body";
       body.append(trigLab, trig);
+      if (togglePress && needTrig) {
+        const pressRow = document.createElement("div");
+        pressRow.className = "press-row";
+        [["single", "одиночное"], ["double", "двойное"]].forEach(([v, t]) => {
+          const b = document.createElement("button");
+          b.type = "button";
+          b.className = "ghost";
+          b.textContent = t;
+          b.setAttribute("aria-pressed", pressKindUi === v ? "true" : "false");
+          b.addEventListener("click", () => {
+            pressKindUi = v;
+            pressRow.querySelectorAll("button").forEach((x) => {
+              x.setAttribute("aria-pressed", x === b ? "true" : "false");
+            });
+            const twinBtn = actions.querySelector("button:last-child");
+            if (twinBtn && /двойное|одиночное/.test(twinBtn.textContent || "")) {
+              twinBtn.textContent = pressKindUi === "double"
+                ? "Ещё правило на одиночное"
+                : "Ещё правило на двойное";
+            }
+          });
+          pressRow.appendChild(b);
+        });
+        body.appendChild(pressRow);
+      }
       if (needAux && aux) body.append(auxLab, aux);
       body.append(tgtLab, tgtNode);
       if (fields.length) body.appendChild(paramBox);
