@@ -4358,7 +4358,7 @@
       mid.className = "drill-mid";
       const ttl = document.createElement("span");
       ttl.className = "ttl" + (bound ? "" : " mute");
-      ttl.textContent = bound ? prettyContactName(original) : "Свободен";
+      ttl.textContent = bound ? prettyContactName(original) : (isDeskDrive(ch.controlId) ? "Без имени" : "Свободен");
       const sub = document.createElement("span");
       sub.className = "hint";
       if (input) {
@@ -4397,7 +4397,9 @@
         act.appendChild(makeAppleSwitch({
           on: on,
           busy: Boolean(probeBusy[key]),
-          title: on ? "Выключить канал" : "Включить канал",
+          title: isDeskDrive(ch.controlId)
+            ? (on ? "Стоп / закрыть" : "Импульс открыть")
+            : (on ? "Выключить канал" : "Включить канал"),
           onToggle: (wantOn) => {
             void actuateChannel(s.deviceTopicKey, ch.controlId, wantOn ? "on" : "off");
           },
@@ -4428,7 +4430,7 @@
         const bind = document.createElement("button");
         bind.type = "button";
         bind.className = "ghost bind";
-        bind.textContent = assigning ? "Свернуть" : (bound ? "Изменить" : "Привязать");
+        bind.textContent = assigning ? "Свернуть" : (bound ? "Изменить" : (isDeskDrive(ch.controlId) ? "Подписать" : "Привязать"));
         bind.addEventListener("click", () => {
           openAssign = assigning ? "" : key;
           const g = parseDaliCh(ch.controlId);
@@ -7080,7 +7082,7 @@
       paintMarkPath();
       const intro = $("markIntro");
       if (intro) {
-        intro.hidden = modFamily === "keys" || modFamily === "lines" || modFamily === "dali";
+        intro.hidden = modFamily === "keys" || modFamily === "lines" || modFamily === "dali" || modFamily === "curtains";
         intro.textContent = modFamily === "keys" || modFamily === "lines"
           ? ""
             : modFamily === "pair"
