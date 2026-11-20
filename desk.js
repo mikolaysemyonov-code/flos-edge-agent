@@ -4874,11 +4874,35 @@
     }
     function saveCurtainDraft() {
       if (!curtainDraft) return;
+      const form = document.querySelector(".curtain-grp-form");
+      const roomSel = form && form.querySelector('select[aria-label="Комната"]');
+      const typeSel = form && form.querySelector('select[aria-label="Тип"]');
+      curtainDraft.room = prettyRoom((roomSel && roomSel.value) || curtainDraft.room || "");
+      const typePick = typeSel && typeSel.value;
+      if (typePick) curtainDraft.type = typePick;
+      const livePicks = [];
+      if (form) {
+        form.querySelectorAll(".picks input[data-drive]").forEach((cb) => {
+          if (cb.checked) livePicks.push(cb.getAttribute("data-drive"));
+        });
+      }
+      if (livePicks.length) curtainDraft.picks = livePicks;
       const members = curtainDriveChoices()
         .filter((d) => curtainDraft.picks.indexOf(d.key) >= 0)
         .map((d) => ({ deviceTopicKey: d.deviceTopicKey, controlId: d.controlId }));
+      if (!curtainDraft.room) {
+        curtainDraft.note = "Выберите комнату";
+        renderMark();
+        return;
+      }
+      if (!members.length) {
+        curtainDraft.note = "Отметьте хотя бы один привод";
+        renderMark();
+        return;
+      }
+      curtainDraft.note = "";
       fetch("/runtime/desk-groups", {
-        method: "PUT",
+        method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
           id: curtainDraft.id || undefined,
@@ -4936,19 +4960,24 @@
       } else {
         const form = document.createElement("div");
         form.className = "curtain-grp-form";
+        const rooms = roomsFromBus();
+        if (curtainDraft.room && rooms.indexOf(curtainDraft.room) < 0) rooms.unshift(curtainDraft.room);
+        if (curtainDraft.room && curtainDraft.note === "Выберите комнату") curtainDraft.note = "";
         form.appendChild(makeField(
           "Комната",
-          roomsFromBus(),
+          rooms,
           curtainDraft.room,
           "Выбрать",
           (v) => {
-            curtainDraft.room = v;
+            curtainDraft.room = prettyRoom(v);
+            if (curtainDraft.room && curtainDraft.note === "Выберите комнату") curtainDraft.note = "";
             renderMark();
           },
           "Новая комната…",
           () => promptRoom().then((name) => {
             if (!name) return;
-            curtainDraft.room = name;
+            curtainDraft.room = prettyRoom(name);
+            if (curtainDraft.note === "Выберите комнату") curtainDraft.note = "";
             renderMark();
           }),
           !curtainDraft.room,
@@ -4981,6 +5010,7 @@
           const lab = document.createElement("label");
           const cb = document.createElement("input");
           cb.type = "checkbox";
+          cb.setAttribute("data-drive", d.key);
           cb.checked = curtainDraft.picks.indexOf(d.key) >= 0;
           cb.addEventListener("change", () => {
             const next = curtainDraft.picks.filter((k) => k !== d.key);
