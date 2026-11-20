@@ -22,6 +22,11 @@ import {
   listDeskSolutions,
   upsertDeskSolution,
 } from "./runtime-desk-solutions.mjs";
+import {
+  deleteDeskLoadGroup,
+  listDeskLoadGroups,
+  upsertDeskLoadGroup,
+} from "./runtime-desk-groups.mjs";
 import { buildFieldCertificate } from "./runtime-desk-field-cert.mjs";
 import {
   cardsFromHints,
@@ -719,6 +724,35 @@ export async function handleRuntimeDeskAudit(req, res) {
     return;
   }
   jsonEnd(res, 200, saveDeskAuditRun(body));
+}
+
+export async function handleRuntimeDeskGroups(req, res) {
+  const method = (req.method ?? "GET").toUpperCase();
+  if (method === "GET") {
+    const blocked = markingBlocked();
+    jsonEnd(res, 200, blocked || { ok: true, groups: listDeskLoadGroups() });
+    return;
+  }
+  const chunks = [];
+  for await (const c of req) chunks.push(c);
+  let body = {};
+  try {
+    const raw = Buffer.concat(chunks).toString("utf8");
+    if (raw.trim()) body = JSON.parse(raw);
+  } catch {
+    jsonEnd(res, 400, { ok: false, error: "invalid_json" });
+    return;
+  }
+  if (method === "DELETE" || body.delete) {
+    jsonEnd(res, 200, deleteDeskLoadGroup(body.delete || body.id));
+    return;
+  }
+  if (method !== "PUT" && method !== "POST") {
+    jsonEnd(res, 405, { ok: false, error: "method" });
+    return;
+  }
+  const out = upsertDeskLoadGroup(body);
+  jsonEnd(res, out.ok ? 200 : 400, out);
 }
 
 export async function handleRuntimeDeskSolutions(req, res) {

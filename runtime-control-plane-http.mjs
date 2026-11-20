@@ -47,6 +47,7 @@ import {
   handleRuntimeDeskRulesFile,
   handleRuntimeDeskHaLights,
   handleRuntimeDeskSolutions,
+  handleRuntimeDeskGroups,
   handleRuntimeFieldCert,
   handleRuntimeMqttScan,
   readLastDeskShelves,
@@ -879,6 +880,7 @@ function deskWriteLocked(method, urlPath) {
   return (
     urlPath === "/runtime/desk-pour" ||
     urlPath === "/runtime/desk-solutions" ||
+    urlPath === "/runtime/desk-groups" ||
     urlPath === "/runtime/desk-marking" ||
     urlPath === "/runtime/desk-marking.json" ||
     urlPath === "/runtime/desk-actuate" ||
@@ -1029,6 +1031,17 @@ export function runtimeHttpPathHandler(req, res) {
   if (method === "POST" && urlPath === "/runtime/desk-pour") {
     void handleRuntimeDeskPour(req, res).catch((err) => {
       console.error("[runtime-control-plane] desk-pour:", err?.message ?? err);
+      if (!res.headersSent) {
+        res.statusCode = 500;
+        res.setHeader("content-type", "application/json; charset=utf-8");
+        res.end(JSON.stringify({ ok: false, error: "INTERNAL" }));
+      }
+    });
+    return true;
+  }
+  if ((method === "GET" || method === "PUT" || method === "POST" || method === "DELETE") && urlPath === "/runtime/desk-groups") {
+    void handleRuntimeDeskGroups(req, res).catch((err) => {
+      console.error("[runtime-control-plane] desk-groups:", err?.message ?? err);
       if (!res.headersSent) {
         res.statusCode = 500;
         res.setHeader("content-type", "application/json; charset=utf-8");

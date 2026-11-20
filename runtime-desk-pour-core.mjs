@@ -4,6 +4,7 @@
  */
 import { liveDeskDeviceKey } from "./runtime-desk-rules-marks.mjs";
 import { deskPhysPath, isDaliChannelId } from "./runtime-desk-dali.mjs";
+import { installDeskCurtainGroups, listDeskLoadGroups } from "./runtime-desk-groups.mjs";
 
 function esc(s) {
   return JSON.stringify(String(s ?? ""));
@@ -647,6 +648,9 @@ export function mergeDeskNamesIntoCore(coreSrc, named) {
   const help = ensureFlRtHelpers(src);
   src = help.src;
   if (help.changed) changed = true;
+  const groups = installDeskCurtainGroups(src, listDeskLoadGroups());
+  src = groups.content;
+  if (groups.changed) changed = true;
   return { ok: true, content: src, changed, removedIds };
 }
 

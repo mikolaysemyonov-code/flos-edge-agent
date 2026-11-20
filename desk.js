@@ -137,6 +137,9 @@
     let daliGroupEdit = "";
     let daliDraftMembers = [];
     let daliWalkMeta = { name: "" };
+    let curtainPane = "modules";
+    let deskGroups = [];
+    let curtainDraft = null;
     const RELAY_TYPES = [
       "Свет 220 В", "Люстра", "Подвес", "Потолочный", "Точечные", "Трек",
       "Бра", "Торшер", "Гирлянда", "Ёлка",
@@ -3413,6 +3416,13 @@
       }
       cardsForFilter().forEach((card) => paintCardTile(grid, card));
     }
+    async function loadGroups() {
+      try {
+        const r = await fetch("/runtime/desk-groups");
+        const j = await r.json();
+        if (j && j.ok && Array.isArray(j.groups)) deskGroups = j.groups;
+      } catch (_) { /* агент ниже */ }
+    }
     async function loadSolutions() {
       try {
         const r = await fetch("/runtime/desk-solutions");
@@ -4806,6 +4816,250 @@
       }
       faceChannels(s).forEach((ch) => chs.appendChild(drillChannelRow(s, ch)));
       box.append(back, head, chs);
+    }
+    function curtainMemberKey(deviceTopicKey, controlId) {
+      return String(deviceTopicKey || "") + "\t" + pairOpenId(controlId);
+    }
+    function curtainDriveChoices() {
+      const seen = new Set();
+      const out = [];
+      (lastShelvesRows || []).forEach((s) => {
+        visibleChannels(s).forEach((ch) => {
+          if (!isDeskDrive(ch.controlId)) return;
+          const controlId = pairOpenId(ch.controlId);
+          const key = curtainMemberKey(s.deviceTopicKey, controlId);
+          if (seen.has(key)) return;
+          seen.add(key);
+          const named = pairName(s, ch);
+          out.push({
+            key,
+            deviceTopicKey: s.deviceTopicKey,
+            controlId,
+            host: s.label || s.deviceTopicKey,
+            drive: prettyControlId(controlId),
+            named: named ? prettyContactName(named) : "",
+          });
+        });
+      });
+      return out;
+    }
+    function paintCurtainTabs(box) {
+      if (!box) return;
+      const tabs = document.createElement("div");
+      tabs.className = "filters dali-tabs";
+      tabs.setAttribute("role", "tablist");
+      [["modules", "Модули"], ["groups", "Группы"]].forEach(([id, ru]) => {
+        const b = document.createElement("button");
+        b.type = "button";
+        b.setAttribute("aria-pressed", curtainPane === id ? "true" : "false");
+        b.textContent = ru;
+        b.addEventListener("click", () => {
+          curtainPane = id;
+          if (id === "groups") void loadGroups().then(() => renderMark());
+          else renderMark();
+        });
+        tabs.appendChild(b);
+      });
+      box.insertBefore(tabs, box.firstChild);
+    }
+    function startCurtainDraft(g) {
+      curtainDraft = {
+        id: g && g.id ? g.id : "",
+        room: g && g.room ? g.room : "",
+        type: (g && g.type) || "Штора",
+        picks: (g && g.members ? g.members : []).map((m) => curtainMemberKey(m.deviceTopicKey, m.controlId)),
+        note: "",
+      };
+      renderMark();
+    }
+    function saveCurtainDraft() {
+      if (!curtainDraft) return;
+      const members = curtainDriveChoices()
+        .filter((d) => curtainDraft.picks.indexOf(d.key) >= 0)
+        .map((d) => ({ deviceTopicKey: d.deviceTopicKey, controlId: d.controlId }));
+      fetch("/runtime/desk-groups", {
+        method: "PUT",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          id: curtainDraft.id || undefined,
+          room: curtainDraft.room,
+          type: curtainDraft.type,
+          members,
+        }),
+      })
+        .then((r) => r.json())
+        .then((j) => {
+          if (!j || !j.ok) {
+            curtainDraft.note = j && j.error === "need_room"
+              ? "Выберите комнату"
+              : j && j.error === "need_members"
+                ? "Отметьте хотя бы один привод"
+                : "Не сохранилось";
+            renderMark();
+            return;
+          }
+          deskGroups = j.groups || deskGroups;
+          curtainDraft = null;
+          renderMark();
+        })
+        .catch(() => {
+          curtainDraft.note = "Нет связи с агентом";
+          renderMark();
+        });
+    }
+    function dropCurtainGroup(id) {
+      fetch("/runtime/desk-groups", {
+        method: "DELETE",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ id }),
+      })
+        .then((r) => r.json())
+        .then((j) => {
+          if (j && j.ok) deskGroups = j.groups || [];
+          if (curtainDraft && curtainDraft.id === id) curtainDraft = null;
+          renderMark();
+        })
+        .catch(() => {});
+    }
+    function renderCurtainGroups(box) {
+      const hint = document.createElement("p");
+      hint.className = "meta";
+      hint.textContent = "Одна группа — одна ячейка FORM LOGIC OS. После сохранения залейте имена.";
+      box.appendChild(hint);
+      if (!curtainDraft) {
+        const add = document.createElement("button");
+        add.type = "button";
+        add.className = "ghost dali-add";
+        add.textContent = "Создать группу";
+        add.addEventListener("click", () => startCurtainDraft(null));
+        box.appendChild(add);
+      } else {
+        const form = document.createElement("div");
+        form.className = "curtain-grp-form";
+        form.appendChild(makeField(
+          "Комната",
+          roomsFromBus(),
+          curtainDraft.room,
+          "Выбрать",
+          (v) => {
+            curtainDraft.room = v;
+            renderMark();
+          },
+          "Новая комната…",
+          () => promptRoom().then((name) => {
+            if (!name) return;
+            curtainDraft.room = name;
+            renderMark();
+          }),
+          !curtainDraft.room,
+          true,
+        ));
+        form.appendChild(makeField(
+          "Тип",
+          DRIVE_LABELS,
+          curtainDraft.type,
+          "Выбрать",
+          (v) => {
+            if (v) curtainDraft.type = v;
+            renderMark();
+          },
+          "",
+          null,
+          false,
+          true,
+        ));
+        const picks = document.createElement("div");
+        picks.className = "picks";
+        const drives = curtainDriveChoices();
+        if (!drives.length) {
+          const empty = document.createElement("p");
+          empty.className = "empty";
+          empty.textContent = "Нет приводов на шине — сначала вкладка «Модули».";
+          picks.appendChild(empty);
+        }
+        drives.forEach((d) => {
+          const lab = document.createElement("label");
+          const cb = document.createElement("input");
+          cb.type = "checkbox";
+          cb.checked = curtainDraft.picks.indexOf(d.key) >= 0;
+          cb.addEventListener("change", () => {
+            const next = curtainDraft.picks.filter((k) => k !== d.key);
+            if (cb.checked) next.push(d.key);
+            curtainDraft.picks = next;
+          });
+          const span = document.createElement("span");
+          span.className = "pick-name";
+          span.textContent = d.named ? (d.named + " · " + d.host) : (d.host + " · " + d.drive);
+          lab.append(cb, span);
+          picks.appendChild(lab);
+        });
+        form.appendChild(picks);
+        if (curtainDraft.note) {
+          const note = document.createElement("p");
+          note.className = "hint orphan";
+          note.textContent = curtainDraft.note;
+          form.appendChild(note);
+        }
+        const actions = document.createElement("div");
+        actions.className = "actions";
+        const save = document.createElement("button");
+        save.type = "button";
+        save.textContent = "Сохранить";
+        save.addEventListener("click", saveCurtainDraft);
+        const cancel = document.createElement("button");
+        cancel.type = "button";
+        cancel.className = "ghost";
+        cancel.textContent = "Отмена";
+        cancel.addEventListener("click", () => {
+          curtainDraft = null;
+          renderMark();
+        });
+        actions.append(save, cancel);
+        form.appendChild(actions);
+        box.appendChild(form);
+      }
+      const list = document.createElement("ul");
+      list.className = "curtain-grps";
+      const rows = (deskGroups || []).filter((g) => g && g.kind === "curtain");
+      if (!rows.length && !curtainDraft) {
+        const p = document.createElement("p");
+        p.className = "empty";
+        p.textContent = "Групп ещё нет. Соберите приводы одной комнаты в одну штору.";
+        box.appendChild(p);
+        return;
+      }
+      rows.forEach((g) => {
+        const li = document.createElement("li");
+        li.className = "curtain-grp";
+        const title = document.createElement("strong");
+        title.textContent = g.title || (g.room + " · " + g.type);
+        const sub = document.createElement("span");
+        sub.className = "hint";
+        sub.textContent = (g.members || []).map((m) => {
+          const hit = curtainDriveChoices().find((d) =>
+            d.deviceTopicKey === m.deviceTopicKey && d.controlId === pairOpenId(m.controlId));
+          return hit ? (hit.named || (hit.host + " · " + hit.drive)) : (m.deviceTopicKey + " / " + pairOpenId(m.controlId));
+        }).join(" · ");
+        const mid = document.createElement("div");
+        mid.className = "curtain-grp-mid";
+        mid.append(title, sub);
+        const act = document.createElement("div");
+        act.className = "drill-act";
+        const edit = document.createElement("button");
+        edit.type = "button";
+        edit.className = "ghost";
+        edit.textContent = "Изменить";
+        edit.addEventListener("click", () => startCurtainDraft(g));
+        const drop = document.createElement("button");
+        drop.type = "button";
+        drop.className = "ghost";
+        drop.textContent = "Удалить";
+        drop.addEventListener("click", () => dropCurtainGroup(g.id));
+        act.append(edit, drop);
+        li.append(mid, act);
+        list.appendChild(li);
+      });
+      box.appendChild(list);
     }
     function fillRoomChannelList(box, rows, emptyText) {
       box.className = "modopen";
@@ -7104,6 +7358,12 @@
         renderPairVerifyPanel(body);
         return;
       }
+      if (modFamily === "curtains" && curtainPane === "groups") {
+        body.replaceChildren();
+        paintCurtainTabs(body);
+        renderCurtainGroups(body);
+        return;
+      }
       const famRows = modFamily === "all"
         ? sortModules([].concat(split.light || [], split.buttons || [], split.relays || []))
         : (split[modFamily] || []);
@@ -7121,6 +7381,7 @@
               ? "Шторы с шины и фазные приводы MR появятся после обновления щита."
             : "Встаньте в комнате и нажмите кнопку три раза.";
       fillModuleVitrine(body, famRows, empty);
+      if (modFamily === "curtains") paintCurtainTabs(body);
     }
     function renderShelves(rows) {
       lastShelvesRows = rows || [];
@@ -7865,6 +8126,8 @@
           .then((j) => {
             markPending = {};
             deskSolutions = [];
+            deskGroups = [];
+            curtainDraft = null;
             keyPlan = [];
             linePlan = [];
             stopKeyScan();
@@ -8160,5 +8423,6 @@
       loadRooms();
       loadLast();
       loadSolutions();
+      loadGroups();
     })();
  

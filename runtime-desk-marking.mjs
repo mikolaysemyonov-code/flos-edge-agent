@@ -30,6 +30,7 @@ function emptyDoc() {
     rooms: [],
     keyPlan: [],
     linePlan: [],
+    loadGroups: [],
     site: { kind: "", floors: 1 },
     roomBook: [],
   };
@@ -68,6 +69,7 @@ export function readDeskDocument() {
       rooms: cleanRooms(json.rooms),
       keyPlan: Array.isArray(json.keyPlan) ? json.keyPlan : [],
       linePlan: Array.isArray(json.linePlan) ? json.linePlan : [],
+      loadGroups: Array.isArray(json.loadGroups) ? json.loadGroups : [],
       site: json.site && typeof json.site === "object" ? json.site : { kind: "", floors: 1 },
       roomBook: Array.isArray(json.roomBook) ? json.roomBook : [],
     };
@@ -140,7 +142,7 @@ export function clearDeskProject() {
   const clearedRooms = Array.isArray(doc.rooms) ? doc.rooms.length : 0;
   const clearedKeyPlan = Array.isArray(doc.keyPlan) ? doc.keyPlan.length : 0;
   const clearedLinePlan = Array.isArray(doc.linePlan) ? doc.linePlan.length : 0;
-  writeDoc({ shelves: {}, solutions: [], rooms: [], keyPlan: [], linePlan: [] });
+  writeDoc({ shelves: {}, solutions: [], rooms: [], keyPlan: [], linePlan: [], loadGroups: [] });
   return {
     ok: true,
     clearedShelves,
@@ -184,6 +186,7 @@ export function patchDeskDocument(patch) {
       rooms: cleanRooms(json.rooms),
       keyPlan: Array.isArray(json.keyPlan) ? json.keyPlan : [],
       linePlan: Array.isArray(json.linePlan) ? json.linePlan : [],
+      loadGroups: Array.isArray(json.loadGroups) ? json.loadGroups : [],
       site: json.site && typeof json.site === "object" ? json.site : { kind: "", floors: 1 },
       roomBook: Array.isArray(json.roomBook) ? json.roomBook : [],
     };
@@ -201,6 +204,7 @@ export function patchDeskDocument(patch) {
     rooms: has("rooms") ? cleanRooms(patch.rooms) : prev.rooms,
     keyPlan: has("keyPlan") ? (Array.isArray(patch.keyPlan) ? patch.keyPlan : []) : prev.keyPlan || [],
     linePlan: has("linePlan") ? (Array.isArray(patch.linePlan) ? patch.linePlan : []) : prev.linePlan || [],
+    loadGroups: has("loadGroups") ? (Array.isArray(patch.loadGroups) ? patch.loadGroups : []) : prev.loadGroups || [],
     site: has("site") ? patch.site : prev.site || { kind: "", floors: 1 },
     roomBook: has("roomBook") ? (Array.isArray(patch.roomBook) ? patch.roomBook : []) : prev.roomBook || [],
   };
@@ -230,6 +234,7 @@ export function replaceDeskDocument(input) {
     rooms: cleanRooms(input.rooms),
     keyPlan: collapseKeyPlan(input.keyPlan),
     linePlan: Array.isArray(input.linePlan) ? input.linePlan : [],
+    loadGroups: Array.isArray(input.loadGroups) ? input.loadGroups : [],
     site: input.site && typeof input.site === "object" ? input.site : { kind: "", floors: 1 },
     roomBook: Array.isArray(input.roomBook) ? input.roomBook : [],
   };
@@ -256,6 +261,7 @@ function writeDoc(doc) {
   if (Array.isArray(doc?.rooms)) patch.rooms = doc.rooms;
   if (Array.isArray(doc?.keyPlan)) patch.keyPlan = doc.keyPlan;
   if (Array.isArray(doc?.linePlan)) patch.linePlan = doc.linePlan;
+  if (Array.isArray(doc?.loadGroups)) patch.loadGroups = doc.loadGroups;
   if (doc?.site && typeof doc.site === "object") patch.site = doc.site;
   if (Array.isArray(doc?.roomBook)) patch.roomBook = doc.roomBook;
   return patchDeskDocument(patch);
