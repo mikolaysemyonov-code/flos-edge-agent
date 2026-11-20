@@ -67,6 +67,18 @@ function applyNameTitles(src, id, name) {
   return { src, changed };
 }
 
+function ensureSwitchForceDefault(src) {
+  const re = /defineVirtualDevice\s*\(\s*["']form_logic_os["'][\s\S]*?cells:\s*\{([\s\S]*?)\n\s*\}/;
+  const m = re.exec(String(src || ""));
+  if (!m) return { content: src, changed: false };
+  const body = m[1].replace(
+    /^(\s*["'][^"']+["']\s*:\s*\{[^}\n]*type:\s*"switch"[^}\n]*?)(\},?)\s*$/gm,
+    (all, inner, end) => (/forceDefault/.test(inner) ? all : inner.replace(/,?\s*$/, "") + ", forceDefault: true " + end),
+  );
+  if (body === m[1]) return { content: src, changed: false };
+  return { content: String(src).slice(0, m.index) + m[0].replace(m[1], body) + String(src).slice(m.index + m[0].length), changed: true };
+}
+
 function patchCellTitle(src, id, title) {
   const needle = `"${id}"`;
   const i = src.indexOf(needle);
@@ -97,7 +109,7 @@ function emitLoad(deviceTopicKey, controlId, name, extra = {}) {
     const briId = id + "_bri";
     const mqtt = deskPhysPath(dev, controlId).split("/")[0];
     cellLines.push(
-      `    ${esc(id)}: { type: "switch", title: ${esc(name)}, value: false },`,
+      `    ${esc(id)}: { type: "switch", title: ${esc(name)}, value: false, forceDefault: true },`,
       `    ${esc(briId)}: { type: "range", title: ${esc(name + " · яркость")}, value: 100, max: 100, min: 0 },`,
     );
     const row = { kind: "dimmer", vSw: id, vBri: briId, pDev: mqtt, pSw: "wanted_level", pBri: "wanted_level" };
@@ -115,7 +127,7 @@ function emitLoad(deviceTopicKey, controlId, name, extra = {}) {
   if (isLedChannel(controlId)) {
     const briId = id + "_bri";
     cellLines.push(
-      `    ${esc(id)}: { type: "switch", title: ${esc(name)}, value: false },`,
+      `    ${esc(id)}: { type: "switch", title: ${esc(name)}, value: false, forceDefault: true },`,
       `    ${esc(briId)}: { type: "range", title: ${esc(name + " · яркость")}, value: 100, max: 100, min: 0 },`,
     );
     return {
@@ -124,7 +136,7 @@ function emitLoad(deviceTopicKey, controlId, name, extra = {}) {
       row: { kind: "dimmer", vSw: id, vBri: briId, pDev: dev, pSw: sw, pBri: sw + " Brightness" },
     };
   }
-  cellLines.push(`    ${esc(id)}: { type: "switch", title: ${esc(name)}, value: false },`);
+  cellLines.push(`    ${esc(id)}: { type: "switch", title: ${esc(name)}, value: false, forceDefault: true },`);
   return { id, cellLines, row: { kind: "relay", vSw: id, pDev: dev, pSw: sw } };
 }
 
@@ -197,6 +209,7 @@ const FL_RT_ENGINE = [
   "    whenChanged: [swTopic, briTopic],",
   "    then: function (newValue, devName, cellName) {",
   "      try {",
+  "        if (!flRtReady) return;",
   "        if (flRtEcho[key]) return;",
   '        var on = wbIsOn(readValue("form_logic_os/" + cfg.vSw));',
   '        var bri = Number(readValue("form_logic_os/" + cfg.vBri));',
@@ -293,6 +306,7 @@ const FL_RT_ENGINE = [
   '    whenChanged: "form_logic_os/" + cfg.vSw,',
   "    then: function () {",
   "      try {",
+  "        if (!flRtReady) return;",
   "        if (flRtEcho[key]) return;",
   '        var want = wbIsOn(readValue("form_logic_os/" + cfg.vSw));',
   '        if (wbIsOn(readValue(cfg.pDev + "/" + cfg.pSw)) === want) return;',
@@ -317,6 +331,39 @@ const FL_RT_ENGINE = [
   "    }",
   "  });",
   "});",
+  "var flRtReady = 0;",
+  "function flRtPullPhys() {",
+  "  for (var i = 0; i < dimmersConfig.length; i++) {",
+  "    var dcfg = dimmersConfig[i];",
+  "    try {",
+  '      var brNow = Number(readValue(dcfg.pDev + "/" + dcfg.pBri)); if (isNaN(brNow)) brNow = 0;',
+  "      var physOn = brNow > 0;",
+  "      flRtEcho[dcfg.vSw] = 1;",
+  '      dev["form_logic_os"][dcfg.vSw] = physOn;',
+  "      if (physOn) {",
+  "        var br = brNow; if (br < 0) br = 0; if (br > 100) br = 100;",
+  '        dev["form_logic_os"][dcfg.vBri] = br;',
+  "      }",
+      "      (function (id) { setTimeout(function () { flRtEcho[id] = 0; }, 200); })(dcfg.vSw);",
+      "    } catch (e) {}",
+      "  }",
+      "  for (var j = 0; j < relaysConfig.length; j++) {",
+      "    var rcfg = relaysConfig[j];",
+      "    try {",
+      '      var on = wbIsOn(readValue(rcfg.pDev + "/" + rcfg.pSw));',
+      "      flRtEcho[rcfg.vSw] = 1;",
+      '      dev["form_logic_os"][rcfg.vSw] = on;',
+      "      (function (id) { setTimeout(function () { flRtEcho[id] = 0; }, 120); })(rcfg.vSw);",
+  "    } catch (e) {}",
+  "  }",
+  "}",
+  "setTimeout(function () {",
+  "  flRtPullPhys();",
+  "  setTimeout(function () {",
+  "    flRtPullPhys();",
+  "    flRtReady = 1;",
+  "  }, 1800);",
+  "}, 500);",
 ].join("\n");
 
 function renderMap(dimmers, relays) {
@@ -585,6 +632,7 @@ export function mergeDeskNamesIntoCore(coreSrc, named) {
     stripDuplicateDeskBridges,
     stripDuplicatePhysPathBridges,
     stripDuplicateTitles,
+    ensureSwitchForceDefault,
   ]) {
     const stripped = step(src);
     if (stripped.changed) {
