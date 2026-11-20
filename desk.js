@@ -97,6 +97,7 @@
       pnr: { tab: "mark", fam: "keys", title: "Пусконаладка" },
       light: { tab: "mark", fam: "light", title: "Подсветка" },
       relays: { tab: "mark", fam: "relays", title: "Реле" },
+      curtains: { tab: "mark", fam: "curtains", title: "Шторы" },
       dali: { tab: "mark", fam: "dali", title: "DALI" },
       mdm: { tab: "mark", fam: "mdm", title: "MDM3" },
       climate: { tab: "cards", filter: "Климат", title: "Климат" },
@@ -335,9 +336,21 @@
         !isDriveClose(ch.controlId) && !/(?:Single|Short|Long|Shortlong|Double) Press Counter$/i.test(String(ch.controlId || "")),
       );
     }
-    /** На плитке DALI — только адреса, не группы и не broadcast. */
+    function shelfHasDrives(s) {
+      return (s.channels || []).some((ch) => isDeskDrive(ch.controlId));
+    }
+    function shelfHasRelayK(s) {
+      return (s.channels || []).some((ch) => /^K\d+$/i.test(String(ch.controlId || "")) && !isDeskDrive(ch.controlId));
+    }
+    /** На плитке DALI — только адреса, не группы и не broadcast. Шторы — только Open привода. */
     function faceChannels(s) {
       const vis = visibleChannels(s);
+      if (activeNav === "curtains" || modFamily === "curtains") {
+        return vis.filter((ch) => isDeskDrive(ch.controlId));
+      }
+      if (activeNav === "relays" || modFamily === "relays") {
+        return vis.filter((ch) => !isDeskDrive(ch.controlId));
+      }
       const dali = vis.filter((ch) => parseDaliCh(ch.controlId));
       if (!dali.length) return vis;
       return dali.filter((ch) => parseDaliCh(ch.controlId).kind === "addr");
@@ -469,9 +482,14 @@
       return "";
     }
     function splitShelves(rows) {
-      const out = { light: [], buttons: [], relays: [], dali: [], mdm: [] };
+      const out = { light: [], buttons: [], relays: [], dali: [], mdm: [], curtains: [] };
       (rows || []).forEach((s) => {
+        if (shelfHasDrives(s)) out.curtains.push(s);
         const f = familyOf(s);
+        if (f === "relays") {
+          if (shelfHasRelayK(s)) out.relays.push(s);
+          return;
+        }
         if (out[f]) out[f].push(s);
       });
       return out;
@@ -488,12 +506,14 @@
       renderMark();
     }
     function normalizeTab(tab) {
-      if (tab === "light" || tab === "buttons" || tab === "relays" || tab === "all" || tab === "keys" || tab === "lines" || tab === "pair") {
+      if (tab === "light" || tab === "buttons" || tab === "relays" || tab === "curtains" || tab === "all" || tab === "keys" || tab === "lines" || tab === "pair") {
         markPath = "modules";
         modFamily = tab === "buttons"
           ? "buttons"
           : tab === "relays"
             ? "relays"
+            : tab === "curtains"
+              ? "curtains"
             : tab === "all"
               ? "all"
               : tab === "keys"
@@ -604,7 +624,7 @@
         Promise.all([loadKeyPlan(), loadLinePlan(), loadSolutions()]).then(() => renderMark());
       }
       if (activeNav === "dali") void loadDaliMdali();
-      if (deskNavLive && /^(pnr|light|relays|dali|mdm)$/.test(id) && !(lastShelvesRows || []).length) {
+      if (deskNavLive && /^(pnr|light|relays|curtains|dali|mdm)$/.test(id) && !(lastShelvesRows || []).length) {
         const scanBtn = $("scan");
         if (!scanBtn || !scanBtn.disabled) void scanNow();
       }
@@ -3770,7 +3790,8 @@
       if (room) roomFilter = room;
       else markPath = "modules";
       const fam = familyOf({ deviceTopicKey: key }) || "light";
-      const nav = fam === "dali" ? "dali"
+      const nav = isDeskDrive(cid) ? "curtains"
+        : fam === "dali" ? "dali"
         : fam === "mdm" ? "mdm"
         : fam === "relays" ? "relays"
         : fam === "light" ? "light"
@@ -4172,7 +4193,7 @@
       return faceChannels(s).filter(channelIsOn).length;
     }
     function paintMarkChrome() {
-      const hardware = /^(light|relays|dali|mdm)$/.test(activeNav);
+      const hardware = /^(light|relays|curtains|dali|mdm)$/.test(activeNav);
       const daliDock = $("daliScanDock");
       const modSearch = $("modSearch");
       const markFiles = $("markFiles");
@@ -4229,7 +4250,7 @@
           ? lineNames.slice(0, 3).join(" · ")
           : (/dali/i.test(String(s.deviceTopicKey || ""))
             ? (n ? (n + " адресов на шине") : "Нет адресов — нажмите шину 1, 2 или 3")
-            : "Назовите комнату и линию");
+            : (activeNav === "curtains" ? "Назовите комнату и штору" : "Назовите комнату и линию"));
       }
       const bars = document.createElement("div");
       bars.className = "ch-bars";
@@ -4781,7 +4802,7 @@
         box.appendChild(chs);
         return;
       }
-      visibleChannels(s).forEach((ch) => chs.appendChild(drillChannelRow(s, ch)));
+      faceChannels(s).forEach((ch) => chs.appendChild(drillChannelRow(s, ch)));
       box.append(back, head, chs);
     }
     function fillRoomChannelList(box, rows, emptyText) {
@@ -4844,7 +4865,9 @@
     function fillModuleVitrine(box, rows, emptyText) {
       if (!box) return;
       box.replaceChildren();
-      const filtered = modulesForFilter(rows);
+      const filtered = modulesForFilter(rows).filter((s) =>
+        (activeNav !== "curtains" && activeNav !== "relays") || faceChannels(s).length,
+      );
       if (!filtered.length) {
         box.className = "vitrine";
         const p = document.createElement("p");
@@ -4864,7 +4887,7 @@
       const grouped = new Map();
       filtered.forEach((s) => {
         const rooms = [];
-        visibleChannels(s).forEach((ch) => {
+        faceChannels(s).forEach((ch) => {
           const room = nameRoom(pairName(s, ch));
           if (room && rooms.indexOf(room) < 0) rooms.push(room);
         });
@@ -7092,6 +7115,8 @@
               ? "MDM3 появится после обновления щита."
           : modFamily === "light"
             ? "Подсветка (LED) появится после обновления щита."
+            : modFamily === "curtains"
+              ? "Шторы с шины и фазные приводы MR появятся после обновления щита."
             : "Встаньте в комнате и нажмите кнопку три раза.";
       fillModuleVitrine(body, famRows, empty);
     }
