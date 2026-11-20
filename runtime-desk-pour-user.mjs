@@ -192,7 +192,9 @@ function emitAllOff(sol) {
   const loads = (sol.targets || []).map(pathOf).filter(Boolean);
   if (!when || !loads.length) return "";
   const sets = loads.map((p) => virtualAssign(virtCell(p), "false")).join("\n");
-  return deskEmitRule(id, when, sets);
+  return deskEmitRule(id, when, sets, {
+    pressEdge: !/Press Counter|\scounter$/i.test(when),
+  });
 }
 
 /** Short: snapshot levels → OFF; next short: restore. */

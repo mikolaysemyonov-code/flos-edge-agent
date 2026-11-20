@@ -308,10 +308,11 @@ export function deskInputBaseControl(controlId) {
 const PRESS_ON_WIRE = { Short: "Single", Single: "Single", Long: "Long", Double: "Double", Shortlong: "Shortlong" };
 
 /**
- * Кнопка Input N слушает счётчик жеста. EXT и Input A1 остаются уровнем.
+ * Кнопка Input N слушает счётчик жеста. EXT / IN / Input A1 — сухой контакт, без счётчика.
  * Короткое нажатие — Single Press Counter: значение 2, 3, 28…, не 0/1.
  * wbIsOn(newValue) на таком числе всегда ложь, правило выходит и ничего не делает.
  * Сам Input N между опросами часто не успевает стать 1. Дим — Long / Shortlong.
+ * Сухой контакт: правило на фронте «ушёл из покоя», не пока клавиша держится.
  */
 export function deskButtonCounter(controlId, kind = "Short", _deviceTopicKey = "") {
   const base = deskInputBaseControl(controlId);
@@ -341,6 +342,21 @@ export function deskWhenSpec(whenPath) {
   return "  whenChanged: " + JSON.stringify(String(whenPath || "")) + ",";
 }
 
+/** Вход без Press Counter: GPIO EXT, WD14 IN, Input A1. */
+export function isDeskDryContactWhen(whenPath) {
+  return /\/(?:Input\s+[A-Z]?\d+|IN\d+|EXT\d+_IN\d+|[A-D]\d+_IN\d+)$/i.test(String(whenPath || ""));
+}
+
+function deskIdleGuard(onExpr) {
+  return [
+    "      var on = wbIsOn(" + onExpr + ");",
+    "      if (!__seen) { __seen = 1; __idle = on; __prev = on; return; }",
+    "      if (on === __prev) return;",
+    "      __prev = on;",
+    "      if (on === __idle) return;",
+  ].join("\n");
+}
+
 function deskRuleCatch(id) {
   return (
     "    } catch (e) { log(\"[CORE_ERROR] \" + " +
@@ -353,7 +369,7 @@ function deskRuleCatch(id) {
 
 /**
  * Правило кнопки. MIO с «:» — trackMqtt. Жмём, когда вход уходит из покоя
- * (NO: 0→1, подтяжка/NC: 1→0). Только фронт on даёт паузу до отпускания.
+ * (NO: 0→1, подтяжка/NC: 1→0). Отпускание / удержание не переключает свет.
  */
 export function deskEmitRule(id, whenPath, tryBody, opts = {}) {
   const colon = deskColonCell(whenPath);
@@ -367,11 +383,7 @@ export function deskEmitRule(id, whenPath, tryBody, opts = {}) {
       "  trackMqtt(" + JSON.stringify(colon.topic) + ", function (message) {",
       "    try {",
       "      var raw = message && typeof message === \"object\" ? message.value : message;",
-      "      var on = wbIsOn(raw);",
-      "      if (!__seen) { __seen = 1; __idle = on; __prev = on; return; }",
-      "      if (on === __prev) return;",
-      "      __prev = on;",
-      "      if (on === __idle) return;",
+      deskIdleGuard("raw"),
       body,
       deskRuleCatch(id),
       "  });",
@@ -379,6 +391,24 @@ export function deskEmitRule(id, whenPath, tryBody, opts = {}) {
     ].join("\n");
   }
   const when = String(whenPath || "");
+  if (opts.pressEdge && isDeskDryContactWhen(when)) {
+    return [
+      "(function () {",
+      "  var __seen = 0;",
+      "  var __idle = false;",
+      "  var __prev = false;",
+      "  defineRule(" + JSON.stringify(id) + ", {",
+      deskWhenSpec(when),
+      "  then: function (newValue) {",
+      "    try {",
+      deskIdleGuard("newValue"),
+      body,
+      deskRuleCatch(id),
+      "  }",
+      "});",
+      "})();",
+    ].join("\n");
+  }
   const edge = opts.pressEdge ? deskPressEdgeLine(when) : "";
   const inner = [edge, body].filter(Boolean).join("\n");
   return [
@@ -396,7 +426,7 @@ export function deskEmitRule(id, whenPath, tryBody, opts = {}) {
 /** Строка в then: на уровне входа действуем только в момент нажатия, не на отпускании. */
 export function deskPressEdgeLine(whenPath) {
   const when = String(whenPath || "");
-  if (/\/Input\s+[A-Z]?\d+$/i.test(when) || /\/IN\d+$/i.test(when)) {
+  if (isDeskDryContactWhen(when)) {
     return "      if (!wbIsOn(readValue(" + JSON.stringify(when) + "))) return;";
   }
   if (/\scounter$/i.test(when) || /Press Counter$/i.test(when)) {
