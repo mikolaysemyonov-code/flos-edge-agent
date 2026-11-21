@@ -88,7 +88,7 @@ export function buildHaRawDiscovery(deviceTopicKey, controlId, title) {
     onPay +
     "' if v in ['1','true','on','100'] else '0' }}";
   const payload = {
-    name: String(title || "").trim() || controlId,
+    name: controlId,
     unique_id: uniqueId,
     object_id: uniqueId,
     state_topic: stateTopic,
@@ -167,6 +167,27 @@ export function isForeignHaDiscovery(topic, payload) {
   if (/flos_led|flos_raw/.test(t) || /^flos_led_|^flos_raw_/.test(uid)) return true;
   if (/wb-modbus|wb-engine/i.test(raw)) return true;
   return /\/devices\/wb-/i.test(raw) && /homeassistant\/(?:light|switch|sensor|binary_sensor|number|select|button|cover)\//.test(t);
+}
+
+/** Гасим всё, кроме текущих flos_ha_ на реальных Channel/K/Curtain. */
+export function shouldTombstoneHaDiscovery(topic, payload, keepIds) {
+  const t = String(topic || "");
+  if (!/\/config$/.test(t) || !/homeassistant\//.test(t)) return false;
+  const raw = String(payload || "");
+  if (!raw.trim()) return false;
+  if (/fl_form_logic|fl_reactor_scenes/.test(t)) return false;
+  let uid = "";
+  try {
+    uid = String(JSON.parse(raw).unique_id || "");
+  } catch {
+    uid = "";
+  }
+  if (/^fl_form_logic|^fl_reactor/.test(uid)) return false;
+  const keep = keepIds instanceof Set ? keepIds : new Set(keepIds || []);
+  if (uid && keep.has(uid)) return false;
+  if (/^flos_ha_/.test(uid)) return keep.size > 0;
+  if (isForeignHaDiscovery(t, raw)) return true;
+  return keep.size > 0 && /\/devices\/wb-/i.test(raw) && /homeassistant\/(?:light|switch|cover)\//.test(t);
 }
 
 export function normalizeHaBroker(input) {

@@ -25,7 +25,7 @@ import {
   setRuntimeHealthExtraProvider,
 } from "./runtime-control-plane-http.mjs";
 import { setRuntimeClockSetter, setRuntimeMqttScanHandler, setRuntimeRootSetter } from "./runtime-desk-http.mjs";
-import { bindDeskHaMirror, onDeskHaBusTraffic, resumeDeskHaBridgeFromDisk } from "./runtime-desk-ha-bridge.mjs";
+import { bindDeskHaMirror, onDeskHaBusTraffic, onDeskHaDiscovery, resumeDeskHaBridgeFromDisk } from "./runtime-desk-ha-bridge.mjs";
 import { isMarkShieldDiscoverableDeviceKey } from "./lib/mark-shield-discoverable-device.mjs";
 import { countOfflineDevices } from "./runtime-desk-shelves.mjs";
 import { cleanDeskPassword } from "./runtime-desk-gate.mjs";
@@ -36,7 +36,7 @@ import {
 } from "./wb-rules-journal-incidents.mjs";
 
 /** Одна строка в heartbeat и snapshot — иначе UI врёт версией. */
-const EDGE_AGENT_VERSION = "edge-pilot-v2.lan-desk-318";
+const EDGE_AGENT_VERSION = "edge-pilot-v2.lan-desk-319";
 
 /** Prefer `FLOS_*` (FL OS); fall back to legacy `REACTOR_*` for existing deployments. */
 function env(primary, legacy) {
@@ -1131,7 +1131,7 @@ function isResyncDumpReady() {
 async function resyncMqttMirrorFromBroker(waitMs) {
   const client = mqttMirrorState.client;
   if (!client || mqttMirrorState.connected !== true) return false;
-  const topics = ["/devices/#", "devices/#", "/devices/+/controls/+", "devices/+/controls/+"];
+  const topics = ["/devices/#", "devices/#", "/devices/+/controls/+", "devices/+/controls/+", "homeassistant/#"];
   mqttMirrorState.acceptIngest = false;
   mqttMirrorState.subscribedAtMs = null;
   const subscribed = await new Promise((resolve) => {
@@ -1582,6 +1582,15 @@ function pruneMirrorControlsForOfflineDevice(deviceTopicKey) {
 
 function ingestMqttMirrorMessage(topic, buf) {
   const normalized = String(topic).replace(/^\/+/, "/").replace(/^([^/])/, "/$1");
+  const haParts = normalized.split("/").filter(Boolean);
+  if (haParts[0] === "homeassistant") {
+    try {
+      onDeskHaDiscovery(String(topic), buf);
+    } catch {
+      /* ignore */
+    }
+    return;
+  }
   try {
     onDeskHaBusTraffic(normalized, buf);
   } catch {
@@ -1853,7 +1862,7 @@ async function startMqttBusMirror() {
     mqttMirrorState.bootstrapPushed = false;
     mqttMirrorState.bootstrapSent = new Set();
     client.subscribe(
-      ["/devices/#", "devices/#", "/devices/+/controls/+", "devices/+/controls/+"],
+      ["/devices/#", "devices/#", "/devices/+/controls/+", "devices/+/controls/+", "homeassistant/#"],
       { qos: 0 },
       (err) => {
         if (err) {

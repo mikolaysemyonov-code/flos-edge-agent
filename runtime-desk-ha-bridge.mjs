@@ -15,6 +15,7 @@ import {
   haRawUniqueId,
   isForeignHaDiscovery,
   isHaRawLoadControl,
+  shouldTombstoneHaDiscovery,
   normalizeHaBroker,
   parseHaRawTopic,
 } from "./runtime-desk-ha-raw.mjs";
@@ -126,6 +127,7 @@ const state = {
   driveKeys: new Set(),
   lastBri: new Map(),
   lastChannelOn: new Map(),
+  keepIds: new Set(),
   entities: new Map(),
   pendingTombstone: new Set(),
   values: new Map(),
@@ -233,6 +235,18 @@ function publicEntities() {
   return [...state.entities.values()].sort((a, b) => a.uniqueId.localeCompare(b.uniqueId));
 }
 
+export function onDeskHaDiscovery(topic, buf) {
+  if (!state.running) return;
+  const text = buf ? buf.toString("utf8") : "";
+  if (!shouldTombstoneHaDiscovery(topic, text, state.keepIds)) return;
+  if (!state.discovered.size) {
+    state.pendingTombstone.add(String(topic));
+    return;
+  }
+  pub(state.remote || state.local, String(topic), "", true);
+  state.tombstoned += 1;
+}
+
 function rememberEntity(row) {
   if (!row) return;
   state.entities.set(row.uniqueId, {
@@ -240,7 +254,7 @@ function rememberEntity(row) {
     kind: row.kind,
     deviceTopicKey: row.deviceTopicKey,
     controlId: row.controlId,
-    name: row.payload?.name || row.hardware,
+    name: row.payload?.name || row.controlId,
     hardware: row.hardware || row.payload?.name || row.uniqueId,
     named: row.named === true,
   });
@@ -392,6 +406,7 @@ function allLoadRows() {
 function discoverAll() {
   seedValuesFromShelves();
   const rows = allLoadRows();
+  state.keepIds = new Set(rows.map((r) => r.uniqueId));
   tombstoneSlavedRelays(state.driveKeys);
   if (!rows.length) return false;
   for (const row of rows) {
@@ -471,7 +486,7 @@ function onBrokerMessage(topic, buf) {
       if (Number.isFinite(n) && n > 0) state.lastBri.set(parsed.stateTopic, String(n));
     }
   }
-  if (isForeignHaDiscovery(topic, text)) {
+  if (shouldTombstoneHaDiscovery(topic, text, state.keepIds) || isForeignHaDiscovery(topic, text)) {
     if (state.discovered.size) {
       pub(state.remote || state.local, topic, "", true);
       state.tombstoned += 1;
@@ -531,6 +546,7 @@ function connectLocalViaMirror() {
   state.discovered.clear();
   state.driveKeys.clear();
   state.entities.clear();
+  state.keepIds.clear();
   state.pendingTombstone.clear();
   state.values.clear();
   state.lastBri.clear();
@@ -565,6 +581,7 @@ function connectPair(cfg) {
   state.discovered.clear();
   state.driveKeys.clear();
   state.entities.clear();
+  state.keepIds.clear();
   state.pendingTombstone.clear();
   state.values.clear();
   state.lastBri.clear();
