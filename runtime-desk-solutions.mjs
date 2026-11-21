@@ -78,11 +78,11 @@ export const DESK_SOLUTION_CARDS = [
     perLoadLevel: true,
     fields: [{ key: "level", label: "Уровень по умолчанию", unit: "%", def: 100 }],
   }),
-  M("light_motion", "Свет", "Свет по движению", "Датчик движения → свет; ушло — гасит по таймеру.", {
+  M("light_motion", "Свет", "Свет по движению", "Датчик (в т.ч. 220 В на WBIO-DI-HVD-16): фаза есть — свет; пропала — гасит. Пауза стола сверх таймера датчика.", {
     loadKind: "light",
     fields: [
       { key: "level", label: "Яркость", unit: "%", def: 100 },
-      { key: "offDelay", label: "Гасить через", unit: "сек · 0=сразу", def: 90 },
+      { key: "offDelay", label: "Доп. пауза", unit: "сек · 0=как датчик", def: 0 },
     ],
   }),
   M("light_night_path", "Свет", "Ночной путь", "Датчик движения → мягкий свет; ушло — гасит по таймеру (не кнопка у кровати).", {

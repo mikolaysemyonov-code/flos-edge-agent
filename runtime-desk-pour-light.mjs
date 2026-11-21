@@ -241,5 +241,5 @@ export function emitDeskLight(sol) {
   if (sid === "light_night_path") return emitOnWhenActive(sol, { level: 15, offDelay: 45 });
   if (sid === "light_reed_on") return emitOnWhenActive(sol, { level: 100, offDelay: 0 });
   if (sid === "stair_light_motion") return emitOnWhenActive(sol, { level: 100, offDelay: 60 });
-  return emitOnWhenActive(sol, { level: 100, offDelay: 90 });
+  return emitOnWhenActive(sol, { level: 100, offDelay: 0 });
 }

@@ -150,6 +150,9 @@
     ];
     const DRIVE_LABELS = ["Штора", "Роллета", "Жалюзи", "Тюль", "Экран"];
     const BUTTON_TYPES = ["Кнопка", "Клавиша", "Геркон", "Датчик движения", "Сценарий"];
+    function isDeskHvInput(id) {
+      return /^EXT\d+_IN\d+$/i.test(String(id || "").trim());
+    }
     function isDeskDrive(id) {
       return /^(Curtain|Actuator) \d+ (Open|Close)$/i.test(String(id || "").trim());
     }
@@ -318,6 +321,8 @@
       const dali = parseDaliCh(id);
       if (dali && dali.kind === "group") return "bus " + dali.bus + " / g" + dali.group;
       if (dali && dali.kind === "addr") return "bus " + dali.bus + " / " + dali.addr;
+      const hv = /^EXT(\d+)_IN(\d+)$/i.exec(String(id || "").trim());
+      if (hv) return "HVD " + hv[1] + " · вход " + hv[2];
       const m = /^(?:Curtain|Actuator)\s+(\d+)\s+(Open|Close)$/i.exec(String(id || "").trim());
       if (!m) return id;
       return "Привод " + m[1];
@@ -368,6 +373,9 @@
     function markTypes(s, ch, isLoad) {
       if (isDeskDrive(ch.controlId)) return DRIVE_LABELS;
       if (/^K\d+$/i.test(ch.controlId)) return RELAY_TYPES;
+      if (!isLoad && isDeskHvInput(ch.controlId)) {
+        return ["Датчик движения", "Кнопка", "Клавиша", "Геркон", "Сценарий"];
+      }
       if (!isLoad) return BUTTON_TYPES;
       const k = String(s && s.deviceTopicKey || "");
       if (/dali/i.test(k)) return DALI_TYPES;
@@ -2876,7 +2884,8 @@
       }
       if (sheetIsMotion(card)) {
         return preferRows(all, (r) =>
-          /движен|motion|pir|присут|occup/i.test(r.label || "")
+          /движен|motion|pir|присут|occup|hvd/i.test(r.label || "")
+          || isDeskHvInput(r.controlId)
           || /motion|occup|pir/i.test(r.controlId || ""), true);
       }
       if (sheetIsReed(card)) {
@@ -4373,11 +4382,12 @@
       sub.className = "hint";
       if (input) {
         const listening = Date.now() < listenUntil;
+        const hv = isDeskHvInput(ch.controlId);
         sub.textContent = on
-          ? "Замкнуто"
+          ? (hv ? "Есть фаза" : "Замкнуто")
           : listening
-            ? "Слушаю замыкание…"
-            : (bound ? (current.room || "комната") : "Нажмите выключатель");
+            ? (hv ? "Жду фазу с датчика…" : "Слушаю замыкание…")
+            : (bound ? (current.room || "комната") : (hv ? "Войдите в комнату" : "Нажмите выключатель"));
         if (on) sub.classList.add("closed");
       } else {
         const host = parseDaliCh(ch.controlId)?.kind === "addr" ? daliHostGroup(s, ch.controlId) : null;
@@ -4421,7 +4431,9 @@
           on: on,
           live: true,
           disabled: true,
-          title: on ? "Замкнуто" : "Разомкнуто — нажмите выключатель",
+          title: isDeskHvInput(ch.controlId)
+            ? (on ? "Есть фаза" : "Нет фазы — войдите в комнату")
+            : (on ? "Замкнуто" : "Разомкнуто — нажмите выключатель"),
         }));
         const listen = document.createElement("button");
         listen.type = "button";
