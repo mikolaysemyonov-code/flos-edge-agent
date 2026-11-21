@@ -19,13 +19,21 @@ export function parseHaRawTopic(topic) {
   };
 }
 
+/** Brightness-топик WB-LED = тот же канал, что Channel N. */
+export function haRawCanonicalControl(controlId) {
+  const c = String(controlId || "").trim();
+  const bri = /^Channel\s+(\d+)\s+Brightness$/i.exec(c);
+  return bri ? `Channel ${bri[1]}` : c;
+}
+
 export function isHaRawLoadControl(deviceTopicKey, controlId) {
   const key = String(deviceTopicKey || "").toLowerCase();
-  const c = String(controlId || "").trim();
+  const type = parseDeskDeviceKey(deviceTopicKey)?.type || "";
+  const c = haRawCanonicalControl(controlId);
   if (!c) return false;
   if (/^Input\s+/i.test(c) || /Press Counter/i.test(c)) return false;
   if (/^IN\d+$/i.test(c) || /^EXT\d+_IN/i.test(c) || /^[A-D]\d+_IN/i.test(c)) return false;
-  if (/mcm|mdi|gpio|wd14|mio-gpio/i.test(key)) return false;
+  if (/^(mcm8|mcm16|mcm24|mdi|gpio|wd14|mio-gpio)$/i.test(type)) return false;
   if (/form_logic|reactor_scenes|wirenboard|hwmon|alarms|metrics|power_status|wb-adc|network/i.test(key)) {
     return false;
   }

@@ -9,12 +9,14 @@ import { deskMarkingPath } from "./runtime-desk-marking.mjs";
 import {
   buildHaRawDiscovery,
   haRawBrightnessControl,
+  haRawCanonicalControl,
   haRawEntitiesFromShelves,
   isForeignHaDiscovery,
   isHaRawLoadControl,
   normalizeHaBroker,
   parseHaRawTopic,
 } from "./runtime-desk-ha-raw.mjs";
+import { expectedDeskOutputIds, groupDeskShelves } from "./runtime-desk-shelves.mjs";
 
 function localBrokerUrl() {
   const host = (process.env.FLOS_MQTT_MIRROR_HOST || process.env.REACTOR_MQTT_MIRROR_HOST || "127.0.0.1").trim();
@@ -143,8 +145,22 @@ function publicStatus() {
     lastAt: state.lastAt,
     mirrorTopics: Number(mirror?.topicCount?.() || 0) || 0,
     agentVersion: String(mirror?.version || ""),
+    hint: state.discovered.size ? "" : loadHint(),
     entities: publicEntities(),
   };
+}
+
+function loadHint() {
+  const es = mirrorEntries();
+  const sample = [];
+  for (const e of es) {
+    const key = String(e?.deviceTopicKey || "").trim();
+    const cid = haRawCanonicalControl(e?.controlId);
+    if (!key || !cid || sample.length >= 5) continue;
+    if (/Channel|K\d/i.test(cid)) sample.push(key + "/" + cid);
+  }
+  const grouped = groupDeskShelves(es);
+  return "модулей " + grouped.length + (sample.length ? " · " + sample.join("; ") : " · нет Channel/K в зеркале");
 }
 
 function publicEntities() {
@@ -234,20 +250,40 @@ function flushTombstones() {
   state.pendingTombstone.clear();
 }
 
-function allLoadRows() {
-  const fromShelves = haRawEntitiesFromShelves(loadShelves());
-  const byId = new Map(fromShelves.map((r) => [r.uniqueId, r]));
+function shelvesForHa() {
+  const byKey = new Map();
+  for (const s of loadShelves()) {
+    const key = String(s?.deviceTopicKey || "").trim();
+    if (key) byKey.set(key, s);
+  }
+  for (const s of groupDeskShelves(mirrorEntries())) {
+    const key = String(s?.deviceTopicKey || "").trim();
+    if (!key) continue;
+    const prev = byKey.get(key);
+    const ch = new Map();
+    for (const c of Array.isArray(prev?.channels) ? prev.channels : []) {
+      if (c?.controlId) ch.set(String(c.controlId), c);
+    }
+    for (const c of Array.isArray(s.channels) ? s.channels : []) {
+      if (c?.controlId) ch.set(String(c.controlId), { ...ch.get(c.controlId), ...c });
+    }
+    for (const id of expectedDeskOutputIds(key)) {
+      if (!ch.has(id)) ch.set(id, { controlId: id });
+    }
+    byKey.set(key, { ...s, ...prev, deviceTopicKey: key, channels: [...ch.values()] });
+  }
   for (const e of mirrorEntries()) {
     const key = String(e?.deviceTopicKey || "").trim();
-    const controlId = String(e?.controlId || "").trim();
+    const controlId = haRawCanonicalControl(e?.controlId);
     if (e?.lastValue != null && e.lastValue !== "" && key && controlId) {
       state.values.set(`/devices/${key}/controls/${controlId}`, String(e.lastValue));
     }
-    const row = buildHaRawDiscovery(key, controlId);
-    if (!row || byId.has(row.uniqueId)) continue;
-    byId.set(row.uniqueId, { ...row, hardware: row.payload.name, named: false });
   }
-  return [...byId.values()];
+  return [...byKey.values()];
+}
+
+function allLoadRows() {
+  return haRawEntitiesFromShelves(shelvesForHa());
 }
 
 function discoverAll() {
