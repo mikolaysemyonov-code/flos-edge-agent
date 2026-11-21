@@ -25,7 +25,7 @@ import {
   setRuntimeHealthExtraProvider,
 } from "./runtime-control-plane-http.mjs";
 import { setRuntimeClockSetter, setRuntimeMqttScanHandler, setRuntimeRootSetter } from "./runtime-desk-http.mjs";
-import { bindDeskHaMirror, resumeDeskHaBridgeFromDisk } from "./runtime-desk-ha-bridge.mjs";
+import { bindDeskHaMirror, onDeskHaBusTraffic, resumeDeskHaBridgeFromDisk } from "./runtime-desk-ha-bridge.mjs";
 import { isMarkShieldDiscoverableDeviceKey } from "./lib/mark-shield-discoverable-device.mjs";
 import { countOfflineDevices } from "./runtime-desk-shelves.mjs";
 import { cleanDeskPassword } from "./runtime-desk-gate.mjs";
@@ -36,7 +36,7 @@ import {
 } from "./wb-rules-journal-incidents.mjs";
 
 /** Одна строка в heartbeat и snapshot — иначе UI врёт версией. */
-const EDGE_AGENT_VERSION = "edge-pilot-v2.lan-desk-317";
+const EDGE_AGENT_VERSION = "edge-pilot-v2.lan-desk-318";
 
 /** Prefer `FLOS_*` (FL OS); fall back to legacy `REACTOR_*` for existing deployments. */
 function env(primary, legacy) {
@@ -1581,8 +1581,13 @@ function pruneMirrorControlsForOfflineDevice(deviceTopicKey) {
 }
 
 function ingestMqttMirrorMessage(topic, buf) {
-  if (mqttMirrorState.acceptIngest === false) return;
   const normalized = String(topic).replace(/^\/+/, "/").replace(/^([^/])/, "/$1");
+  try {
+    onDeskHaBusTraffic(normalized, buf);
+  } catch {
+    /* ignore */
+  }
+  if (mqttMirrorState.acceptIngest === false) return;
   const parts = normalized.split("/").filter(Boolean);
   const importedAt = new Date().toISOString();
   mqttMirrorState.lastMsgAt = importedAt;

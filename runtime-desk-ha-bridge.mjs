@@ -124,6 +124,8 @@ const state = {
   tombstoned: 0,
   discovered: new Set(),
   driveKeys: new Set(),
+  lastBri: new Map(),
+  lastChannelOn: new Map(),
   entities: new Map(),
   pendingTombstone: new Set(),
   values: new Map(),
@@ -253,8 +255,23 @@ function pub(client, topic, payload, retain) {
   client.publish(topic, payload, { qos: 1, retain: retain === true }, () => {});
 }
 
+function legacyHaUniqueIds(deviceTopicKey, controlId) {
+  const slug = `${deviceTopicKey}_${controlId}`.replace(/\W+/g, "_").toLowerCase();
+  return [`flos_led_${slug}`, `flos_raw_${slug}`];
+}
+
+function tombstoneUniqueId(uniqueId) {
+  const client = state.remote || state.local;
+  for (const kind of ["light", "switch", "cover"]) {
+    pub(client, `homeassistant/${kind}/${uniqueId}/config`, "", true);
+  }
+  state.discovered.delete(uniqueId);
+  state.entities.delete(uniqueId);
+}
+
 function publishDiscovery(row) {
   if (!row || !state.remote) return;
+  for (const uid of legacyHaUniqueIds(row.deviceTopicKey, row.controlId)) tombstoneUniqueId(uid);
   const first = state.discovered.size === 0;
   pub(state.remote, row.topic, JSON.stringify(row.payload), true);
   state.discovered.add(row.uniqueId);
@@ -286,7 +303,8 @@ function echoRetained(row) {
   const bt = row.payload.brightness_state_topic;
   if (bt) {
     const bv = state.values.get(bt);
-    if (bv != null && bv !== "") pub(client, bt, bv, true);
+    const n = Number(bv);
+    if (Number.isFinite(n) && n > 0) pub(client, bt, String(n), true);
   }
 }
 
@@ -321,14 +339,10 @@ function refreshDriveKeys() {
 }
 
 function tombstoneSlavedRelays(driveKeys) {
-  const client = state.remote || state.local;
   for (const key of driveKeys) {
     for (let i = 1; i <= 12; i += 1) {
-      const uniqueId = haRawUniqueId(key, `K${i}`);
-      pub(client, `homeassistant/switch/${uniqueId}/config`, "", true);
-      pub(client, `homeassistant/cover/${uniqueId}/config`, "", true);
-      state.discovered.delete(uniqueId);
-      state.entities.delete(uniqueId);
+      tombstoneUniqueId(haRawUniqueId(key, `K${i}`));
+      for (const uid of legacyHaUniqueIds(key, `K${i}`)) tombstoneUniqueId(uid);
     }
   }
 }
@@ -406,16 +420,57 @@ function assistLedCommand(parsed, payload) {
   const off = raw === "0" || /^off|false$/i.test(raw);
   const on = raw === "1" || raw === "100" || /^on|true$/i.test(raw);
   if (off || !on) return;
+  state.lastChannelOn.set(parsed.stateTopic, Date.now());
   const briTopic = `/devices/${parsed.deviceTopicKey}/controls/${briId}`;
   const cur = Number(state.values.get(briTopic));
   if (Number.isFinite(cur) && cur > 0) return;
   pub(state.local, `${briTopic}/on`, "100", false);
 }
 
+function assistBrightnessZero(parsed, payload) {
+  if (!/brightness/i.test(parsed.controlId)) return;
+  const n = Number(String(payload || "").trim());
+  if (Number.isFinite(n) && n > 0) {
+    state.lastBri.set(parsed.stateTopic, String(n));
+    return;
+  }
+  if (n !== 0) return;
+  const chId = parsed.controlId.replace(/\s*Brightness\s*$/i, "").trim();
+  const chTopic = `/devices/${parsed.deviceTopicKey}/controls/${chId}`;
+  const turnedOnAt = state.lastChannelOn.get(chTopic) || 0;
+  if (Date.now() - turnedOnAt > 2500) return;
+  const restore = state.lastBri.get(parsed.stateTopic) || "100";
+  if (restore === "0") return;
+  pub(state.local, `${parsed.stateTopic}/on`, restore, false);
+}
+
+export function onDeskHaBusTraffic(topic, buf) {
+  if (!state.running) return;
+  const parsed = parseHaRawTopic(topic);
+  if (!parsed) return;
+  const text = buf ? buf.toString("utf8") : "";
+  if (!parsed.isCommand) {
+    state.values.set(parsed.stateTopic, text);
+    if (/brightness/i.test(parsed.controlId)) {
+      const n = Number(text);
+      if (Number.isFinite(n) && n > 0) state.lastBri.set(parsed.stateTopic, String(n));
+    }
+    return;
+  }
+  assistLedCommand(parsed, text);
+  assistBrightnessZero(parsed, text);
+}
+
 function onBrokerMessage(topic, buf) {
   const text = buf.toString("utf8");
   const parsed = parseHaRawTopic(topic);
-  if (parsed && !parsed.isCommand) state.values.set(parsed.stateTopic, text);
+  if (parsed && !parsed.isCommand) {
+    state.values.set(parsed.stateTopic, text);
+    if (/brightness/i.test(parsed.controlId)) {
+      const n = Number(text);
+      if (Number.isFinite(n) && n > 0) state.lastBri.set(parsed.stateTopic, String(n));
+    }
+  }
   if (isForeignHaDiscovery(topic, text)) {
     if (state.discovered.size) {
       pub(state.remote || state.local, topic, "", true);
@@ -427,6 +482,7 @@ function onBrokerMessage(topic, buf) {
   }
   if (parsed?.isCommand) {
     assistLedCommand(parsed, text);
+    assistBrightnessZero(parsed, text);
     if (state.remote && state.remote !== state.local) onRemoteMessage(topic, buf);
     return;
   }
@@ -477,6 +533,8 @@ function connectLocalViaMirror() {
   state.entities.clear();
   state.pendingTombstone.clear();
   state.values.clear();
+  state.lastBri.clear();
+  state.lastChannelOn.clear();
   const stub = {
     publish(topic, payload, opts, cb) {
       mirrorPublish(topic, payload, opts && opts.retain === true);
@@ -509,6 +567,8 @@ function connectPair(cfg) {
   state.entities.clear();
   state.pendingTombstone.clear();
   state.values.clear();
+  state.lastBri.clear();
+  state.lastChannelOn.clear();
   const local = mqtt.connect(localBrokerUrl(), {
     clientId: `flos-ha-local-${process.pid}`,
     reconnectPeriod: 4000,

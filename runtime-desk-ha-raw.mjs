@@ -30,8 +30,10 @@ export function isHaRawLoadControl(deviceTopicKey, controlId, driveOnDevice) {
   if (haRawIsSlavedRelay(controlId, driveOnDevice)) return false;
   const key = String(deviceTopicKey || "").toLowerCase();
   const type = parseDeskDeviceKey(deviceTopicKey)?.type || "";
+  const rawId = String(controlId || "").trim();
   const c = haRawCanonicalControl(controlId);
   if (!c) return false;
+  if (/Brightness/i.test(rawId)) return false;
   if (/^Input\s+/i.test(c) || /Press Counter/i.test(c)) return false;
   if (/^IN\d+$/i.test(c) || /^EXT\d+_IN/i.test(c) || /^[A-D]\d+_IN/i.test(c)) return false;
   if (/^(mcm8|mcm16|mcm24|mdi|gpio|wd14|mio-gpio)$/i.test(type)) return false;
@@ -54,12 +56,12 @@ export function haRawBrightnessControl(deviceTopicKey, controlId) {
   const m = /^Channel\s+(\d+)$/i.exec(String(controlId || ""));
   if (!m) return "";
   const type = parseDeskDeviceKey(deviceTopicKey)?.type || "";
-  if (!/^(led|ampled)$/i.test(type)) return "";
+  if (!/^(led|ampled)/i.test(type)) return "";
   return `Channel ${m[1]} Brightness`;
 }
 
 export function haRawUniqueId(deviceTopicKey, controlId) {
-  return `flos_led_${deviceTopicKey}_${controlId}`.replace(/\W+/g, "_").toLowerCase();
+  return `flos_ha_${deviceTopicKey}_${controlId}`.replace(/\W+/g, "_").toLowerCase();
 }
 
 export function haRawIsDriveControl(controlId) {
@@ -106,7 +108,7 @@ export function buildHaRawDiscovery(deviceTopicKey, controlId, title) {
     payload.brightness_state_topic = briTopic || stateTopic;
     payload.brightness_command_topic = `${briTopic || stateTopic}/on`;
     payload.brightness_scale = 100;
-    payload.on_command_type = "last";
+    payload.on_command_type = "first";
   } else {
     payload.value_template = stateTpl;
   }
@@ -154,15 +156,15 @@ export function isForeignHaDiscovery(topic, payload) {
   if (!/\/config$/.test(t)) return false;
   const raw = String(payload || "");
   if (!raw.trim()) return false;
-  if (/flos_led|fl_form_logic|fl_reactor_scenes/.test(t)) return false;
+  if (/flos_ha_|fl_form_logic|fl_reactor_scenes/.test(t)) return false;
   let uid = "";
   try {
     uid = String(JSON.parse(raw).unique_id || "");
   } catch {
     uid = "";
   }
-  if (/^flos_led_|^fl_form_logic|^fl_reactor/.test(uid)) return false;
-  if (/flos_raw/.test(t) || /^flos_raw_/.test(uid)) return true;
+  if (/^flos_ha_|^fl_form_logic|^fl_reactor/.test(uid)) return false;
+  if (/flos_led|flos_raw/.test(t) || /^flos_led_|^flos_raw_/.test(uid)) return true;
   if (/wb-modbus|wb-engine/i.test(raw)) return true;
   return /\/devices\/wb-/i.test(raw) && /homeassistant\/(?:light|switch|sensor|binary_sensor|number|select|button|cover)\//.test(t);
 }
