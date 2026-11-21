@@ -10,6 +10,9 @@ import {
   buildHaRawDiscovery,
   haRawBrightnessControl,
   haRawCanonicalControl,
+  haRawIsDriveControl,
+  haRawIsSlavedRelay,
+  haRawUniqueId,
   isForeignHaDiscovery,
   isHaRawLoadControl,
   normalizeHaBroker,
@@ -120,6 +123,7 @@ const state = {
   forwarded: 0,
   tombstoned: 0,
   discovered: new Set(),
+  driveKeys: new Set(),
   entities: new Map(),
   pendingTombstone: new Set(),
   values: new Map(),
@@ -260,7 +264,9 @@ function publishDiscovery(row) {
 
 function offerDiscovery(parsed) {
   if (!parsed || parsed.isCommand) return null;
-  if (!isHaRawLoadControl(parsed.deviceTopicKey, parsed.controlId)) return null;
+  if (!isHaRawLoadControl(parsed.deviceTopicKey, parsed.controlId, state.driveKeys.has(parsed.deviceTopicKey))) {
+    return null;
+  }
   const row = buildHaRawDiscovery(parsed.deviceTopicKey, parsed.controlId);
   if (!row) return null;
   if (!state.discovered.has(row.uniqueId)) {
@@ -302,16 +308,43 @@ function flushTombstones() {
   state.pendingTombstone.clear();
 }
 
+function refreshDriveKeys() {
+  const keys = new Set();
+  for (const e of mirrorEntries()) {
+    if (haRawIsDriveControl(e?.controlId)) {
+      const key = entryDeviceKey(e);
+      if (key) keys.add(key);
+    }
+  }
+  state.driveKeys = keys;
+  return keys;
+}
+
+function tombstoneSlavedRelays(driveKeys) {
+  const client = state.remote || state.local;
+  for (const key of driveKeys) {
+    for (let i = 1; i <= 12; i += 1) {
+      const uniqueId = haRawUniqueId(key, `K${i}`);
+      pub(client, `homeassistant/switch/${uniqueId}/config`, "", true);
+      pub(client, `homeassistant/cover/${uniqueId}/config`, "", true);
+      state.discovered.delete(uniqueId);
+      state.entities.delete(uniqueId);
+    }
+  }
+}
+
 function allLoadRows() {
+  const driveKeys = refreshDriveKeys();
   const byId = new Map();
   const add = (deviceTopicKey, controlId, title) => {
+    if (haRawIsSlavedRelay(controlId, driveKeys.has(deviceTopicKey))) return;
     const row = buildHaRawDiscovery(deviceTopicKey, controlId, title);
     if (!row) return;
     const prev = byId.get(row.uniqueId);
     if (prev && prev.named) return;
     byId.set(row.uniqueId, {
       ...row,
-      hardware: row.payload.name,
+      hardware: row.hardware || row.payload.name,
       named: Boolean(String(title || "").trim()),
     });
   };
@@ -339,21 +372,13 @@ function allLoadRows() {
   for (const key of bankKeys) {
     for (const id of expectedDeskOutputIds(key)) add(key, id, "");
   }
-  const withDrive = new Set();
-  for (const row of byId.values()) {
-    if (row.kind === "drive") withDrive.add(row.deviceTopicKey);
-  }
-  if (withDrive.size) {
-    for (const [id, row] of [...byId.entries()]) {
-      if (withDrive.has(row.deviceTopicKey) && /^K\d+$/i.test(row.controlId)) byId.delete(id);
-    }
-  }
   return [...byId.values()];
 }
 
 function discoverAll() {
   seedValuesFromShelves();
   const rows = allLoadRows();
+  tombstoneSlavedRelays(state.driveKeys);
   if (!rows.length) return false;
   for (const row of rows) {
     publishDiscovery(row);
@@ -448,6 +473,7 @@ function connectLocalViaMirror() {
   state.lastError = "";
   state.tombstoned = 0;
   state.discovered.clear();
+  state.driveKeys.clear();
   state.entities.clear();
   state.pendingTombstone.clear();
   state.values.clear();
@@ -479,6 +505,7 @@ function connectPair(cfg) {
   state.lastError = "";
   state.tombstoned = 0;
   state.discovered.clear();
+  state.driveKeys.clear();
   state.entities.clear();
   state.pendingTombstone.clear();
   state.values.clear();

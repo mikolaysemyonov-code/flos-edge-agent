@@ -26,7 +26,8 @@ export function haRawCanonicalControl(controlId) {
   return bri ? `Channel ${bri[1]}` : c;
 }
 
-export function isHaRawLoadControl(deviceTopicKey, controlId) {
+export function isHaRawLoadControl(deviceTopicKey, controlId, driveOnDevice) {
+  if (haRawIsSlavedRelay(controlId, driveOnDevice)) return false;
   const key = String(deviceTopicKey || "").toLowerCase();
   const type = parseDeskDeviceKey(deviceTopicKey)?.type || "";
   const c = haRawCanonicalControl(controlId);
@@ -59,6 +60,15 @@ export function haRawBrightnessControl(deviceTopicKey, controlId) {
 
 export function haRawUniqueId(deviceTopicKey, controlId) {
   return `flos_led_${deviceTopicKey}_${controlId}`.replace(/\W+/g, "_").toLowerCase();
+}
+
+export function haRawIsDriveControl(controlId) {
+  return /^(Curtain|Actuator)\s+\d+\s+(Open|Close)$/i.test(String(controlId || "").trim());
+}
+
+/** На модуле со шторами K1–K6 — те же выходы, что Open/Close. */
+export function haRawIsSlavedRelay(controlId, driveOnDevice) {
+  return driveOnDevice === true && /^K\d+$/i.test(String(controlId || "").trim());
 }
 
 export function buildHaRawDiscovery(deviceTopicKey, controlId, title) {
