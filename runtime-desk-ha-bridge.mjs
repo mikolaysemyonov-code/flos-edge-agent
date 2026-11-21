@@ -130,6 +130,7 @@ const state = {
   lastChannelOn: new Map(),
   keepIds: new Set(),
   keepTopics: new Set(),
+  ghosted: new Set(),
   entities: new Map(),
   pendingTombstone: new Set(),
   values: new Map(),
@@ -287,7 +288,9 @@ function tombstoneUniqueId(uniqueId) {
 
 function tombstoneGhosts(deviceTopicKey, controlId) {
   for (const topic of ghostHaDiscoveryTopics(deviceTopicKey, controlId)) {
-    if (state.keepTopics.has(topic.replace(/^\/+/, ""))) continue;
+    const t = topic.replace(/^\/+/, "");
+    if (state.keepTopics.has(t) || state.ghosted.has(t)) continue;
+    state.ghosted.add(t);
     pub(state.remote || state.local, topic, "", true);
   }
   for (const uid of legacyHaUniqueIds(deviceTopicKey, controlId)) tombstoneUniqueId(uid);
@@ -295,7 +298,7 @@ function tombstoneGhosts(deviceTopicKey, controlId) {
 
 function publishDiscovery(row) {
   if (!row || !state.remote) return;
-  tombstoneGhosts(row.deviceTopicKey, row.controlId);
+  if (!state.discovered.has(row.uniqueId)) tombstoneGhosts(row.deviceTopicKey, row.controlId);
   const first = state.discovered.size === 0;
   pub(state.remote, row.topic, JSON.stringify(row.payload), true);
   state.discovered.add(row.uniqueId);
@@ -558,6 +561,7 @@ function connectLocalViaMirror() {
   state.entities.clear();
   state.keepIds.clear();
   state.keepTopics.clear();
+  state.ghosted.clear();
   state.pendingTombstone.clear();
   state.values.clear();
   state.lastBri.clear();
@@ -594,6 +598,7 @@ function connectPair(cfg) {
   state.entities.clear();
   state.keepIds.clear();
   state.keepTopics.clear();
+  state.ghosted.clear();
   state.pendingTombstone.clear();
   state.values.clear();
   state.lastBri.clear();

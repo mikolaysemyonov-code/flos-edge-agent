@@ -175,11 +175,10 @@ export function ghostHaDiscoveryTopics(deviceTopicKey, controlId) {
   const c = String(controlId || "");
   if (!key || !c) return [];
   const slug = `${key}_${c}`.replace(/\W+/g, "_").toLowerCase();
-  const hyphen = `flos_led_${key}_${c}`.replace(/\s+/g, "_").toLowerCase();
   const ctrl = c.replace(/\s+/g, "_");
-  const ids = [`flos_led_${slug}`, `flos_raw_${slug}`, hyphen, `${key}_${ctrl}`, `${key}_${c}`.replace(/\s+/g, "_")];
+  const ids = [`flos_led_${slug}`, `flos_raw_${slug}`];
   const out = [];
-  for (const kind of ["light", "switch", "cover", "binary_sensor"]) {
+  for (const kind of ["light", "switch", "cover"]) {
     for (const id of ids) out.push(`homeassistant/${kind}/${id}/config`);
     out.push(`homeassistant/${kind}/${key}/${ctrl}/config`);
     out.push(`homeassistant/${kind}/${key}/${c}/config`);

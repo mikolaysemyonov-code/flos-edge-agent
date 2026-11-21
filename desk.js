@@ -3529,7 +3529,7 @@
         const ver = String(j.agentVersion || "") || "—";
         if (!j.ok) {
           box.className = "status bad";
-          main.textContent = "Offline";
+          main.textContent = "Агент не ответил";
           if (sub) { sub.hidden = true; sub.textContent = ""; }
           const gone = $("healthAddr");
           if (gone) { gone.hidden = true; gone.textContent = ""; }
@@ -3548,7 +3548,7 @@
         const incident = Array.isArray(j.busIncidents) && j.busIncidents[0] ? j.busIncidents[0].reason : "";
         const busCalm = busOk && shieldClockOk && !shieldClockUnverified && !offline && !incident;
         box.className = "status " + (busCalm ? "ok" : "bad");
-        main.textContent = busCalm ? "Connected" : (busOk ? "Не всё" : "Offline");
+        main.textContent = busCalm ? "Connected" : (busOk ? "Не всё" : "Шина MQTT");
         main.title = ver;
         const addr = $("healthAddr");
         const ip = String(j.controllerAddress || "").trim();
@@ -3567,7 +3567,7 @@
         }
       } catch (e) {
         box.className = "status bad";
-        main.textContent = "Offline";
+        main.textContent = "Агент не отвечает";
         if (sub) { sub.hidden = true; sub.textContent = ""; }
         const addr = $("healthAddr");
         if (addr) { addr.hidden = true; addr.textContent = ""; }

@@ -53,6 +53,12 @@ export function pickControllerLanAddress(text) {
   return v4.find((ip) => rank(ip) < 9) || "";
 }
 
+/** Tailscale CGNAT 100.64/10 — стол открыт отсюда, LAN 192.168 может быть «Offline» отдельно. */
+export function pickControllerTailscaleAddress(text) {
+  const parts = String(text || "").trim().split(/\s+/).filter(Boolean);
+  return parts.find((ip) => /^100\.(6[4-9]|[7-9]\d|1[01]\d|12[0-7])\./.test(ip)) || "";
+}
+
 function clockLabel(year, month, day, hh, mm) {
   const ok = year >= 2026 && year <= 2035;
   const dd = String(day).padStart(2, "0");
