@@ -9,6 +9,7 @@ import { deskMarkingPath } from "./runtime-desk-marking.mjs";
 import {
   buildHaRawDiscovery,
   haRawEntitiesFromShelves,
+  isForeignHaDiscovery,
   isHaRawLoadControl,
   normalizeHaBroker,
   parseHaRawTopic,
@@ -90,6 +91,7 @@ const state = {
   localOk: false,
   remoteOk: false,
   forwarded: 0,
+  tombstoned: 0,
   discovered: new Set(),
   lastError: "",
   lastAt: "",
@@ -108,6 +110,7 @@ function publicStatus() {
     localOk: state.localOk,
     remoteOk: state.remoteOk,
     forwarded: state.forwarded,
+    tombstoned: state.tombstoned,
     discovered: state.discovered.size,
     lastError: state.lastError,
     lastAt: state.lastAt,
@@ -136,6 +139,16 @@ function publishDiscovery(row) {
 
 function discoverAll() {
   for (const row of haRawEntitiesFromShelves(loadShelves())) publishDiscovery(row);
+}
+
+function onBrokerMessage(topic, buf) {
+  const text = buf.toString("utf8");
+  if (isForeignHaDiscovery(topic, text)) {
+    pub(state.remote || state.local, topic, "", true);
+    state.tombstoned += 1;
+    return;
+  }
+  if (state.remote && state.remote !== state.local) onLocalMessage(topic, buf);
 }
 
 function onLocalMessage(topic, buf) {
@@ -182,6 +195,7 @@ function connectPair(cfg) {
   stopDeskHaBridge();
   state.running = true;
   state.lastError = "";
+  state.tombstoned = 0;
   const local = mqtt.connect(localBrokerUrl(), {
     clientId: `flos-ha-local-${process.pid}`,
     reconnectPeriod: 4000,
@@ -191,8 +205,9 @@ function connectPair(cfg) {
   state.local = local;
   local.on("connect", () => {
     state.localOk = true;
-    local.subscribe("/devices/#", { qos: 0 }, () => {});
+    local.subscribe(["/devices/#", "homeassistant/#"], { qos: 0 }, () => {});
   });
+  local.on("message", onBrokerMessage);
   local.on("offline", () => {
     state.localOk = false;
   });
@@ -207,7 +222,6 @@ function connectPair(cfg) {
     });
     return;
   }
-  local.on("message", onLocalMessage);
   const remoteOpts = {
     clientId: `flos-ha-raw-${process.pid}`,
     reconnectPeriod: 4000,

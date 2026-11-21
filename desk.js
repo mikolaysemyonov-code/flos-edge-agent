@@ -7836,7 +7836,10 @@
       if (!j) return "Читаю щит…";
       if (!j.ok && j.error === "need_host") return "Впишите IP mini-PC";
       if (!j.ok && j.error) return "Не открыл мост";
-      if (j.running && j.remoteOk) return "HA видит " + (j.discovered || 0) + " линий · ушло " + (j.forwarded || 0);
+      if (j.running && j.remoteOk) {
+        const extra = j.tombstoned ? " · снял чужие " + j.tombstoned : "";
+        return "HA видит " + (j.discovered || 0) + " линий · ушло " + (j.forwarded || 0) + extra;
+      }
       if (j.running && j.lastError) return "Нет Mosquitto на этом IP: " + j.lastError;
       if (j.running) return "Стучусь на " + j.host + ":" + j.port + "…";
       const n = (haLights || []).length;

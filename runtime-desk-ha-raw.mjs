@@ -57,11 +57,11 @@ export function buildHaRawDiscovery(deviceTopicKey, controlId, title) {
     object_id: uniqueId,
     state_topic: stateTopic,
     command_topic: `${stateTopic}/on`,
-    payload_on: "1",
+    payload_on: dim ? "100" : "1",
     payload_off: "0",
     device: {
-      identifiers: [deviceTopicKey],
-      name: deviceTopicKey,
+      identifiers: ["flos_" + deviceTopicKey],
+      name: hardware.replace(/ · .+$/, "") || deviceTopicKey,
       manufacturer: "Wiren Board",
     },
   };
@@ -70,6 +70,7 @@ export function buildHaRawDiscovery(deviceTopicKey, controlId, title) {
     payload.brightness_command_topic = `${stateTopic}/on`;
     payload.brightness_scale = 100;
     payload.on_command_type = "brightness";
+    payload.state_value_template = "{{ 'ON' if value|int(0) > 0 else 'OFF' }}";
   }
   const component = dim ? "light" : "switch";
   return {
@@ -106,6 +107,23 @@ export function haRawEntitiesFromShelves(shelves) {
   }
   out.sort((a, b) => a.uniqueId.localeCompare(b.uniqueId));
   return out;
+}
+
+/** wb-engine / native WB discovery — не наш unique_id, гасит линии и дублирует каналы. */
+export function isForeignHaDiscovery(topic, payload) {
+  const t = String(topic || "");
+  if (!/\/config$/.test(t)) return false;
+  if (/flos_raw|fl_form_logic|fl_reactor_scenes/.test(t)) return false;
+  const raw = String(payload || "");
+  if (!raw.trim()) return false;
+  try {
+    const uid = String(JSON.parse(raw).unique_id || "");
+    if (/^flos_raw_|^fl_form_logic|^fl_reactor/.test(uid)) return false;
+  } catch {
+    /* not json */
+  }
+  if (/wb-modbus|wb-engine/i.test(raw)) return true;
+  return /\/devices\/wb-/i.test(raw) && /homeassistant\/(?:light|switch|sensor|binary_sensor|number|select|button|cover)\//.test(t);
 }
 
 export function normalizeHaBroker(input) {
