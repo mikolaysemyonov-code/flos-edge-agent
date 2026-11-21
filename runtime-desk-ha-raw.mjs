@@ -169,25 +169,47 @@ export function isForeignHaDiscovery(topic, payload) {
   return /\/devices\/wb-/i.test(raw) && /homeassistant\/(?:light|switch|sensor|binary_sensor|number|select|button|cover)\//.test(t);
 }
 
-/** Гасим всё, кроме текущих flos_ha_ на реальных Channel/K/Curtain. */
-export function shouldTombstoneHaDiscovery(topic, payload, keepIds) {
-  const t = String(topic || "");
-  if (!/\/config$/.test(t) || !/homeassistant\//.test(t)) return false;
+/** Старые пути discovery (unique_id тот же — HA рисует второго K). */
+export function ghostHaDiscoveryTopics(deviceTopicKey, controlId) {
+  const key = String(deviceTopicKey || "");
+  const c = String(controlId || "");
+  if (!key || !c) return [];
+  const slug = `${key}_${c}`.replace(/\W+/g, "_").toLowerCase();
+  const hyphen = `flos_led_${key}_${c}`.replace(/\s+/g, "_").toLowerCase();
+  const ctrl = c.replace(/\s+/g, "_");
+  const ids = [`flos_led_${slug}`, `flos_raw_${slug}`, hyphen, `${key}_${ctrl}`, `${key}_${c}`.replace(/\s+/g, "_")];
+  const out = [];
+  for (const kind of ["light", "switch", "cover", "binary_sensor"]) {
+    for (const id of ids) out.push(`homeassistant/${kind}/${id}/config`);
+    out.push(`homeassistant/${kind}/${key}/${ctrl}/config`);
+    out.push(`homeassistant/${kind}/${key}/${c}/config`);
+  }
+  return [...new Set(out)];
+}
+
+/** Только канонический topic. unique_id на чужом пути — призрак. */
+export function shouldTombstoneHaDiscovery(topic, payload, keepTopics) {
+  const t = String(topic || "").replace(/^\/+/, "");
+  if (!/\/config$/.test(t) || !t.includes("homeassistant/")) return false;
   const raw = String(payload || "");
   if (!raw.trim()) return false;
   if (/fl_form_logic|fl_reactor_scenes/.test(t)) return false;
   let uid = "";
+  let stateTopic = "";
   try {
-    uid = String(JSON.parse(raw).unique_id || "");
+    const j = JSON.parse(raw);
+    uid = String(j.unique_id || "");
+    stateTopic = String(j.state_topic || "");
   } catch {
     uid = "";
   }
   if (/^fl_form_logic|^fl_reactor/.test(uid)) return false;
-  const keep = keepIds instanceof Set ? keepIds : new Set(keepIds || []);
-  if (uid && keep.has(uid)) return false;
-  if (/^flos_ha_/.test(uid)) return keep.size > 0;
+  const keep = keepTopics instanceof Set ? keepTopics : new Set(keepTopics || []);
+  if (keep.has(t)) return false;
+  if (!keep.size) return isForeignHaDiscovery(t, raw);
+  if (/^flos_/.test(uid) || /flos_/.test(t)) return true;
   if (isForeignHaDiscovery(t, raw)) return true;
-  return keep.size > 0 && /\/devices\/wb-/i.test(raw) && /homeassistant\/(?:light|switch|cover)\//.test(t);
+  return /\/devices\/wb-/i.test(stateTopic || raw) && /homeassistant\/(?:light|switch|cover|binary_sensor)\//.test(t);
 }
 
 export function normalizeHaBroker(input) {

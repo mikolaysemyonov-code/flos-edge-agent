@@ -8,6 +8,7 @@ import mqtt from "mqtt";
 import { deskMarkingPath } from "./runtime-desk-marking.mjs";
 import {
   buildHaRawDiscovery,
+  ghostHaDiscoveryTopics,
   haRawBrightnessControl,
   haRawCanonicalControl,
   haRawIsDriveControl,
@@ -128,6 +129,7 @@ const state = {
   lastBri: new Map(),
   lastChannelOn: new Map(),
   keepIds: new Set(),
+  keepTopics: new Set(),
   entities: new Map(),
   pendingTombstone: new Set(),
   values: new Map(),
@@ -238,7 +240,7 @@ function publicEntities() {
 export function onDeskHaDiscovery(topic, buf) {
   if (!state.running) return;
   const text = buf ? buf.toString("utf8") : "";
-  if (!shouldTombstoneHaDiscovery(topic, text, state.keepIds)) return;
+  if (!shouldTombstoneHaDiscovery(topic, text, state.keepTopics)) return;
   if (!state.discovered.size) {
     state.pendingTombstone.add(String(topic));
     return;
@@ -276,16 +278,24 @@ function legacyHaUniqueIds(deviceTopicKey, controlId) {
 
 function tombstoneUniqueId(uniqueId) {
   const client = state.remote || state.local;
-  for (const kind of ["light", "switch", "cover"]) {
+  for (const kind of ["light", "switch", "cover", "binary_sensor"]) {
     pub(client, `homeassistant/${kind}/${uniqueId}/config`, "", true);
   }
   state.discovered.delete(uniqueId);
   state.entities.delete(uniqueId);
 }
 
+function tombstoneGhosts(deviceTopicKey, controlId) {
+  for (const topic of ghostHaDiscoveryTopics(deviceTopicKey, controlId)) {
+    if (state.keepTopics.has(topic.replace(/^\/+/, ""))) continue;
+    pub(state.remote || state.local, topic, "", true);
+  }
+  for (const uid of legacyHaUniqueIds(deviceTopicKey, controlId)) tombstoneUniqueId(uid);
+}
+
 function publishDiscovery(row) {
   if (!row || !state.remote) return;
-  for (const uid of legacyHaUniqueIds(row.deviceTopicKey, row.controlId)) tombstoneUniqueId(uid);
+  tombstoneGhosts(row.deviceTopicKey, row.controlId);
   const first = state.discovered.size === 0;
   pub(state.remote, row.topic, JSON.stringify(row.payload), true);
   state.discovered.add(row.uniqueId);
@@ -355,8 +365,7 @@ function refreshDriveKeys() {
 function tombstoneSlavedRelays(driveKeys) {
   for (const key of driveKeys) {
     for (let i = 1; i <= 12; i += 1) {
-      tombstoneUniqueId(haRawUniqueId(key, `K${i}`));
-      for (const uid of legacyHaUniqueIds(key, `K${i}`)) tombstoneUniqueId(uid);
+      tombstoneGhosts(key, `K${i}`);
     }
   }
 }
@@ -407,6 +416,7 @@ function discoverAll() {
   seedValuesFromShelves();
   const rows = allLoadRows();
   state.keepIds = new Set(rows.map((r) => r.uniqueId));
+  state.keepTopics = new Set(rows.map((r) => String(r.topic || "").replace(/^\/+/, "")));
   tombstoneSlavedRelays(state.driveKeys);
   if (!rows.length) return false;
   for (const row of rows) {
@@ -486,7 +496,7 @@ function onBrokerMessage(topic, buf) {
       if (Number.isFinite(n) && n > 0) state.lastBri.set(parsed.stateTopic, String(n));
     }
   }
-  if (shouldTombstoneHaDiscovery(topic, text, state.keepIds) || isForeignHaDiscovery(topic, text)) {
+  if (shouldTombstoneHaDiscovery(topic, text, state.keepTopics) || isForeignHaDiscovery(topic, text)) {
     if (state.discovered.size) {
       pub(state.remote || state.local, topic, "", true);
       state.tombstoned += 1;
@@ -547,6 +557,7 @@ function connectLocalViaMirror() {
   state.driveKeys.clear();
   state.entities.clear();
   state.keepIds.clear();
+  state.keepTopics.clear();
   state.pendingTombstone.clear();
   state.values.clear();
   state.lastBri.clear();
@@ -582,6 +593,7 @@ function connectPair(cfg) {
   state.driveKeys.clear();
   state.entities.clear();
   state.keepIds.clear();
+  state.keepTopics.clear();
   state.pendingTombstone.clear();
   state.values.clear();
   state.lastBri.clear();
