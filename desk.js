@@ -7887,7 +7887,7 @@
       strip.append(start, stop);
       start.addEventListener("click", () => {
         start.disabled = true;
-        fetch("/runtime/desk-ha", {
+        const go = () => fetch("/runtime/desk-ha", {
           method: "POST",
           headers: { "content-type": "application/json" },
           body: JSON.stringify({
@@ -7906,6 +7906,12 @@
           })
           .catch(() => { lead.textContent = "Агент не ответил"; })
           .finally(() => { start.disabled = false; });
+        if (!(lastShelvesRows || []).length) {
+          lead.textContent = "Снимок шины…";
+          void scanNow().then(go).catch(go);
+          return;
+        }
+        go();
       });
       stop.addEventListener("click", () => {
         fetch("/runtime/desk-ha", {

@@ -94,6 +94,7 @@ const state = {
   forwarded: 0,
   tombstoned: 0,
   discovered: new Set(),
+  pendingTombstone: new Set(),
   values: new Map(),
   lastError: "",
   lastAt: "",
@@ -161,12 +162,35 @@ function seedValuesFromShelves() {
   }
 }
 
+function flushTombstones() {
+  if (!state.discovered.size) return;
+  const client = state.remote || state.local;
+  for (const topic of state.pendingTombstone) pub(client, topic, "", true);
+  state.tombstoned += state.pendingTombstone.size;
+  state.pendingTombstone.clear();
+}
+
 function discoverAll() {
   seedValuesFromShelves();
-  for (const row of haRawEntitiesFromShelves(loadShelves())) {
+  const rows = haRawEntitiesFromShelves(loadShelves());
+  if (!rows.length) return false;
+  for (const row of rows) {
     publishDiscovery(row);
     echoRetained(row);
   }
+  flushTombstones();
+  return true;
+}
+
+function scheduleDiscover() {
+  let tries = 0;
+  const tick = () => {
+    if (!state.running) return;
+    if (discoverAll()) return;
+    tries += 1;
+    if (tries < 12) setTimeout(tick, 3000);
+  };
+  setTimeout(tick, 400);
 }
 
 function assistLedCommand(parsed, payload) {
@@ -187,8 +211,12 @@ function onBrokerMessage(topic, buf) {
   const parsed = parseHaRawTopic(topic);
   if (parsed && !parsed.isCommand) state.values.set(parsed.stateTopic, text);
   if (isForeignHaDiscovery(topic, text)) {
-    pub(state.remote || state.local, topic, "", true);
-    state.tombstoned += 1;
+    if (state.discovered.size) {
+      pub(state.remote || state.local, topic, "", true);
+      state.tombstoned += 1;
+    } else {
+      state.pendingTombstone.add(topic);
+    }
     return;
   }
   if (parsed?.isCommand) {
@@ -244,6 +272,8 @@ function connectPair(cfg) {
   state.running = true;
   state.lastError = "";
   state.tombstoned = 0;
+  state.discovered.clear();
+  state.pendingTombstone.clear();
   state.values.clear();
   const local = mqtt.connect(localBrokerUrl(), {
     clientId: `flos-ha-local-${process.pid}`,
@@ -259,7 +289,7 @@ function connectPair(cfg) {
     if (hostIsThisController(cfg.host)) {
       state.remote = local;
       state.remoteOk = true;
-      setTimeout(() => discoverAll(), 1500);
+      scheduleDiscover();
     }
   });
   local.on("message", onBrokerMessage);
@@ -284,7 +314,7 @@ function connectPair(cfg) {
     state.remoteOk = true;
     state.lastError = "";
     remote.subscribe("/devices/+/controls/+/on", { qos: 0 }, () => {});
-    discoverAll();
+    scheduleDiscover();
   });
   remote.on("offline", () => {
     state.remoteOk = false;
