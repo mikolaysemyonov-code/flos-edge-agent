@@ -154,14 +154,37 @@ function publicStatus() {
 function loadHint() {
   const keys = uniqueMirrorKeys();
   const poured = loadsFromRules().length;
-  const led = [...keys].filter((k) => /led|mdm|mr6|mr12/i.test(k)).slice(0, 4);
-  return "правил " + poured + " · ключей " + keys.size + (led.length ? " · " + led.join("; ") : "");
+  let led = 0;
+  let mr = 0;
+  for (const k of keys) {
+    if (/led|ampled/i.test(k)) led += 1;
+    else if (/mr6|mr12|mr3|mrm/i.test(k)) mr += 1;
+  }
+  return "правил " + poured + " · шина LED " + led + " · MR " + mr;
+}
+
+function entryDeviceKey(e) {
+  const k = String(e?.deviceTopicKey || "").trim();
+  if (k) return k.replace(/^\/devices\//, "").split("/")[0];
+  const path = String(e?.topicPath || e?.id || "");
+  const m = /\/devices\/([^/]+)/i.exec(path);
+  return m ? m[1] : "";
 }
 
 function uniqueMirrorKeys() {
   const keys = new Set();
+  try {
+    if (mirror?.map && typeof mirror.map.keys === "function") {
+      for (const path of mirror.map.keys()) {
+        const m = /\/devices\/([^/]+)/i.exec(String(path || ""));
+        if (m) keys.add(m[1]);
+      }
+    }
+  } catch {
+    /* ignore */
+  }
   for (const e of mirrorEntries()) {
-    const key = String(e?.deviceTopicKey || "").trim();
+    const key = entryDeviceKey(e);
     if (key) keys.add(key);
   }
   return keys;
@@ -257,6 +280,7 @@ function echoRetained(row) {
   if (!client || !row?.payload) return;
   const st = state.values.get(row.payload.state_topic);
   if (st != null && st !== "") pub(client, row.payload.state_topic, st, true);
+  else if (row.kind !== "dim") pub(client, row.payload.state_topic, "0", true);
   const bt = row.payload.brightness_state_topic;
   if (bt) {
     const bv = state.values.get(bt);
@@ -295,22 +319,28 @@ function allLoadRows() {
       named: Boolean(String(title || "").trim()),
     });
   };
-  for (const row of loadsFromRules()) add(row.deviceTopicKey, row.controlId, row.title);
+  const bankKeys = new Set();
+  for (const row of loadsFromRules()) {
+    add(row.deviceTopicKey, row.controlId, row.title);
+    if (row.deviceTopicKey) bankKeys.add(row.deviceTopicKey);
+  }
   for (const s of loadShelves()) {
+    if (s?.deviceTopicKey) bankKeys.add(s.deviceTopicKey);
     for (const ch of Array.isArray(s?.channels) ? s.channels : []) {
       add(s.deviceTopicKey, ch.controlId, ch.name || ch.title || "");
     }
   }
   const keys = uniqueMirrorKeys();
+  for (const key of keys) bankKeys.add(key);
   for (const e of mirrorEntries()) {
-    const key = String(e?.deviceTopicKey || "").trim();
+    const key = entryDeviceKey(e);
     const controlId = haRawCanonicalControl(e?.controlId);
     if (e?.lastValue != null && e.lastValue !== "" && key && controlId) {
       state.values.set(`/devices/${key}/controls/${controlId}`, String(e.lastValue));
     }
     add(key, controlId, "");
   }
-  for (const key of keys) {
+  for (const key of bankKeys) {
     for (const id of expectedDeskOutputIds(key)) add(key, id, "");
   }
   return [...byId.values()];

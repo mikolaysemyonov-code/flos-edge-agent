@@ -78,6 +78,9 @@ export function buildHaRawDiscovery(deviceTopicKey, controlId, title) {
     command_topic: `${stateTopic}/on`,
     payload_on: briId ? "1" : dim ? "100" : "1",
     payload_off: "0",
+    state_on: briId ? "1" : dim ? "100" : "1",
+    state_off: "0",
+    optimistic: true,
     device: {
       identifiers: ["flos_" + deviceTopicKey],
       name: hardware.replace(/ · .+$/, "") || deviceTopicKey,
@@ -89,7 +92,6 @@ export function buildHaRawDiscovery(deviceTopicKey, controlId, title) {
     payload.brightness_command_topic = `${briTopic || stateTopic}/on`;
     payload.brightness_scale = 100;
     payload.on_command_type = "last";
-    payload.optimistic = true;
   }
   const component = dim ? "light" : "switch";
   return {
