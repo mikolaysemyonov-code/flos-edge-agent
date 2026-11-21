@@ -47,6 +47,14 @@ function pathsInRules(src) {
   return paths;
 }
 
+/** Все диммеры и реле из 00_core, даже если ячейка ещё не в 40_rules_user. */
+export function deskHaPouredLoads(coreSrc) {
+  const core = String(coreSrc || "");
+  const dimmers = parseRows(blockBetween(core, "var dimmersConfig", "var relaysConfig"), "dimmer");
+  const relays = parseRows(blockBetween(core, "var relaysConfig", "dimmersConfig.forEach"), "relay");
+  return [...dimmers, ...relays].filter((row) => !/^(Curtain|Actuator)\s/i.test(row.controlId));
+}
+
 /** @returns {{deviceTopicKey:string,controlId:string,cellId:string,kind:string,hardware:string,title:string,named:boolean}[]} */
 export function deskHaLights(coreSrc, rulesSrc) {
   const core = String(coreSrc || "");

@@ -36,7 +36,7 @@ import {
 } from "./wb-rules-journal-incidents.mjs";
 
 /** Одна строка в heartbeat и snapshot — иначе UI врёт версией. */
-const EDGE_AGENT_VERSION = "edge-pilot-v2.lan-desk-312";
+const EDGE_AGENT_VERSION = "edge-pilot-v2.lan-desk-313";
 
 /** Prefer `FLOS_*` (FL OS); fall back to legacy `REACTOR_*` for existing deployments. */
 function env(primary, legacy) {
@@ -3467,6 +3467,7 @@ async function main() {
   startMqttDiagnosticsBridge().catch((err) => console.warn("[flos-edge-agent] mqtt bridge failed:", err?.message ?? err));
   bindDeskHaMirror({
     version: EDGE_AGENT_VERSION,
+    map: mqttMirrorState.entriesByPath,
     entries: () => [...mqttMirrorState.entriesByPath.values()],
     connected: () => mqttMirrorState.connected === true,
     topicCount: () => mqttMirrorState.entriesByPath.size,
