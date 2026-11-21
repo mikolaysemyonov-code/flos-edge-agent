@@ -77,11 +77,13 @@ export function buildHaRawDiscovery(deviceTopicKey, controlId, title) {
     },
   };
   if (dim) {
+    payload.schema = "basic";
+    payload.supported_color_modes = ["brightness"];
     payload.brightness_state_topic = briTopic || stateTopic;
     payload.brightness_command_topic = `${briTopic || stateTopic}/on`;
     payload.brightness_scale = 100;
     payload.on_command_type = "last";
-    if (!briId) payload.state_value_template = "{{ 'ON' if value|int(0) > 0 else 'OFF' }}";
+    payload.state_value_template = "{{ '1' if value|int(0) > 0 else '0' }}";
   }
   const component = dim ? "light" : "switch";
   return {

@@ -8,6 +8,7 @@ import mqtt from "mqtt";
 import { deskMarkingPath } from "./runtime-desk-marking.mjs";
 import {
   buildHaRawDiscovery,
+  haRawBrightnessControl,
   haRawEntitiesFromShelves,
   isForeignHaDiscovery,
   isHaRawLoadControl,
@@ -93,6 +94,7 @@ const state = {
   forwarded: 0,
   tombstoned: 0,
   discovered: new Set(),
+  values: new Map(),
   lastError: "",
   lastAt: "",
 };
@@ -137,15 +139,50 @@ function publishDiscovery(row) {
   state.discovered.add(row.uniqueId);
 }
 
+function echoRetained(row) {
+  const client = state.remote || state.local;
+  if (!client || !row?.payload) return;
+  const st = state.values.get(row.payload.state_topic);
+  if (st != null && st !== "") pub(client, row.payload.state_topic, st, true);
+  const bt = row.payload.brightness_state_topic;
+  if (bt) {
+    const bv = state.values.get(bt);
+    if (bv != null && bv !== "") pub(client, bt, bv, true);
+  }
+}
+
 function discoverAll() {
-  for (const row of haRawEntitiesFromShelves(loadShelves())) publishDiscovery(row);
+  for (const row of haRawEntitiesFromShelves(loadShelves())) {
+    publishDiscovery(row);
+    echoRetained(row);
+  }
+}
+
+function assistLedCommand(parsed, payload) {
+  const briId = haRawBrightnessControl(parsed.deviceTopicKey, parsed.controlId);
+  if (!briId) return;
+  const raw = String(payload || "").trim();
+  const off = raw === "0" || /^off|false$/i.test(raw);
+  const on = raw === "1" || raw === "100" || /^on|true$/i.test(raw);
+  if (off || !on) return;
+  const briTopic = `/devices/${parsed.deviceTopicKey}/controls/${briId}`;
+  const cur = Number(state.values.get(briTopic));
+  if (Number.isFinite(cur) && cur > 0) return;
+  pub(state.local, `${briTopic}/on`, "100", false);
 }
 
 function onBrokerMessage(topic, buf) {
   const text = buf.toString("utf8");
+  const parsed = parseHaRawTopic(topic);
+  if (parsed && !parsed.isCommand) state.values.set(parsed.stateTopic, text);
   if (isForeignHaDiscovery(topic, text)) {
     pub(state.remote || state.local, topic, "", true);
     state.tombstoned += 1;
+    return;
+  }
+  if (parsed?.isCommand) {
+    assistLedCommand(parsed, text);
+    if (state.remote && state.remote !== state.local) onRemoteMessage(topic, buf);
     return;
   }
   if (state.remote && state.remote !== state.local) onLocalMessage(topic, buf);
@@ -196,6 +233,7 @@ function connectPair(cfg) {
   state.running = true;
   state.lastError = "";
   state.tombstoned = 0;
+  state.values.clear();
   const local = mqtt.connect(localBrokerUrl(), {
     clientId: `flos-ha-local-${process.pid}`,
     reconnectPeriod: 4000,
