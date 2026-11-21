@@ -105,6 +105,7 @@
       scenes: { tab: "cards", title: "Сценарии" },
       history: { tab: "poured", pane: "hist", title: "История" },
       board: { tab: "poured", pane: "send", title: "На контроллере" },
+      ha: { tab: "ha", title: "Home Assistant" },
     };
     function isPnr() {
       return activeNav === "pnr";
@@ -581,7 +582,7 @@
       }
       paintMarkChrome();
       if (kicker) kicker.hidden = tab !== "intro";
-      if (busLine) busLine.hidden = tab === "intro" || tab === "poured" || activeNav === "dali";
+      if (busLine) busLine.hidden = tab === "intro" || tab === "poured" || tab === "ha" || activeNav === "dali";
       if (ritual) {
         ritual.hidden = !isPnr();
         ritual.textContent = isPnr() ? "При сканировании следуйте подсказкам." : "";
@@ -598,6 +599,7 @@
         // Тихая диагностика при входе на «Залить» — без блокировки UI.
         void runDeskHealthQuiet();
       }
+      if (tab === "ha") void loadDeskHa();
       const hash = activeNav || tab;
       if (location.hash.replace("#", "") !== hash) history.replaceState(null, "", "#" + hash);
     }
@@ -638,7 +640,7 @@
       const solKindBar = $("solKindFilters");
       if (solKindBar) solKindBar.hidden = spec.tab !== "cards";
       const tree = document.querySelector(".rail-tree");
-      if (tree && (activeNav === "history" || activeNav === "board")) tree.dataset.open = "1";
+      if (tree && (activeNav === "history" || activeNav === "board" || activeNav === "ha")) tree.dataset.open = "1";
       if (isPnr()) {
         Promise.all([loadKeyPlan(), loadLinePlan(), loadSolutions()]).then(() => renderMark());
       }
@@ -8041,6 +8043,62 @@
           }
         });
     }
+    function paintDeskHa(j) {
+      const note = $("haNote");
+      const host = $("haHost");
+      const port = $("haPort");
+      const user = $("haUser");
+      if (host && !host.value) host.value = j.host || "";
+      if (port && (j.port || 1883)) port.value = String(j.port || 1883);
+      if (user && !user.value) user.value = j.user || "";
+      const ents = $("haEntities");
+      if (ents) {
+        ents.innerHTML = "";
+        (j.entities || []).forEach((e) => {
+          const li = document.createElement("li");
+          li.textContent = (e.kind === "dim" ? "Свет" : e.kind === "drive" ? "Штора" : "Реле")
+            + " · " + e.deviceTopicKey + "/" + e.controlId;
+          ents.appendChild(li);
+        });
+      }
+      if (!note) return;
+      note.hidden = false;
+      if (!j.ok && j.error) {
+        note.textContent = j.error === "need_host" ? "Впишите IP mini-PC" : "Не открыл мост";
+        return;
+      }
+      if (j.running && j.remoteOk) {
+        note.textContent = "HA видит " + (j.discovered || 0) + " линий · ушло " + (j.forwarded || 0);
+        return;
+      }
+      if (j.running && j.lastError) {
+        note.textContent = "Нет Mosquitto на этом IP: " + j.lastError;
+        return;
+      }
+      if (j.running) {
+        note.textContent = "Стучусь на " + j.host + ":" + j.port + "…";
+        return;
+      }
+      note.textContent = (j.entities || []).length
+        ? "На щите " + j.entities.length + " линий без клавиш. На mini-PC должен слушать Mosquitto :1883."
+        : "Обновите шину на столе, затем откройте линии.";
+    }
+    function loadDeskHa() {
+      return fetch("/runtime/desk-ha")
+        .then((r) => r.json())
+        .then(paintDeskHa)
+        .catch(() => {
+          const note = $("haNote");
+          if (note) { note.hidden = false; note.textContent = "Агент не ответил"; }
+        });
+    }
+    function postDeskHa(body) {
+      return fetch("/runtime/desk-ha", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(body),
+      }).then((r) => r.json()).then(paintDeskHa);
+    }
     document.querySelectorAll(".tab[data-nav]").forEach((btn) => {
       btn.addEventListener("click", () => {
         if (btn.dataset.nav === "controller") {
@@ -8053,6 +8111,22 @@
         openNav(btn.dataset.nav);
       });
     });
+    const haStart = $("haStart");
+    if (haStart) {
+      haStart.addEventListener("click", () => {
+        postDeskHa({
+          host: ($("haHost") && $("haHost").value) || "",
+          port: ($("haPort") && $("haPort").value) || 1883,
+          user: ($("haUser") && $("haUser").value) || "",
+          password: ($("haPass") && $("haPass").value) || "",
+          enabled: true,
+        }).then(() => setTimeout(loadDeskHa, 2500));
+      });
+    }
+    const haStop = $("haStop");
+    if (haStop) {
+      haStop.addEventListener("click", () => postDeskHa({ enabled: false }));
+    }
     const solSearch = $("solSearch");
     if (solSearch) {
       solSearch.addEventListener("input", () => {

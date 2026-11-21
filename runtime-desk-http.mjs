@@ -38,6 +38,11 @@ import {
 } from "./runtime-desk-rules-marks.mjs";
 import { applyDeskScanShelves, deskScanGap, formatDeskShelfLabel, groupDeskShelves } from "./runtime-desk-shelves.mjs";
 import { deskHaLights } from "./runtime-desk-ha-lights.mjs";
+import {
+  deskHaStatus,
+  disableDeskHaBridge,
+  startDeskHaBridge,
+} from "./runtime-desk-ha-bridge.mjs";
 import { assessDeskCanPour, buildDeskPourPackage } from "./runtime-desk-pour.mjs";
 import {
   actuateDeskChannel,
@@ -796,7 +801,35 @@ export function handleRuntimeDeskPoured(_req, res) {
   jsonEnd(res, 200, { ok: true, ...snap, rules });
 }
 
-/** Текст 40_rules_user.js с диска щита. Только этот файл, без пути из запроса. */
+/** GET/POST /runtime/desk-ha — сырой мост на Mosquitto mini-PC (HA). */
+export async function handleRuntimeDeskHa(req, res) {
+  const method = (req.method ?? "GET").toUpperCase();
+  if (method === "GET") {
+    jsonEnd(res, 200, deskHaStatus());
+    return;
+  }
+  if (method !== "POST") {
+    jsonEnd(res, 405, { ok: false, error: "method" });
+    return;
+  }
+  const chunks = [];
+  for await (const c of req) chunks.push(c);
+  let body = {};
+  try {
+    const raw = Buffer.concat(chunks).toString("utf8");
+    if (raw.trim()) body = JSON.parse(raw);
+  } catch {
+    jsonEnd(res, 400, { ok: false, error: "invalid_json" });
+    return;
+  }
+  if (body.enabled === false || body.stop === true) {
+    jsonEnd(res, 200, disableDeskHaBridge());
+    return;
+  }
+  const out = startDeskHaBridge(body);
+  jsonEnd(res, out.ok ? 200 : 400, out);
+}
+
 export function handleRuntimeDeskHaLights(_req, res) {
   const dir = (
     process.env.FLOS_WB_RULES_DEPLOY_DIR ||
@@ -810,6 +843,7 @@ export function handleRuntimeDeskHaLights(_req, res) {
   jsonEnd(res, 200, { ok: true, lights: deskHaLights(core, rules) });
 }
 
+/** Текст 40_rules_user.js с диска щита. Только этот файл, без пути из запроса. */
 export function handleRuntimeDeskRulesFile(_req, res) {
   const dir = (
     process.env.FLOS_WB_RULES_DEPLOY_DIR ||

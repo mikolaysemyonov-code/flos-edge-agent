@@ -17,6 +17,8 @@ runtime-desk-releases.mjs
 runtime-desk-pour.mjs
 runtime-desk-pour-core.mjs
 runtime-desk-ha-lights.mjs
+runtime-desk-ha-raw.mjs
+runtime-desk-ha-bridge.mjs
 runtime-desk-pour-user.mjs
 runtime-desk-pour-climate.mjs
 runtime-desk-pour-light.mjs

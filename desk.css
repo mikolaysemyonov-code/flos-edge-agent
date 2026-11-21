@@ -1332,6 +1332,20 @@
     #deskSols .sol-kind-dim { color: rgb(253 224 71); background: rgb(250 204 21 / .12); }
     #deskSols .sol-kind-motion { color: rgb(167 243 208); background: rgb(52 211 153 / .14); }
     #deskSols .sol-kind-other { color: rgb(212 212 216); background: rgb(255 255 255 / .08); }
+    .ha-form {
+      display: grid;
+      grid-template-columns: 1fr 7rem;
+      gap: .65rem .85rem;
+      margin: .35rem 0 1rem;
+    }
+    .ha-form label { display: flex; flex-direction: column; gap: .25rem; font-size: .82rem; color: rgb(212 212 216); }
+    .ha-form .bind { margin: 0; }
+    .ha-ents { list-style: none; margin: .75rem 0 0; padding: 0; }
+    .ha-ents li {
+      padding: .45rem 0;
+      border-top: 1px solid rgb(255 255 255 / .08);
+      font-size: .85rem;
+    }
     @media (prefers-reduced-motion: reduce) {
       .ghost, .tab .ico, input[type="text"] { box-shadow: none; }
     }

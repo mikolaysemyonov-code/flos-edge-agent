@@ -154,6 +154,30 @@
     <button id="cardMask" type="button" hidden aria-label="Закрыть карточку"></button>
     <div id="cardSheet" class="sheet" hidden></div>
 
+    <section id="panel-ha" class="panel glass" hidden data-tab="ha">
+      <p class="meta">Mosquitto на mini-PC с Home Assistant, порт 1883. Уходят реле, LED, MDM3 и приводы штор. Клавиши MCM / GPIO / IN не уходят.</p>
+      <div class="ha-form">
+        <label>IP mini-PC
+          <input id="haHost" class="bind" type="text" inputmode="decimal" placeholder="192.168.1.40" autocomplete="off" />
+        </label>
+        <label>Порт
+          <input id="haPort" class="bind" type="number" value="1883" min="1" max="65535" />
+        </label>
+        <label>Логин MQTT
+          <input id="haUser" class="bind" type="text" autocomplete="off" />
+        </label>
+        <label>Пароль
+          <input id="haPass" class="bind" type="password" autocomplete="new-password" />
+        </label>
+      </div>
+      <div class="pour-strip">
+        <button id="haStart" class="ghost pour-primary" type="button">Открыть линии в HA</button>
+        <button id="haStop" class="ghost" type="button">Остановить</button>
+      </div>
+      <p id="haNote" class="meta" hidden></p>
+      <ul id="haEntities" class="ha-ents"></ul>
+    </section>
+
     <section id="panel-poured" class="panel glass" hidden data-tab="poured">
       <p class="meta" hidden>Запись на щит.</p>
       <div id="pourDock" class="pour-dock">
@@ -206,6 +230,7 @@
       <div class="rail-sub">
         <button class="tab" type="button" role="tab" data-nav="history" data-tab="poured" aria-selected="false">История</button>
         <button class="tab" type="button" role="tab" data-nav="board" data-tab="poured" aria-selected="false">На контроллере <span class="n" id="n-poured"></span></button>
+        <button class="tab" type="button" role="tab" data-nav="ha" data-tab="ha" aria-selected="false">Home Assistant</button>
       </div>
     </div>
   </nav>

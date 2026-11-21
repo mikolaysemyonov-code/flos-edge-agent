@@ -25,6 +25,7 @@ import {
   setRuntimeHealthExtraProvider,
 } from "./runtime-control-plane-http.mjs";
 import { setRuntimeClockSetter, setRuntimeMqttScanHandler, setRuntimeRootSetter } from "./runtime-desk-http.mjs";
+import { resumeDeskHaBridgeFromDisk } from "./runtime-desk-ha-bridge.mjs";
 import { isMarkShieldDiscoverableDeviceKey } from "./lib/mark-shield-discoverable-device.mjs";
 import { countOfflineDevices } from "./runtime-desk-shelves.mjs";
 import { cleanDeskPassword } from "./runtime-desk-gate.mjs";
@@ -35,7 +36,7 @@ import {
 } from "./wb-rules-journal-incidents.mjs";
 
 /** Одна строка в heartbeat и snapshot — иначе UI врёт версией. */
-const EDGE_AGENT_VERSION = "edge-pilot-v2.lan-desk-302";
+const EDGE_AGENT_VERSION = "edge-pilot-v2.lan-desk-303";
 
 /** Prefer `FLOS_*` (FL OS); fall back to legacy `REACTOR_*` for existing deployments. */
 function env(primary, legacy) {
@@ -3326,6 +3327,11 @@ function startHandshakeHttpServerIfEnabled() {
       console.log(
         `[flos-edge-agent] runtime http://${bind}:${port}/ (стол пуска) + /runtime/health + /runtime/apply + ${EDGE_HANDSHAKE_HELLO_PATH} + ${ROUTER_SETUP_PREFLIGHT_PATH} + ${ROUTER_SETUP_APPLY_PATH}`,
       );
+      try {
+        resumeDeskHaBridgeFromDisk();
+      } catch (err) {
+        console.warn("[flos-edge-agent] ha raw bridge:", err?.message ?? err);
+      }
     });
   };
   tryListen(0);
