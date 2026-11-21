@@ -339,6 +339,15 @@ function allLoadRows() {
   for (const key of bankKeys) {
     for (const id of expectedDeskOutputIds(key)) add(key, id, "");
   }
+  const withDrive = new Set();
+  for (const row of byId.values()) {
+    if (row.kind === "drive") withDrive.add(row.deviceTopicKey);
+  }
+  if (withDrive.size) {
+    for (const [id, row] of [...byId.entries()]) {
+      if (withDrive.has(row.deviceTopicKey) && /^K\d+$/i.test(row.controlId)) byId.delete(id);
+    }
+  }
   return [...byId.values()];
 }
 

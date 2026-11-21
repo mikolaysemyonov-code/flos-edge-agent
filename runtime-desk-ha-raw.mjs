@@ -70,28 +70,35 @@ export function buildHaRawDiscovery(deviceTopicKey, controlId, title) {
   const hardware = (formatDeskShelfLabel(deviceTopicKey) || deviceTopicKey) + " · " + controlId;
   const briId = haRawBrightnessControl(deviceTopicKey, controlId);
   const briTopic = briId ? `/devices/${deviceTopicKey}/controls/${briId}` : "";
+  const onPay = briId ? "1" : dim ? "100" : "1";
+  const stateTpl =
+    "{% set v = value|string|lower %}{{ '" +
+    onPay +
+    "' if v in ['1','true','on','100'] else '0' }}";
   const payload = {
-    name: String(title || "").trim() || hardware,
+    name: String(title || "").trim() || controlId,
     unique_id: uniqueId,
     object_id: uniqueId,
     state_topic: stateTopic,
     command_topic: `${stateTopic}/on`,
-    payload_on: briId ? "1" : dim ? "100" : "1",
+    payload_on: onPay,
     payload_off: "0",
-    state_on: briId ? "1" : dim ? "100" : "1",
-    state_off: "0",
     optimistic: true,
+    has_entity_name: true,
     device: {
       identifiers: ["flos_" + deviceTopicKey],
-      name: hardware.replace(/ · .+$/, "") || deviceTopicKey,
+      name: formatDeskShelfLabel(deviceTopicKey) || deviceTopicKey,
       manufacturer: "Wiren Board",
     },
   };
   if (dim) {
+    payload.state_value_template = stateTpl;
     payload.brightness_state_topic = briTopic || stateTopic;
     payload.brightness_command_topic = `${briTopic || stateTopic}/on`;
     payload.brightness_scale = 100;
     payload.on_command_type = "last";
+  } else {
+    payload.value_template = stateTpl;
   }
   const component = dim ? "light" : "switch";
   return {
@@ -100,6 +107,7 @@ export function buildHaRawDiscovery(deviceTopicKey, controlId, title) {
     kind,
     deviceTopicKey,
     controlId,
+    hardware,
     topic: `homeassistant/${component}/${uniqueId}/config`,
     payload,
   };
