@@ -30,6 +30,29 @@ function shelvesPath() {
   return path.join(path.dirname(deskMarkingPath()), "desk-last-shelves.json");
 }
 
+let mirror = null;
+
+export function bindDeskHaMirror(src) {
+  mirror = src && typeof src === "object" ? src : null;
+}
+
+function mirrorEntries() {
+  try {
+    const rows = mirror?.entries?.();
+    return Array.isArray(rows) ? rows : [];
+  } catch {
+    return [];
+  }
+}
+
+function mirrorPublish(topic, payload, retain) {
+  try {
+    if (typeof mirror?.publish === "function") mirror.publish(topic, payload, retain === true);
+  } catch {
+    /* ignore */
+  }
+}
+
 function emptyCfg() {
   return { version: 1, enabled: false, host: "", port: 1883, user: "", password: "" };
 }
@@ -118,6 +141,8 @@ function publicStatus() {
     discovered: state.discovered.size,
     lastError: state.lastError,
     lastAt: state.lastAt,
+    mirrorTopics: Number(mirror?.topicCount?.() || 0) || 0,
+    agentVersion: String(mirror?.version || ""),
     entities: publicEntities(),
   };
 }
@@ -149,6 +174,10 @@ function rememberEntity(row) {
 }
 
 function pub(client, topic, payload, retain) {
+  if (hostIsThisController(readDeskHaConfig().host)) {
+    mirrorPublish(topic, payload, retain);
+    return;
+  }
   if (!client) return;
   client.publish(topic, payload, { qos: 1, retain: retain === true }, () => {});
 }
@@ -205,9 +234,25 @@ function flushTombstones() {
   state.pendingTombstone.clear();
 }
 
+function allLoadRows() {
+  const fromShelves = haRawEntitiesFromShelves(loadShelves());
+  const byId = new Map(fromShelves.map((r) => [r.uniqueId, r]));
+  for (const e of mirrorEntries()) {
+    const key = String(e?.deviceTopicKey || "").trim();
+    const controlId = String(e?.controlId || "").trim();
+    if (e?.lastValue != null && e.lastValue !== "" && key && controlId) {
+      state.values.set(`/devices/${key}/controls/${controlId}`, String(e.lastValue));
+    }
+    const row = buildHaRawDiscovery(key, controlId);
+    if (!row || byId.has(row.uniqueId)) continue;
+    byId.set(row.uniqueId, { ...row, hardware: row.payload.name, named: false });
+  }
+  return [...byId.values()];
+}
+
 function discoverAll() {
   seedValuesFromShelves();
-  const rows = haRawEntitiesFromShelves(loadShelves());
+  const rows = allLoadRows();
   if (!rows.length) return false;
   for (const row of rows) {
     publishDiscovery(row);
@@ -296,7 +341,38 @@ export function stopDeskHaBridge() {
   state.remote = null;
 }
 
+function connectLocalViaMirror() {
+  stopDeskHaBridge();
+  state.running = true;
+  state.lastError = "";
+  state.tombstoned = 0;
+  state.discovered.clear();
+  state.entities.clear();
+  state.pendingTombstone.clear();
+  state.values.clear();
+  const stub = {
+    publish(topic, payload, opts, cb) {
+      mirrorPublish(topic, payload, opts && opts.retain === true);
+      if (typeof cb === "function") cb();
+    },
+    subscribe() {},
+    end() {},
+    removeAllListeners() {},
+    on() {},
+  };
+  state.local = stub;
+  state.remote = stub;
+  state.localOk = true;
+  state.remoteOk = true;
+  discoverAll();
+  scheduleDiscover();
+}
+
 function connectPair(cfg) {
+  if (hostIsThisController(cfg.host)) {
+    connectLocalViaMirror();
+    return;
+  }
   stopDeskHaBridge();
   state.running = true;
   state.lastError = "";

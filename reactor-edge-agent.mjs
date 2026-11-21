@@ -25,7 +25,7 @@ import {
   setRuntimeHealthExtraProvider,
 } from "./runtime-control-plane-http.mjs";
 import { setRuntimeClockSetter, setRuntimeMqttScanHandler, setRuntimeRootSetter } from "./runtime-desk-http.mjs";
-import { resumeDeskHaBridgeFromDisk } from "./runtime-desk-ha-bridge.mjs";
+import { bindDeskHaMirror, resumeDeskHaBridgeFromDisk } from "./runtime-desk-ha-bridge.mjs";
 import { isMarkShieldDiscoverableDeviceKey } from "./lib/mark-shield-discoverable-device.mjs";
 import { countOfflineDevices } from "./runtime-desk-shelves.mjs";
 import { cleanDeskPassword } from "./runtime-desk-gate.mjs";
@@ -36,7 +36,7 @@ import {
 } from "./wb-rules-journal-incidents.mjs";
 
 /** Одна строка в heartbeat и snapshot — иначе UI врёт версией. */
-const EDGE_AGENT_VERSION = "edge-pilot-v2.lan-desk-310";
+const EDGE_AGENT_VERSION = "edge-pilot-v2.lan-desk-311";
 
 /** Prefer `FLOS_*` (FL OS); fall back to legacy `REACTOR_*` for existing deployments. */
 function env(primary, legacy) {
@@ -3465,6 +3465,17 @@ async function main() {
     };
   });
   startMqttDiagnosticsBridge().catch((err) => console.warn("[flos-edge-agent] mqtt bridge failed:", err?.message ?? err));
+  bindDeskHaMirror({
+    version: EDGE_AGENT_VERSION,
+    entries: () => [...mqttMirrorState.entriesByPath.values()],
+    connected: () => mqttMirrorState.connected === true,
+    topicCount: () => mqttMirrorState.entriesByPath.size,
+    publish(topic, payload, retain) {
+      const c = mqttMirrorState.client;
+      if (!c) return;
+      c.publish(String(topic), String(payload ?? ""), { qos: 1, retain: retain === true });
+    },
+  });
   startMqttBusMirror().catch((err) => console.warn("[flos-edge-agent] mqtt mirror failed:", err?.message ?? err));
   startHandshakeHttpServerIfEnabled();
   for (;;) {

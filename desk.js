@@ -7844,7 +7844,9 @@
       if (!j.ok && j.error) return "Не открыл мост";
       if (j.running && j.remoteOk) {
         const extra = j.tombstoned ? " · снял чужие " + j.tombstoned : "";
-        return "HA видит " + (j.discovered || 0) + " линий · ушло " + (j.forwarded || 0) + extra;
+        const bus = j.mirrorTopics ? " · шина " + j.mirrorTopics : "";
+        const ver = j.agentVersion ? " · " + j.agentVersion.replace(/^edge-pilot-v2\.lan-desk-/, "сборка ") : "";
+        return "HA видит " + (j.discovered || 0) + " линий · ушло " + (j.forwarded || 0) + extra + bus + ver;
       }
       if (j.running && j.lastError) return "Нет Mosquitto на этом IP: " + j.lastError;
       if (j.running) return "Стучусь на " + j.host + ":" + j.port + "…";
