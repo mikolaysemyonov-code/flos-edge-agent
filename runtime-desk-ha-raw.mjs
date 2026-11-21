@@ -1,6 +1,7 @@
 /**
  * Сырые нагрузки щита → MQTT Discovery. Клавиши и счётчики нажатий не отдаём.
  */
+import { formatDeskShelfLabel } from "./runtime-desk-shelves.mjs";
 
 export function parseHaRawTopic(topic) {
   const t = String(topic || "").trim();
@@ -43,14 +44,15 @@ export function haRawUniqueId(deviceTopicKey, controlId) {
   return `flos_raw_${deviceTopicKey}_${controlId}`.replace(/\W+/g, "_").toLowerCase();
 }
 
-export function buildHaRawDiscovery(deviceTopicKey, controlId) {
+export function buildHaRawDiscovery(deviceTopicKey, controlId, title) {
   if (!isHaRawLoadControl(deviceTopicKey, controlId)) return null;
   const kind = haRawKind(controlId);
   const uniqueId = haRawUniqueId(deviceTopicKey, controlId);
   const stateTopic = `/devices/${deviceTopicKey}/controls/${controlId}`;
   const dim = kind === "dim";
+  const hardware = (formatDeskShelfLabel(deviceTopicKey) || deviceTopicKey) + " · " + controlId;
   const payload = {
-    name: `${deviceTopicKey} ${controlId}`,
+    name: String(title || "").trim() || hardware,
     unique_id: uniqueId,
     object_id: uniqueId,
     state_topic: stateTopic,
@@ -90,10 +92,16 @@ export function haRawEntitiesFromShelves(shelves) {
       const controlId = String(ch?.controlId || "").trim();
       const id = `${key}\0${controlId}`;
       if (!key || !controlId || seen.has(id)) continue;
-      const row = buildHaRawDiscovery(key, controlId);
+      const title = String(ch?.name || ch?.title || "").trim();
+      const row = buildHaRawDiscovery(key, controlId, title);
       if (!row) continue;
       seen.add(id);
-      out.push({ ...row, lastValue: ch?.lastValue });
+      out.push({
+        ...row,
+        lastValue: ch?.lastValue,
+        hardware: (formatDeskShelfLabel(key) || key) + " · " + controlId,
+        named: Boolean(title),
+      });
     }
   }
   out.sort((a, b) => a.uniqueId.localeCompare(b.uniqueId));

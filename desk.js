@@ -88,6 +88,7 @@
     let rulesFileText = "";
     let haLights = null;
     let haDrafts = new Map();
+    let haBridge = null;
     function haRowKey(row) {
       return row.deviceTopicKey + "\0" + row.controlId;
     }
@@ -105,7 +106,7 @@
       scenes: { tab: "cards", title: "Сценарии" },
       history: { tab: "poured", pane: "hist", title: "История" },
       board: { tab: "poured", pane: "send", title: "На контроллере" },
-      ha: { tab: "ha", title: "Home Assistant" },
+      ha: { tab: "poured", pane: "ha", title: "Home Assistant" },
     };
     function isPnr() {
       return activeNav === "pnr";
@@ -599,7 +600,7 @@
         // Тихая диагностика при входе на «Залить» — без блокировки UI.
         void runDeskHealthQuiet();
       }
-      if (tab === "ha") void loadDeskHa();
+      if (tab === "poured" && pouredPane === "ha") void loadHaLights();
       const hash = activeNav || tab;
       if (location.hash.replace("#", "") !== hash) history.replaceState(null, "", "#" + hash);
     }
@@ -645,6 +646,10 @@
         Promise.all([loadKeyPlan(), loadLinePlan(), loadSolutions()]).then(() => renderMark());
       }
       if (activeNav === "dali") void loadDaliMdali();
+      if (id === "ha" && !(lastShelvesRows || []).length) {
+        const scanBtn = $("scan");
+        if (!scanBtn || !scanBtn.disabled) void scanNow();
+      }
       if (deskNavLive && /^(pnr|light|relays|curtains|dali|mdm)$/.test(id) && !(lastShelvesRows || []).length) {
         const scanBtn = $("scan");
         if (!scanBtn || !scanBtn.disabled) void scanNow();
@@ -7777,18 +7782,145 @@
       shelves.forEach((s) => { liveKeys[s.deviceTopicKey] = true; });
       renderPoured();
       loadPreview();
+      if (pouredPane === "ha") void loadHaLights();
       if (shelves.length) $("scan").textContent = "Обновить";
+    }
+    function isDeskHaLoad(s, ch) {
+      const key = String((s && s.deviceTopicKey) || "");
+      const c = String((ch && ch.controlId) || "");
+      if (/^Input\s+/i.test(c) || /Press Counter/i.test(c)) return false;
+      if (/^IN\d+$/i.test(c) || /^EXT\d+_IN/i.test(c) || /^[A-D]\d+_IN/i.test(c)) return false;
+      if (/mcm|mdi|gpio|wd14|mio-gpio/i.test(key)) return false;
+      return /^K\d+$/i.test(c) || /^Channel\s+\d+$/i.test(c) || /^(Curtain|Actuator)\s+/i.test(c);
+    }
+    function haLightsFromShelves() {
+      const rows = [];
+      (lastShelvesRows || []).forEach((s) => {
+        (s.channels || []).forEach((ch) => {
+          if (!isDeskHaLoad(s, ch)) return;
+          const hardware = (s.label || s.deviceTopicKey) + " · " + ch.controlId;
+          const title = String(ch.name || "").trim();
+          rows.push({
+            deviceTopicKey: s.deviceTopicKey,
+            controlId: ch.controlId,
+            hardware,
+            kind: /^Channel/i.test(ch.controlId) ? "dim" : /Curtain|Actuator/i.test(ch.controlId) ? "drive" : "relay",
+            title: title || hardware,
+            named: Boolean(title),
+          });
+        });
+      });
+      return rows;
+    }
+    function applyHaStatus(j) {
+      if (j && j.ok !== false) haBridge = j;
+      const ents = j && Array.isArray(j.entities) ? j.entities : [];
+      if (ents.length) {
+        haLights = ents.map((e) => ({
+          deviceTopicKey: e.deviceTopicKey,
+          controlId: e.controlId,
+          hardware: e.hardware || ((e.deviceTopicKey || "") + " · " + e.controlId),
+          kind: e.kind,
+          title: e.name,
+          named: e.named === true,
+        }));
+      } else {
+        haLights = haLightsFromShelves();
+      }
+      (haLights || []).forEach((row) => {
+        const k = haRowKey(row);
+        if (!haDrafts.has(k)) haDrafts.set(k, row.named ? row.title : "");
+      });
+    }
+    function haStatusLine(j) {
+      if (!j) return "Читаю щит…";
+      if (!j.ok && j.error === "need_host") return "Впишите IP mini-PC";
+      if (!j.ok && j.error) return "Не открыл мост";
+      if (j.running && j.remoteOk) return "HA видит " + (j.discovered || 0) + " линий · ушло " + (j.forwarded || 0);
+      if (j.running && j.lastError) return "Нет Mosquitto на этом IP: " + j.lastError;
+      if (j.running) return "Стучусь на " + j.host + ":" + j.port + "…";
+      const n = (haLights || []).length;
+      const leds = new Set((haLights || []).filter((r) => r.kind === "dim").map((r) => r.deviceTopicKey)).size;
+      if (!n) return "Обновите шину (шестерёнка → Обновить), затем откройте линии.";
+      return leds
+        ? ("На щите " + leds + " WB-LED · " + n + " линий без клавиш. Mosquitto на mini-PC :1883.")
+        : ("На щите " + n + " линий без клавиш. Mosquitto на mini-PC :1883.");
     }
     function paintHaPane(box) {
       box.className = "";
       const lead = document.createElement("p");
       lead.className = "meta";
-      lead.textContent = "Свет из правил. Имя станет подписью в Home Assistant.";
-      box.appendChild(lead);
+      lead.textContent = haStatusLine(haBridge);
+      const form = document.createElement("div");
+      form.className = "ha-form";
+      function field(label, id, attrs) {
+        const wrap = document.createElement("label");
+        wrap.textContent = label;
+        const input = document.createElement("input");
+        input.id = id;
+        input.className = "bind";
+        Object.keys(attrs).forEach((k) => input.setAttribute(k, attrs[k]));
+        wrap.appendChild(input);
+        form.appendChild(wrap);
+        return input;
+      }
+      const host = field("IP mini-PC", "haHost", { type: "text", inputmode: "decimal", placeholder: "192.168.1.40", autocomplete: "off" });
+      const port = field("Порт", "haPort", { type: "number", min: "1", max: "65535" });
+      const user = field("Логин MQTT", "haUser", { type: "text", autocomplete: "off" });
+      const pass = field("Пароль", "haPass", { type: "password", autocomplete: "new-password" });
+      host.value = (haBridge && haBridge.host) || host.value || "";
+      port.value = String((haBridge && haBridge.port) || 1883);
+      user.value = (haBridge && haBridge.user) || "";
+      const strip = document.createElement("div");
+      strip.className = "pour-strip";
+      const start = document.createElement("button");
+      start.type = "button";
+      start.className = "ghost pour-primary";
+      start.textContent = "Открыть линии в HA";
+      const stop = document.createElement("button");
+      stop.type = "button";
+      stop.className = "ghost";
+      stop.textContent = "Остановить";
+      strip.append(start, stop);
+      start.addEventListener("click", () => {
+        start.disabled = true;
+        fetch("/runtime/desk-ha", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            host: host.value,
+            port: port.value || 1883,
+            user: user.value,
+            password: pass.value,
+            enabled: true,
+          }),
+        })
+          .then((r) => r.json())
+          .then((j) => {
+            applyHaStatus(j);
+            lead.textContent = haStatusLine(j);
+            setTimeout(() => { void loadHaLights(); }, 2500);
+          })
+          .catch(() => { lead.textContent = "Агент не ответил"; })
+          .finally(() => { start.disabled = false; });
+      });
+      stop.addEventListener("click", () => {
+        fetch("/runtime/desk-ha", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ enabled: false }),
+        })
+          .then((r) => r.json())
+          .then((j) => {
+            applyHaStatus(j);
+            lead.textContent = haStatusLine(j);
+          });
+      });
+      box.append(lead, form, strip);
       if (!haLights) {
         const wait = document.createElement("p");
         wait.className = "empty";
-        wait.textContent = "Читаю правила…";
+        wait.textContent = "Читаю шину…";
         box.appendChild(wait);
         return;
       }
@@ -7812,7 +7944,7 @@
         if (!rows.length) {
           const empty = document.createElement("p");
           empty.className = "empty";
-          empty.textContent = haLights.length ? "Такой линии нет." : "В правилах пока нет света.";
+          empty.textContent = haLights.length ? "Такой линии нет." : "На шине нет LED / реле. Обновите шину.";
           list.appendChild(empty);
           return;
         }
@@ -7838,8 +7970,8 @@
       foot.className = "ha-foot";
       const write = document.createElement("button");
       write.type = "button";
-      write.className = "ghost pour-primary";
-      write.textContent = "Записать на щит";
+      write.className = "ghost";
+      write.textContent = "Имена на щит";
       const note = document.createElement("p");
       note.className = "meta";
       write.addEventListener("click", () => { void writeHaNames(write, note); });
@@ -7885,12 +8017,11 @@
     }
     async function loadHaLights() {
       try {
-        const r = await fetch("/runtime/desk-ha-lights");
+        const r = await fetch("/runtime/desk-ha");
         const j = await r.json();
-        haLights = j && j.ok && Array.isArray(j.lights) ? j.lights : [];
-        haDrafts = new Map(haLights.map((row) => [haRowKey(row), row.named ? row.title : ""]));
+        applyHaStatus(j);
       } catch (_) {
-        haLights = [];
+        applyHaStatus({ ok: true, entities: [] });
       }
       if (pouredPane === "ha") renderReady();
     }
@@ -8043,62 +8174,6 @@
           }
         });
     }
-    function paintDeskHa(j) {
-      const note = $("haNote");
-      const host = $("haHost");
-      const port = $("haPort");
-      const user = $("haUser");
-      if (host && !host.value) host.value = j.host || "";
-      if (port && (j.port || 1883)) port.value = String(j.port || 1883);
-      if (user && !user.value) user.value = j.user || "";
-      const ents = $("haEntities");
-      if (ents) {
-        ents.innerHTML = "";
-        (j.entities || []).forEach((e) => {
-          const li = document.createElement("li");
-          li.textContent = (e.kind === "dim" ? "Свет" : e.kind === "drive" ? "Штора" : "Реле")
-            + " · " + e.deviceTopicKey + "/" + e.controlId;
-          ents.appendChild(li);
-        });
-      }
-      if (!note) return;
-      note.hidden = false;
-      if (!j.ok && j.error) {
-        note.textContent = j.error === "need_host" ? "Впишите IP mini-PC" : "Не открыл мост";
-        return;
-      }
-      if (j.running && j.remoteOk) {
-        note.textContent = "HA видит " + (j.discovered || 0) + " линий · ушло " + (j.forwarded || 0);
-        return;
-      }
-      if (j.running && j.lastError) {
-        note.textContent = "Нет Mosquitto на этом IP: " + j.lastError;
-        return;
-      }
-      if (j.running) {
-        note.textContent = "Стучусь на " + j.host + ":" + j.port + "…";
-        return;
-      }
-      note.textContent = (j.entities || []).length
-        ? "На щите " + j.entities.length + " линий без клавиш. На mini-PC должен слушать Mosquitto :1883."
-        : "Обновите шину на столе, затем откройте линии.";
-    }
-    function loadDeskHa() {
-      return fetch("/runtime/desk-ha")
-        .then((r) => r.json())
-        .then(paintDeskHa)
-        .catch(() => {
-          const note = $("haNote");
-          if (note) { note.hidden = false; note.textContent = "Агент не ответил"; }
-        });
-    }
-    function postDeskHa(body) {
-      return fetch("/runtime/desk-ha", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify(body),
-      }).then((r) => r.json()).then(paintDeskHa);
-    }
     document.querySelectorAll(".tab[data-nav]").forEach((btn) => {
       btn.addEventListener("click", () => {
         if (btn.dataset.nav === "controller") {
@@ -8111,22 +8186,6 @@
         openNav(btn.dataset.nav);
       });
     });
-    const haStart = $("haStart");
-    if (haStart) {
-      haStart.addEventListener("click", () => {
-        postDeskHa({
-          host: ($("haHost") && $("haHost").value) || "",
-          port: ($("haPort") && $("haPort").value) || 1883,
-          user: ($("haUser") && $("haUser").value) || "",
-          password: ($("haPass") && $("haPass").value) || "",
-          enabled: true,
-        }).then(() => setTimeout(loadDeskHa, 2500));
-      });
-    }
-    const haStop = $("haStop");
-    if (haStop) {
-      haStop.addEventListener("click", () => postDeskHa({ enabled: false }));
-    }
     const solSearch = $("solSearch");
     if (solSearch) {
       solSearch.addEventListener("input", () => {

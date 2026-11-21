@@ -117,6 +117,8 @@ function publicStatus() {
       deviceTopicKey: e.deviceTopicKey,
       controlId: e.controlId,
       name: e.payload.name,
+      hardware: e.hardware,
+      named: e.named === true,
     })),
   };
 }
