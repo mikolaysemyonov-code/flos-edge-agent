@@ -151,7 +151,18 @@ function echoRetained(row) {
   }
 }
 
+function seedValuesFromShelves() {
+  for (const s of loadShelves()) {
+    for (const ch of Array.isArray(s?.channels) ? s.channels : []) {
+      if (ch?.lastValue == null || ch.lastValue === "") continue;
+      const t = `/devices/${s.deviceTopicKey}/controls/${ch.controlId}`;
+      if (!state.values.has(t)) state.values.set(t, String(ch.lastValue));
+    }
+  }
+}
+
 function discoverAll() {
+  seedValuesFromShelves();
   for (const row of haRawEntitiesFromShelves(loadShelves())) {
     publishDiscovery(row);
     echoRetained(row);

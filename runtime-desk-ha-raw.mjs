@@ -50,7 +50,7 @@ export function haRawBrightnessControl(deviceTopicKey, controlId) {
 }
 
 export function haRawUniqueId(deviceTopicKey, controlId) {
-  return `flos_raw_${deviceTopicKey}_${controlId}`.replace(/\W+/g, "_").toLowerCase();
+  return `flos_led_${deviceTopicKey}_${controlId}`.replace(/\W+/g, "_").toLowerCase();
 }
 
 export function buildHaRawDiscovery(deviceTopicKey, controlId, title) {
@@ -77,13 +77,11 @@ export function buildHaRawDiscovery(deviceTopicKey, controlId, title) {
     },
   };
   if (dim) {
-    payload.schema = "basic";
-    payload.supported_color_modes = ["brightness"];
     payload.brightness_state_topic = briTopic || stateTopic;
     payload.brightness_command_topic = `${briTopic || stateTopic}/on`;
     payload.brightness_scale = 100;
     payload.on_command_type = "last";
-    payload.state_value_template = "{{ '1' if value|int(0) > 0 else '0' }}";
+    payload.optimistic = true;
   }
   const component = dim ? "light" : "switch";
   return {
@@ -126,15 +124,17 @@ export function haRawEntitiesFromShelves(shelves) {
 export function isForeignHaDiscovery(topic, payload) {
   const t = String(topic || "");
   if (!/\/config$/.test(t)) return false;
-  if (/flos_raw|fl_form_logic|fl_reactor_scenes/.test(t)) return false;
   const raw = String(payload || "");
   if (!raw.trim()) return false;
+  if (/flos_led|fl_form_logic|fl_reactor_scenes/.test(t)) return false;
+  let uid = "";
   try {
-    const uid = String(JSON.parse(raw).unique_id || "");
-    if (/^flos_raw_|^fl_form_logic|^fl_reactor/.test(uid)) return false;
+    uid = String(JSON.parse(raw).unique_id || "");
   } catch {
-    /* not json */
+    uid = "";
   }
+  if (/^flos_led_|^fl_form_logic|^fl_reactor/.test(uid)) return false;
+  if (/flos_raw/.test(t) || /^flos_raw_/.test(uid)) return true;
   if (/wb-modbus|wb-engine/i.test(raw)) return true;
   return /\/devices\/wb-/i.test(raw) && /homeassistant\/(?:light|switch|sensor|binary_sensor|number|select|button|cover)\//.test(t);
 }
