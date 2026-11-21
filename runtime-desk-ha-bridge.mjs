@@ -205,7 +205,13 @@ function connectPair(cfg) {
   state.local = local;
   local.on("connect", () => {
     state.localOk = true;
-    local.subscribe(["/devices/#", "homeassistant/#"], { qos: 0 }, () => {});
+    local.subscribe("homeassistant/#", { qos: 0 }, () => {});
+    local.subscribe("/devices/#", { qos: 0 }, () => {});
+    if (hostIsThisController(cfg.host)) {
+      state.remote = local;
+      state.remoteOk = true;
+      setTimeout(() => discoverAll(), 1500);
+    }
   });
   local.on("message", onBrokerMessage);
   local.on("offline", () => {
@@ -214,14 +220,7 @@ function connectPair(cfg) {
   local.on("error", (err) => {
     state.lastError = String(err?.message || err || "local_mqtt");
   });
-  if (hostIsThisController(cfg.host)) {
-    local.on("connect", () => {
-      state.remote = local;
-      state.remoteOk = true;
-      discoverAll();
-    });
-    return;
-  }
+  if (hostIsThisController(cfg.host)) return;
   const remoteOpts = {
     clientId: `flos-ha-raw-${process.pid}`,
     reconnectPeriod: 4000,

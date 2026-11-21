@@ -1,7 +1,7 @@
 /**
  * Сырые нагрузки щита → MQTT Discovery. Клавиши и счётчики нажатий не отдаём.
  */
-import { formatDeskShelfLabel } from "./runtime-desk-shelves.mjs";
+import { formatDeskShelfLabel, parseDeskDeviceKey } from "./runtime-desk-shelves.mjs";
 
 export function parseHaRawTopic(topic) {
   const t = String(topic || "").trim();
@@ -40,6 +40,15 @@ export function haRawKind(controlId) {
   return "relay";
 }
 
+/** 4xW: Channel N = 0/1, яркость — соседний Channel N Brightness. */
+export function haRawBrightnessControl(deviceTopicKey, controlId) {
+  const m = /^Channel\s+(\d+)$/i.exec(String(controlId || ""));
+  if (!m) return "";
+  const type = parseDeskDeviceKey(deviceTopicKey)?.type || "";
+  if (!/^(led|ampled)$/i.test(type)) return "";
+  return `Channel ${m[1]} Brightness`;
+}
+
 export function haRawUniqueId(deviceTopicKey, controlId) {
   return `flos_raw_${deviceTopicKey}_${controlId}`.replace(/\W+/g, "_").toLowerCase();
 }
@@ -51,13 +60,15 @@ export function buildHaRawDiscovery(deviceTopicKey, controlId, title) {
   const stateTopic = `/devices/${deviceTopicKey}/controls/${controlId}`;
   const dim = kind === "dim";
   const hardware = (formatDeskShelfLabel(deviceTopicKey) || deviceTopicKey) + " · " + controlId;
+  const briId = haRawBrightnessControl(deviceTopicKey, controlId);
+  const briTopic = briId ? `/devices/${deviceTopicKey}/controls/${briId}` : "";
   const payload = {
     name: String(title || "").trim() || hardware,
     unique_id: uniqueId,
     object_id: uniqueId,
     state_topic: stateTopic,
     command_topic: `${stateTopic}/on`,
-    payload_on: dim ? "100" : "1",
+    payload_on: briId ? "1" : dim ? "100" : "1",
     payload_off: "0",
     device: {
       identifiers: ["flos_" + deviceTopicKey],
@@ -66,11 +77,11 @@ export function buildHaRawDiscovery(deviceTopicKey, controlId, title) {
     },
   };
   if (dim) {
-    payload.brightness_state_topic = stateTopic;
-    payload.brightness_command_topic = `${stateTopic}/on`;
+    payload.brightness_state_topic = briTopic || stateTopic;
+    payload.brightness_command_topic = `${briTopic || stateTopic}/on`;
     payload.brightness_scale = 100;
-    payload.on_command_type = "brightness";
-    payload.state_value_template = "{{ 'ON' if value|int(0) > 0 else 'OFF' }}";
+    payload.on_command_type = "last";
+    if (!briId) payload.state_value_template = "{{ 'ON' if value|int(0) > 0 else 'OFF' }}";
   }
   const component = dim ? "light" : "switch";
   return {
