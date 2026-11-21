@@ -94,6 +94,7 @@ const state = {
   forwarded: 0,
   tombstoned: 0,
   discovered: new Set(),
+  entities: new Map(),
   pendingTombstone: new Set(),
   values: new Map(),
   lastError: "",
@@ -117,16 +118,34 @@ function publicStatus() {
     discovered: state.discovered.size,
     lastError: state.lastError,
     lastAt: state.lastAt,
-    entities: haRawEntitiesFromShelves(loadShelves()).map((e) => ({
-      uniqueId: e.uniqueId,
-      kind: e.kind,
-      deviceTopicKey: e.deviceTopicKey,
-      controlId: e.controlId,
-      name: e.payload.name,
-      hardware: e.hardware,
-      named: e.named === true,
-    })),
+    entities: publicEntities(),
   };
+}
+
+function publicEntities() {
+  if (state.entities.size) return [...state.entities.values()].sort((a, b) => a.uniqueId.localeCompare(b.uniqueId));
+  return haRawEntitiesFromShelves(loadShelves()).map((e) => ({
+    uniqueId: e.uniqueId,
+    kind: e.kind,
+    deviceTopicKey: e.deviceTopicKey,
+    controlId: e.controlId,
+    name: e.payload.name,
+    hardware: e.hardware,
+    named: e.named === true,
+  }));
+}
+
+function rememberEntity(row) {
+  if (!row) return;
+  state.entities.set(row.uniqueId, {
+    uniqueId: row.uniqueId,
+    kind: row.kind,
+    deviceTopicKey: row.deviceTopicKey,
+    controlId: row.controlId,
+    name: row.payload?.name || row.hardware,
+    hardware: row.hardware || row.payload?.name || row.uniqueId,
+    named: row.named === true,
+  });
 }
 
 function pub(client, topic, payload, retain) {
@@ -136,8 +155,24 @@ function pub(client, topic, payload, retain) {
 
 function publishDiscovery(row) {
   if (!row || !state.remote) return;
+  const first = state.discovered.size === 0;
   pub(state.remote, row.topic, JSON.stringify(row.payload), true);
   state.discovered.add(row.uniqueId);
+  rememberEntity(row);
+  if (first) flushTombstones();
+}
+
+function offerDiscovery(parsed) {
+  if (!parsed || parsed.isCommand) return null;
+  if (!isHaRawLoadControl(parsed.deviceTopicKey, parsed.controlId)) return null;
+  const row = buildHaRawDiscovery(parsed.deviceTopicKey, parsed.controlId);
+  if (!row) return null;
+  if (!state.discovered.has(row.uniqueId)) {
+    publishDiscovery(row);
+    echoRetained(row);
+    state.lastAt = new Date().toISOString();
+  }
+  return row;
 }
 
 function echoRetained(row) {
@@ -224,18 +259,12 @@ function onBrokerMessage(topic, buf) {
     if (state.remote && state.remote !== state.local) onRemoteMessage(topic, buf);
     return;
   }
-  if (state.remote && state.remote !== state.local) onLocalMessage(topic, buf);
-}
-
-function onLocalMessage(topic, buf) {
-  const parsed = parseHaRawTopic(topic);
-  if (!parsed || parsed.isCommand) return;
-  if (!isHaRawLoadControl(parsed.deviceTopicKey, parsed.controlId)) return;
-  const row = buildHaRawDiscovery(parsed.deviceTopicKey, parsed.controlId);
-  if (row && !state.discovered.has(row.uniqueId)) publishDiscovery(row);
-  pub(state.remote, parsed.stateTopic, buf.toString("utf8"), true);
-  state.forwarded += 1;
-  state.lastAt = new Date().toISOString();
+  const row = offerDiscovery(parsed);
+  if (row && state.remote && state.remote !== state.local) {
+    pub(state.remote, parsed.stateTopic, text, true);
+    state.forwarded += 1;
+    state.lastAt = new Date().toISOString();
+  }
 }
 
 function onRemoteMessage(topic, buf) {
@@ -273,6 +302,7 @@ function connectPair(cfg) {
   state.lastError = "";
   state.tombstoned = 0;
   state.discovered.clear();
+  state.entities.clear();
   state.pendingTombstone.clear();
   state.values.clear();
   const local = mqtt.connect(localBrokerUrl(), {
@@ -284,13 +314,13 @@ function connectPair(cfg) {
   state.local = local;
   local.on("connect", () => {
     state.localOk = true;
-    local.subscribe("homeassistant/#", { qos: 0 }, () => {});
-    local.subscribe("/devices/#", { qos: 0 }, () => {});
     if (hostIsThisController(cfg.host)) {
       state.remote = local;
       state.remoteOk = true;
-      scheduleDiscover();
     }
+    local.subscribe("homeassistant/#", { qos: 0 }, () => {});
+    local.subscribe("/devices/#", { qos: 0 }, () => {});
+    if (hostIsThisController(cfg.host)) scheduleDiscover();
   });
   local.on("message", onBrokerMessage);
   local.on("offline", () => {

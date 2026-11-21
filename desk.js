@@ -7629,9 +7629,11 @@
       }
     }
     async function scanNow() {
-      $("scan").disabled = true;
+      const scanBtn = $("scan");
+      const bus = $("bus");
+      if (scanBtn) scanBtn.disabled = true;
       try {
-        $("bus").textContent = "Смотрю дом…";
+        if (bus) bus.textContent = "Смотрю дом…";
         const r = await fetch("/runtime/mqtt-scan", {
           method: "POST",
           headers: { "content-type": "application/json" },
@@ -7639,20 +7641,24 @@
         });
         const j = await r.json();
         if (!j.ok || !Array.isArray(j.shelves)) {
-            $("bus").className = "meta bad";
-            $("bus").style.color = "rgb(var(--bad))";
-            delete $("bus").dataset.base;
-          $("bus").textContent = j.error || "Шина не ответила";
+          if (bus) {
+            bus.className = "meta bad";
+            bus.style.color = "rgb(var(--bad))";
+            delete bus.dataset.base;
+            bus.textContent = j.error || "Шина не ответила";
+          }
           return;
         }
         showShelves(j);
       } catch (e) {
-          $("bus").className = "meta";
-          $("bus").style.color = "rgb(var(--bad))";
-          delete $("bus").dataset.base;
-          $("bus").textContent = String(e.message || e);
+        if (bus) {
+          bus.className = "meta";
+          bus.style.color = "rgb(var(--bad))";
+          delete bus.dataset.base;
+          bus.textContent = String(e.message || e);
+        }
       } finally {
-        $("scan").disabled = false;
+        if (scanBtn) scanBtn.disabled = false;
       }
     }
     $("scan").onclick = () => { void scanNow(); };
@@ -7902,15 +7908,13 @@
           .then((j) => {
             applyHaStatus(j);
             lead.textContent = haStatusLine(j);
-            setTimeout(() => { void loadHaLights(); }, 2500);
+            setTimeout(() => { void loadHaLights(); }, 800);
+            setTimeout(() => { void loadHaLights(); }, 3000);
+            setTimeout(() => { void loadHaLights(); }, 8000);
           })
           .catch(() => { lead.textContent = "Агент не ответил"; })
           .finally(() => { start.disabled = false; });
-        if (!(lastShelvesRows || []).length) {
-          lead.textContent = "Снимок шины…";
-          void scanNow().then(go).catch(go);
-          return;
-        }
+        if (!(lastShelvesRows || []).length) void scanNow();
         go();
       });
       stop.addEventListener("click", () => {
