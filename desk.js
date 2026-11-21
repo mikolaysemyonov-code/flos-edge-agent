@@ -82,6 +82,7 @@
     let roomFilter = "";
     let modQuery = "";
     let solQuery = "";
+    let solKindFilter = "";
     let openMod = "";
     let pouredPane = "send";
     let rulesFileText = "";
@@ -634,6 +635,8 @@
       if (cardBar) cardBar.hidden = activeNav === "climate";
       const solSearch = $("solSearch");
       if (solSearch) solSearch.hidden = spec.tab !== "cards";
+      const solKindBar = $("solKindFilters");
+      if (solKindBar) solKindBar.hidden = spec.tab !== "cards";
       const tree = document.querySelector(".rail-tree");
       if (tree && (activeNav === "history" || activeNav === "board")) tree.dataset.open = "1";
       if (isPnr()) {
@@ -2598,6 +2601,20 @@
       const card = deskCatalog.find((c) => c.id === sol.solutionId);
       return (card && card.cat) || "";
     }
+    const SOL_KIND_ORDER = ["toggle", "dim", "motion", "other"];
+    function solKindOf(sol) {
+      const id = String((sol && sol.solutionId) || "");
+      if (id === "light_dim_hold_mcm") return "dim";
+      if (/motion|night_path|stair_light|reed_on/.test(id)) return "motion";
+      if (/toggle|all_off|master_power/.test(id)) return "toggle";
+      return "other";
+    }
+    function solKindRu(kind) {
+      if (kind === "toggle") return "Вкл / выкл";
+      if (kind === "dim") return "Диммирование";
+      if (kind === "motion") return "Датчики";
+      return "Другое";
+    }
     function stripWbKey(key) {
       return String(key || "").replace(/^wb-/i, "");
     }
@@ -2675,6 +2692,7 @@
       bits.push(sol.solutionId, sol.title);
       const card = deskCatalog.find((c) => c.id === sol.solutionId);
       if (card) bits.push(card.title, card.id);
+      bits.push(solKindRu(solKindOf(sol)));
       return bits.filter(Boolean).join(" ");
     }
     function solMatchesQuery(sol, q) {
@@ -2697,18 +2715,48 @@
     function isTogglePressCard(card) {
       return card && (card.id === "light_button_toggle" || card.id === "socket_button_toggle");
     }
+    function paintSolKindFilters(inCat) {
+      const bar = $("solKindFilters");
+      if (!bar) return;
+      const counts = { toggle: 0, dim: 0, motion: 0, other: 0 };
+      inCat.forEach((sol) => { counts[solKindOf(sol)] = (counts[solKindOf(sol)] || 0) + 1; });
+      bar.replaceChildren();
+      [["", "Все", inCat.length], ["toggle", "Вкл / выкл", counts.toggle], ["dim", "Диммирование", counts.dim], ["motion", "Датчики", counts.motion]]
+        .filter((row) => !row[0] || row[2])
+        .forEach(([id, ru, n]) => {
+          const b = document.createElement("button");
+          b.type = "button";
+          b.setAttribute("aria-pressed", solKindFilter === id ? "true" : "false");
+          b.textContent = n ? ru + " · " + n : ru;
+          b.addEventListener("click", () => {
+            solKindFilter = id;
+            renderDeskSolutions();
+          });
+          bar.appendChild(b);
+        });
+    }
     function renderDeskSolutions() {
       const ul = $("deskSols");
       ul.innerHTML = "";
       paintCardsRoomBanner();
       const inCat = deskSolutions.filter((sol) => catOfSol(sol) === cardFilter);
-      const shown = inCat.filter((sol) => solMatchesQuery(sol, solQuery));
+      paintSolKindFilters(inCat);
+      const shown = inCat
+        .filter((sol) => !solKindFilter || solKindOf(sol) === solKindFilter)
+        .filter((sol) => solMatchesQuery(sol, solQuery))
+        .slice()
+        .sort((a, b) => {
+          const ka = SOL_KIND_ORDER.indexOf(solKindOf(a));
+          const kb = SOL_KIND_ORDER.indexOf(solKindOf(b));
+          if (ka !== kb) return ka - kb;
+          return solTopicPath(a.trigger).localeCompare(solTopicPath(b.trigger), "ru", { numeric: true });
+        });
       const miss = $("solMiss");
       if (miss) {
-        if (solQuery.trim() && !shown.length) {
+        if ((solQuery.trim() || solKindFilter) && !shown.length) {
           miss.hidden = false;
-          miss.textContent = "Нет сценария на «" + solQuery.trim() + "».";
-        } else if (solQuery.trim()) {
+          miss.textContent = "Нет сценария на «" + (solQuery.trim() || solKindRu(solKindFilter)) + "».";
+        } else if (solQuery.trim() || solKindFilter) {
           miss.hidden = false;
           miss.textContent = shown.length + " из " + inCat.length;
         } else {
@@ -2727,9 +2775,14 @@
         const cardTitle = (cardRow && cardRow.title) || sol.title || sol.solutionId;
         const press = solPressOf(sol);
         const pressH = press === "double" ? "двойное" : press === "long" ? "долгое" : "";
-        left.querySelector("strong").textContent = trigPath
+        const kindRu = solKindRu(solKindOf(sol));
+        left.querySelector("strong").textContent = (trigPath
           ? (pressH ? trigPath + " · " + pressH : trigPath)
-          : cardTitle;
+          : cardTitle);
+        const kindMark = document.createElement("span");
+        kindMark.className = "sol-kind sol-kind-" + solKindOf(sol);
+        kindMark.textContent = kindRu;
+        left.insertBefore(kindMark, left.querySelector("strong"));
         const paramH = solParamsHuman(sol, cardRow);
         left.querySelector(".meta").textContent =
           [tPath ? "→ " + tPath : (tHuman ? "→ " + tHuman : ""), tHuman && tPath ? tHuman : "", paramH]
