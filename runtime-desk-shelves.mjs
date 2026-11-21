@@ -86,11 +86,11 @@ function controlIdOf(entry) {
 }
 
 function isRelayFamily(type) {
-  return /^(mr6c|mr6cu|mr6cv3|mr6c-v3|mr12|mr6lv|mrm)/i.test(String(type ?? ""));
+  return /^(mr6c|mr6cu|mr6cv3|mr6c-v3|mr12|mr6lv|mrps6|mrm|mr3|mrwl|mrwm)/i.test(String(type ?? ""));
 }
 
 function isLedFamily(type) {
-  return /^(led|ampled)$/i.test(String(type ?? ""));
+  return /^(led|ampled)/i.test(String(type ?? ""));
 }
 
 /** Фазная штора на MR: Curtain N Open/Close (в веб — «Открыть привод N»). */
@@ -152,10 +152,16 @@ const OUTPUT_BANK = {
 };
 
 export function expectedDeskOutputIds(deviceTopicKey) {
-  const parsed = parseDeskDeviceKey(deviceTopicKey);
-  const n = parsed ? OUTPUT_BANK[parsed.type] : 0;
+  const raw = String(deviceTopicKey || "");
+  const parsed = parseDeskDeviceKey(raw);
+  let n = parsed ? OUTPUT_BANK[parsed.type] || 0 : 0;
+  if (!n && (isLedFamily(parsed?.type) || /led|ampled/i.test(raw))) n = 4;
+  if (!n && (parsed?.type === "mdm3" || /mdm3/i.test(raw))) n = 3;
+  if (!n && (isRelayFamily(parsed?.type) || /mr6|mrps6|mrm|mrwl|mrwm/i.test(raw))) {
+    n = /mr12/i.test(parsed?.type || raw) ? 12 : /mr3/i.test(parsed?.type || raw) ? 3 : 6;
+  }
   if (!n) return [];
-  const channel = isLedFamily(parsed.type) || parsed.type === "mdm3";
+  const channel = isLedFamily(parsed?.type) || parsed?.type === "mdm3" || /led|ampled|mdm3/i.test(raw);
   const ids = [];
   for (let i = 1; i <= n; i += 1) ids.push(channel ? `Channel ${i}` : `K${i}`);
   return ids;

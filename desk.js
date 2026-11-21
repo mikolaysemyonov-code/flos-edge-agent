@@ -7847,7 +7847,8 @@
         const bus = j.mirrorTopics ? " · шина " + j.mirrorTopics : "";
         const ver = j.agentVersion ? " · " + j.agentVersion.replace(/^edge-pilot-v2\.lan-desk-/, "сборка ") : "";
         if (!(j.discovered || 0) && j.hint) return "0 линий" + bus + ver + " · " + j.hint;
-        return "HA видит " + (j.discovered || 0) + " линий · ушло " + (j.forwarded || 0) + extra + bus + ver;
+        const hint = j.hint ? " · " + j.hint : "";
+        return "HA видит " + (j.discovered || 0) + " линий · ушло " + (j.forwarded || 0) + extra + bus + ver + hint;
       }
       if (j.running && j.lastError) return "Нет Mosquitto на этом IP: " + j.lastError;
       if (j.running) return "Стучусь на " + j.host + ":" + j.port + "…";

@@ -36,7 +36,7 @@ import {
 } from "./wb-rules-journal-incidents.mjs";
 
 /** Одна строка в heartbeat и snapshot — иначе UI врёт версией. */
-const EDGE_AGENT_VERSION = "edge-pilot-v2.lan-desk-314";
+const EDGE_AGENT_VERSION = "edge-pilot-v2.lan-desk-315";
 
 /** Prefer `FLOS_*` (FL OS); fall back to legacy `REACTOR_*` for existing deployments. */
 function env(primary, legacy) {
@@ -3469,6 +3469,16 @@ async function main() {
     version: EDGE_AGENT_VERSION,
     map: mqttMirrorState.entriesByPath,
     entries: () => [...mqttMirrorState.entriesByPath.values()],
+    deviceKeys: () => {
+      const keys = new Set();
+      for (const [path, e] of mqttMirrorState.entriesByPath) {
+        const k = String(e?.deviceTopicKey || "").trim();
+        if (k) keys.add(k);
+        const m = /devices\/([^/]+)/i.exec(String(path || ""));
+        if (m) keys.add(m[1]);
+      }
+      return [...keys];
+    },
     connected: () => mqttMirrorState.connected === true,
     topicCount: () => mqttMirrorState.entriesByPath.size,
     publish(topic, payload, retain) {

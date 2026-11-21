@@ -174,9 +174,14 @@ function entryDeviceKey(e) {
 function uniqueMirrorKeys() {
   const keys = new Set();
   try {
+    if (typeof mirror?.deviceKeys === "function") {
+      for (const k of mirror.deviceKeys() || []) {
+        if (k) keys.add(String(k));
+      }
+    }
     if (mirror?.map && typeof mirror.map.keys === "function") {
       for (const path of mirror.map.keys()) {
-        const m = /\/devices\/([^/]+)/i.exec(String(path || ""));
+        const m = /devices\/([^/]+)/i.exec(String(path || ""));
         if (m) keys.add(m[1]);
       }
     }
@@ -219,16 +224,7 @@ function loadsFromRules() {
 }
 
 function publicEntities() {
-  if (state.entities.size) return [...state.entities.values()].sort((a, b) => a.uniqueId.localeCompare(b.uniqueId));
-  return haRawEntitiesFromShelves(loadShelves()).map((e) => ({
-    uniqueId: e.uniqueId,
-    kind: e.kind,
-    deviceTopicKey: e.deviceTopicKey,
-    controlId: e.controlId,
-    name: e.payload.name,
-    hardware: e.hardware,
-    named: e.named === true,
-  }));
+  return [...state.entities.values()].sort((a, b) => a.uniqueId.localeCompare(b.uniqueId));
 }
 
 function rememberEntity(row) {
@@ -362,11 +358,11 @@ function scheduleDiscover() {
   let tries = 0;
   const tick = () => {
     if (!state.running) return;
-    if (discoverAll()) return;
+    discoverAll();
     tries += 1;
-    if (tries < 12) setTimeout(tick, 3000);
+    if (tries < 16) setTimeout(tick, 2000);
   };
-  setTimeout(tick, 400);
+  setTimeout(tick, 200);
 }
 
 function assistLedCommand(parsed, payload) {
