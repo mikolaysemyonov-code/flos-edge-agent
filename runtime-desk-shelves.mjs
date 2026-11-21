@@ -217,7 +217,7 @@ function sortControlIds(a, b) {
 
 /** MQTT lastValue → канал «горит» (как янтарь на разметке щита). */
 export function deskChannelIsOn(lastValue) {
-  if (lastValue === 1 || lastValue === true || lastValue === "1" || lastValue === "on") return true;
+  if (lastValue === 1 || lastValue === true || lastValue === "1" || lastValue === "on" || lastValue === "true") return true;
   if (typeof lastValue === "number" && Number.isFinite(lastValue) && lastValue > 0) return true;
   if (typeof lastValue === "string" && /^-?\d+(\.\d+)?$/.test(lastValue.trim())) {
     return Number(lastValue) > 0;

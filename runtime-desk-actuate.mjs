@@ -91,7 +91,7 @@ export function isDeskInputControl(controlId, deviceTopicKey) {
 }
 
 export function deskInputClosed(lastValue) {
-  if (lastValue === 1 || lastValue === true || lastValue === "1" || lastValue === "on") return true;
+  if (lastValue === 1 || lastValue === true || lastValue === "1" || lastValue === "on" || lastValue === "true") return true;
   return false;
 }
 

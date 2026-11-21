@@ -35,7 +35,7 @@ import {
 } from "./wb-rules-journal-incidents.mjs";
 
 /** Одна строка в heartbeat и snapshot — иначе UI врёт версией. */
-const EDGE_AGENT_VERSION = "edge-pilot-v2.lan-desk-300";
+const EDGE_AGENT_VERSION = "edge-pilot-v2.lan-desk-301";
 
 /** Prefer `FLOS_*` (FL OS); fall back to legacy `REACTOR_*` for existing deployments. */
 function env(primary, legacy) {
@@ -1066,7 +1066,15 @@ function runMqttTopicScanChunkCommand(payload) {
 /** Входы и счётчики нажатий — то, что нужно живой привязке клавиш. */
 function isDeskPressControl(controlId) {
   const c = String(controlId || "");
-  return /^Input\s+/i.test(c) || /^EXT\d+_IN/i.test(c) || /^[A-D]\d+_IN/i.test(c);
+  return /^Input\s+/i.test(c) || /^EXT\d+_IN/i.test(c) || /^[A-D]\d+_IN/i.test(c) || /^IN\d+$/i.test(c);
+}
+
+function mqttLeafValue(raw) {
+  const s = String(raw ?? "");
+  if (s === "0" || s === "false" || s === "off") return 0;
+  if (s === "1" || s === "true" || s === "on") return 1;
+  if (s && /^-?\d+(\.\d+)?$/.test(s)) return Number(s);
+  return s || undefined;
 }
 
 /**
@@ -1288,11 +1296,7 @@ async function runMqttTopicScanCommand(payload) {
           const topicPath = `/devices/${deviceTopicKey}/meta/error`;
           if (entriesByPath.has(topicPath)) return;
           const raw = buf.length > 0 ? buf.toString("utf8") : "";
-          let lastValue;
-          if (raw === "0") lastValue = 0;
-          else if (raw === "1") lastValue = 1;
-          else if (raw && /^-?\d+(\.\d+)?$/.test(raw)) lastValue = Number(raw);
-          else if (raw) lastValue = raw;
+          const lastValue = mqttLeafValue(raw);
           entriesByPath.set(topicPath, {
             id: `${deviceTopicKey}:__device_meta_error`,
             deviceTopicKey,
@@ -1314,15 +1318,11 @@ async function runMqttTopicScanCommand(payload) {
         if (entriesByPath.has(topicPath)) return;
         const raw = buf.length > 0 ? buf.toString("utf8") : "";
         let valueType = "unknown";
-        if (raw === "0" || raw === "1") valueType = "switch";
+        if (raw === "0" || raw === "1" || raw === "true" || raw === "false") valueType = "switch";
         else if (/^-?\d+(\.\d+)?$/.test(raw)) valueType = "range";
         else if (raw.startsWith("{") || raw.startsWith("[")) valueType = "json";
         else if (raw.length > 0) valueType = "text";
-        let lastValue;
-        if (raw === "0") lastValue = 0;
-        else if (raw === "1") lastValue = 1;
-        else if (raw && /^-?\d+(\.\d+)?$/.test(raw)) lastValue = Number(raw);
-        else if (raw) lastValue = raw;
+        const lastValue = mqttLeafValue(raw);
         entriesByPath.set(topicPath, {
           id: `${deviceTopicKey}:${controlId}`,
           deviceTopicKey,
@@ -1604,11 +1604,7 @@ function ingestMqttMirrorMessage(topic, buf) {
   if (parts.length === 4 && parts[0] === "devices" && parts[2] === "meta" && parts[3] === "error") {
     if (!isMarkShieldDiscoverableDeviceKey(deviceTopicKey)) return;
     const raw = buf.length > 0 ? buf.toString("utf8") : "";
-    let lastValue;
-    if (raw === "0") lastValue = 0;
-    else if (raw === "1") lastValue = 1;
-    else if (raw && /^-?\d+(\.\d+)?$/.test(raw)) lastValue = Number(raw);
-    else if (raw) lastValue = raw;
+    const lastValue = mqttLeafValue(raw);
     if (!mqttMirrorState.entriesByPath.has(topicPath)) mqttMirrorState.lastNewPathAtMs = Date.now();
     mqttMirrorState.entriesByPath.set(topicPath, {
       id: `${deviceTopicKey}:__device_meta_error`,
@@ -1634,15 +1630,11 @@ function ingestMqttMirrorMessage(topic, buf) {
   if (!controlId || /meta/i.test(controlId)) return;
   const raw = buf.length > 0 ? buf.toString("utf8") : "";
   let valueType = "unknown";
-  if (raw === "0" || raw === "1") valueType = "switch";
+  if (raw === "0" || raw === "1" || raw === "true" || raw === "false") valueType = "switch";
   else if (/^-?\d+(\.\d+)?$/.test(raw)) valueType = "range";
   else if (raw.startsWith("{") || raw.startsWith("[")) valueType = "json";
   else if (raw.length > 0) valueType = "text";
-  let lastValue;
-  if (raw === "0") lastValue = 0;
-  else if (raw === "1") lastValue = 1;
-  else if (raw && /^-?\d+(\.\d+)?$/.test(raw)) lastValue = Number(raw);
-  else if (raw) lastValue = raw;
+  const lastValue = mqttLeafValue(raw);
   if (!mqttMirrorState.entriesByPath.has(topicPath)) mqttMirrorState.lastNewPathAtMs = Date.now();
   mqttMirrorState.entriesByPath.set(topicPath, {
     id: `${deviceTopicKey}:${controlId}`,

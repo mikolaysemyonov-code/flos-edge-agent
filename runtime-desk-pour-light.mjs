@@ -3,7 +3,7 @@
  * Параметры: level (%), offDelay (сек; 0 = гасить сразу при уходе).
  */
 import { cellId, physPath } from "./runtime-desk-pour-core.mjs";
-import { deskButtonCounter } from "./runtime-desk-marking.mjs";
+import { deskButtonCounter, deskColonCell } from "./runtime-desk-marking.mjs";
 import { liveDeskDeviceKey } from "./runtime-desk-rules-marks.mjs";
 import { parseDaliMqttId } from "./runtime-desk-dali.mjs";
 
@@ -137,13 +137,10 @@ function emitOnWhenActive(sol, defaults) {
           `      }, ${offDelay * 1000});`,
         ].join("\n")
       : offSets;
-  return [
-    `var ${latch} = null;`,
-    `defineRule(${esc(id)}, {`,
-    `  whenChanged: ${esc(when)},`,
-    "  then: function () {",
-    "    try {",
-    `      var on = wbIsOn(readValue(${esc(when)}));`,
+  const colon = deskColonCell(when);
+  const onRead = colon ? "wbIsOn(raw)" : `wbIsOn(readValue(${esc(when)}))`;
+  const thenBody = [
+    `      var on = ${onRead};`,
     "      if (on) {",
     `        if (${latch}) try { clearTimeout(${latch}); } catch (_e) {}`,
     `        ${latch} = null;`,
@@ -151,7 +148,30 @@ function emitOnWhenActive(sol, defaults) {
     "      } else {",
     offBody,
     "      }",
-    "    } catch (e) { if (typeof wbRuleGuardCatch === 'function') wbRuleGuardCatch(" + esc(id) + ", e); }",
+  ].join("\n");
+  const catchLine =
+    "    } catch (e) { if (typeof wbRuleGuardCatch === 'function') wbRuleGuardCatch(" + esc(id) + ", e); }";
+  if (colon) {
+    return [
+      `var ${latch} = null;`,
+      "(function () {",
+      `  trackMqtt(${esc(colon.topic)}, function (message) {`,
+      "    try {",
+      '      var raw = message && typeof message === "object" ? message.value : message;',
+      thenBody,
+      catchLine,
+      "  });",
+      "})();",
+    ].join("\n");
+  }
+  return [
+    `var ${latch} = null;`,
+    `defineRule(${esc(id)}, {`,
+    `  whenChanged: ${esc(when)},`,
+    "  then: function () {",
+    "    try {",
+    thenBody,
+    catchLine,
     "  }",
     "});",
   ].join("\n");

@@ -150,8 +150,11 @@
     ];
     const DRIVE_LABELS = ["Штора", "Роллета", "Жалюзи", "Тюль", "Экран"];
     const BUTTON_TYPES = ["Кнопка", "Клавиша", "Геркон", "Датчик движения", "Сценарий"];
-    function isDeskHvInput(id) {
-      return /^EXT\d+_IN\d+$/i.test(String(id || "").trim());
+    function isDeskHvInput(id, deviceTopicKey) {
+      const c = String(id || "").trim();
+      if (/^EXT\d+_IN\d+$/i.test(c)) return true;
+      const key = String(deviceTopicKey || "").toLowerCase();
+      return /gpio|wd14|mio/i.test(key) && /^IN\d+$/i.test(c);
     }
     function isDeskDrive(id) {
       return /^(Curtain|Actuator) \d+ (Open|Close)$/i.test(String(id || "").trim());
@@ -323,6 +326,8 @@
       if (dali && dali.kind === "addr") return "bus " + dali.bus + " / " + dali.addr;
       const hv = /^EXT(\d+)_IN(\d+)$/i.exec(String(id || "").trim());
       if (hv) return "HVD " + hv[1] + " · вход " + hv[2];
+      const inn = /^IN(\d+)$/i.exec(String(id || "").trim());
+      if (inn) return "вход " + inn[1];
       const m = /^(?:Curtain|Actuator)\s+(\d+)\s+(Open|Close)$/i.exec(String(id || "").trim());
       if (!m) return id;
       return "Привод " + m[1];
@@ -373,7 +378,7 @@
     function markTypes(s, ch, isLoad) {
       if (isDeskDrive(ch.controlId)) return DRIVE_LABELS;
       if (/^K\d+$/i.test(ch.controlId)) return RELAY_TYPES;
-      if (!isLoad && isDeskHvInput(ch.controlId)) {
+      if (!isLoad && isDeskHvInput(ch.controlId, s && s.deviceTopicKey)) {
         return ["Датчик движения", "Кнопка", "Клавиша", "Геркон", "Сценарий"];
       }
       if (!isLoad) return BUTTON_TYPES;
@@ -2885,7 +2890,7 @@
       if (sheetIsMotion(card)) {
         return preferRows(all, (r) =>
           /движен|motion|pir|присут|occup|hvd/i.test(r.label || "")
-          || isDeskHvInput(r.controlId)
+          || isDeskHvInput(r.controlId, r.deviceTopicKey)
           || /motion|occup|pir/i.test(r.controlId || ""), true);
       }
       if (sheetIsReed(card)) {
@@ -4201,7 +4206,7 @@
     }
     function channelIsOn(ch) {
       const v = ch && ch.lastValue;
-      if (v === 1 || v === true || v === "1" || v === "on") return true;
+      if (v === 1 || v === true || v === "1" || v === "on" || v === "true") return true;
       if (typeof v === "number" && Number.isFinite(v) && v > 0) return true;
       if (typeof v === "string" && /^-?\d+(\.\d+)?$/.test(String(v).trim())) {
         return Number(v) > 0;
@@ -4382,7 +4387,7 @@
       sub.className = "hint";
       if (input) {
         const listening = Date.now() < listenUntil;
-        const hv = isDeskHvInput(ch.controlId);
+        const hv = isDeskHvInput(ch.controlId, s.deviceTopicKey);
         sub.textContent = on
           ? (hv ? "Есть фаза" : "Замкнуто")
           : listening
@@ -4431,7 +4436,7 @@
           on: on,
           live: true,
           disabled: true,
-          title: isDeskHvInput(ch.controlId)
+          title: isDeskHvInput(ch.controlId, s.deviceTopicKey)
             ? (on ? "Есть фаза" : "Нет фазы — войдите в комнату")
             : (on ? "Замкнуто" : "Разомкнуто — нажмите выключатель"),
         }));
@@ -5400,13 +5405,13 @@
             });
             return;
           }
-          if (/^Input\s+[A-Z]?\d+$/i.test(cid) || /^EXT\d+_IN/i.test(cid) || /^[A-D]\d+_IN/i.test(cid)) {
+          if (/^Input\s+[A-Z]?\d+$/i.test(cid) || /^EXT\d+_IN/i.test(cid) || /^[A-D]\d+_IN/i.test(cid) || /^IN\d+$/i.test(cid)) {
             const k = s.deviceTopicKey + "::" + cid;
             if (!map.has(k) || map.get(k).kind !== "counter") {
               map.set(k, {
                 kind: "level",
                 v: ch.lastValue,
-                closed: ch.lastValue === 1 || ch.lastValue === true || ch.lastValue === "1" || ch.lastValue === "on",
+                closed: ch.lastValue === 1 || ch.lastValue === true || ch.lastValue === "1" || ch.lastValue === "on" || ch.lastValue === "true",
                 deviceTopicKey: s.deviceTopicKey,
                 controlId: cid,
               });
