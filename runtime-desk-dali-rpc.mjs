@@ -5,12 +5,24 @@ import { execSync } from "node:child_process";
 import mqtt from "mqtt";
 import {
   daliBusUid,
+  daliEditorGroupId,
   daliMqttFromChannel,
+  membersOfGroupFromEditorList,
   parseDaliChannelId,
+  parseDaliEditorGetList,
   parseDaliGroupConfig,
   pickDaliScanBusId,
   scanProgressDone,
 } from "./runtime-desk-dali.mjs";
+
+function rpcErr(payload, fallback) {
+  const e = payload?.error;
+  if (e == null) return "";
+  if (typeof e === "string") return e;
+  const msg = String(e.message || fallback || "dali_rpc");
+  const data = e.data != null && e.data !== e.message ? String(typeof e.data === "object" ? e.data.message || JSON.stringify(e.data) : e.data) : "";
+  return data && data !== msg ? msg + ": " + data : msg;
+}
 
 function brokerUrl() {
   const host = (
@@ -100,8 +112,9 @@ export function installDaliBridge() {
 export function daliGroupMemberCommands(add, remove, group) {
   const g = Number(group);
   const cmds = [];
-  for (const a of add) cmds.push(`AddToGroup(A${Number(a)}, G${g})`);
-  for (const a of remove) cmds.push(`RemoveFromGroup(A${Number(a)}, G${g})`);
+  // G<n> у SendCommand — адрес назначения, не номер группы. Номер — data: AddToGroup(A5, 0).
+  for (const a of add) cmds.push(`AddToGroup(A${Number(a)}, ${g})`);
+  for (const a of remove) cmds.push(`RemoveFromGroup(A${Number(a)}, ${g})`);
   return cmds;
 }
 
@@ -178,7 +191,7 @@ export async function daliSendCommands(busId, commands, timeoutMs = 10_000) {
   try {
     const payload = await daliMqttRpc("Bus/SendCommand", { busId: bus, commands: list }, timeoutMs);
     if (payload?.error) {
-      return { ok: false, error: payload.error?.message || "dali_rpc", result: payload.result || [] };
+      return { ok: false, error: rpcErr(payload, "dali_rpc"), result: payload.result || [] };
     }
     const rows = Array.isArray(payload?.result) ? payload.result : [];
     const bad = rows.find((r) => r && r.status === "error");
@@ -193,10 +206,9 @@ export async function listDaliGateways() {
   try {
     const payload = await daliMqttRpc("Editor/GetList", {}, 8_000);
     if (payload?.error) {
-      return { ok: false, gateways: [], error: payload.error?.message || "get_list" };
+      return { ok: false, gateways: [], error: rpcErr(payload, "get_list") };
     }
-    const gateways = Array.isArray(payload?.result?.gateways) ? payload.result.gateways : [];
-    return { ok: true, gateways };
+    return { ok: true, gateways: parseDaliEditorGetList(payload?.result) };
   } catch (e) {
     return { ok: false, gateways: [], error: e?.message || "get_list" };
   }
@@ -258,7 +270,7 @@ export async function scanDaliBus(busId) {
   try {
     const payload = await daliMqttRpc("Editor/ScanBus", { busId: bus }, 15_000);
     if (payload?.error) {
-      return { ok: false, error: payload.error?.message || "scan_bus", busId: bus };
+      return { ok: false, error: rpcErr(payload, "scan_bus"), busId: bus };
     }
     const result = payload?.result || payload;
     const progressTopic = String(result?.progressTopic || "").trim();
@@ -276,15 +288,27 @@ export async function scanDaliBus(busId) {
 }
 
 export async function readDaliGroupMembers(gateway, bus, group) {
-  const groupId = daliMqttFromChannel(gateway, `bus_${bus}_g${group}`);
-  if (!groupId) return { ok: false, members: [] };
-  try {
-    const payload = await daliMqttRpc("Editor/GetGroup", { groupId }, 8_000);
-    if (payload?.error) return { ok: false, members: [], error: payload.error?.message || "get_group" };
-    return { ok: true, members: parseDaliGroupConfig(payload?.result, bus), groupId };
-  } catch (e) {
-    return { ok: false, members: [], error: e?.message || "get_group" };
+  const listed = await listDaliGateways();
+  const fromList = membersOfGroupFromEditorList(listed.gateways, gateway, bus, group);
+  if (fromList.length) return { ok: true, members: fromList, via: "list" };
+  const ids = [
+    daliEditorGroupId(gateway, bus, group),
+    daliMqttFromChannel(gateway, `bus_${bus}_g${group}`),
+  ].filter(Boolean);
+  let lastErr = listed.error || "";
+  for (const groupId of ids) {
+    try {
+      const payload = await daliMqttRpc("Editor/GetGroup", { groupId }, 8_000);
+      if (payload?.error) {
+        lastErr = rpcErr(payload, "get_group");
+        continue;
+      }
+      return { ok: true, members: parseDaliGroupConfig(payload?.result, bus), groupId };
+    } catch (e) {
+      lastErr = e?.message || "get_group";
+    }
   }
+  return { ok: false, members: [], error: lastErr || "get_group" };
 }
 
 export async function applyDaliGroupMembers({
@@ -310,14 +334,14 @@ export async function applyDaliGroupMembers({
     const timeoutMs = Math.min(90_000, 20_000 + cmds.length * 8_000);
     sent = await daliSendCommands(busId, cmds, timeoutMs);
   }
-  const groupId = daliMqttFromChannel(gateway, `bus_${bus}_g${group}`);
+  const groupId = daliEditorGroupId(gateway, bus, group);
   const devices = (Array.isArray(memberControlIds) ? memberControlIds : [])
     .map((id) => daliMqttFromChannel(gateway, id))
     .filter(Boolean);
   if (groupId) {
     try {
       const payload = await daliMqttRpc("Editor/SetGroup", { groupId, config: { devices } }, 25_000);
-      if (payload?.error) sent = { ...sent, editor: payload.error?.message || "set_group" };
+      if (payload?.error) sent = { ...sent, editor: rpcErr(payload, "set_group") };
       else {
         sent = { ...sent, editor: "ok" };
         if (!sent.ok) sent = { ...sent, ok: true, via: "editor" };

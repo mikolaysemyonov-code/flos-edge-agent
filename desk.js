@@ -2912,7 +2912,8 @@
       if (/вентиля|вытяж|приточ|заслон|насос|клапан|кран|калорифер|кондей|кондиц|тёпл|тепл\s*пол|увлажн|замок|сирен|ворот|калитк/i.test(r.label || "")) {
         return false;
       }
-      return /свет|лин|подсвет|спот|бра|люстр|ламп|диод|светов|точеч|подвес|ночник|фриз|фартук|канал/i.test(r.label || "")
+      if (/^bus_\d+_(?:g\d+|\d+)$/i.test(String(r.controlId || ""))) return true;
+      return /свет|лин|трек|dali|групп|подсвет|спот|бра|люстр|ламп|диод|светов|точеч|подвес|ночник|фриз|фартук|канал/i.test(r.label || "")
         || /^(Channel|CCT|RGB)/i.test(r.controlId || "");
     }
     function loadKindHit(kind, r) {
@@ -2968,6 +2969,7 @@
       return preferRows(all, (r) => isSensorLabel(r.label), true);
     }
     function isLikelyDimmerLoad(r) {
+      if (/^bus_\d+_(?:g\d+|\d+)$/i.test(String(r.controlId || ""))) return true;
       const blob = [r.deviceTopicKey, r.controlId, r.label].join(" ");
       if (/wb-mr|\/K\d+\b|реле/i.test(blob) && !/wb-led|Channel|CCT|димм/i.test(blob)) return false;
       return /wb-led|Channel|CCT|Brightness|димм|RGB/i.test(blob);
@@ -4840,6 +4842,7 @@
       let lastBus = null;
       addrs.forEach((ch) => {
         const p = parseDaliCh(ch.controlId) || {};
+        if (lockBus && p.bus && p.bus !== lockBus) return;
         if (p.bus && p.bus !== lastBus) {
           const h = document.createElement("li");
           h.className = "roomh";

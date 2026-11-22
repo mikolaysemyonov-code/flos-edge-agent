@@ -45,6 +45,46 @@ export function parseDaliChannelId(controlId) {
   return { kind: "addr", bus: Number(a[1]), addr: Number(a[2]), channelId: `bus_${a[1]}_${a[2]}` };
 }
 
+/** UID группы для Editor/GetGroup: wb-dali_65_bus_3_g0, не MQTT group_00. */
+export function daliEditorGroupId(gatewayKey, bus, group) {
+  const gw = String(gatewayKey ?? "").trim();
+  const b = Number(bus);
+  const g = Number(group);
+  if (!gw || !Number.isFinite(b) || b < 1 || !Number.isFinite(g) || g < 0) return "";
+  return `${gw}_bus_${b}_g${g}`;
+}
+
+export function parseDaliEditorGetList(result) {
+  if (Array.isArray(result)) return result;
+  if (Array.isArray(result?.gateways)) return result.gateways;
+  return [];
+}
+
+export function membersOfGroupFromEditorList(gateways, gateway, bus, group) {
+  const gw = String(gateway || "").trim().toLowerCase();
+  const b = Number(bus);
+  const g = Number(group);
+  const out = [];
+  for (const item of Array.isArray(gateways) ? gateways : []) {
+    const gid = String(item?.id || item?.gatewayId || "").trim().toLowerCase();
+    if (gw && gid && gid !== gw && !gid.startsWith(gw) && !gw.startsWith(gid)) continue;
+    for (const busRow of Array.isArray(item?.buses) ? item.buses : []) {
+      const bid = String(busRow?.id || "").trim();
+      if (bid && !bid.endsWith(`_bus_${b}`) && Number(busRow?.number) !== b && Number(busRow?.index) !== b) {
+        continue;
+      }
+      for (const dev of Array.isArray(busRow?.devices) ? busRow.devices : []) {
+        const groups = Array.isArray(dev?.groups) ? dev.groups.map(Number) : [];
+        if (!groups.includes(g)) continue;
+        const mqtt = parseDaliMqttId(dev?.id || dev?.deviceId);
+        const p = mqtt ? parseDaliChannelId(mqtt.channelId) : parseDaliChannelId(dev?.id);
+        if (p?.kind === "addr") out.push(p.channelId);
+      }
+    }
+  }
+  return [...new Set(out)];
+}
+
 /** Свободный слот 0–15. Пустые MQTT-каналы групп после скана не считаются занятыми. */
 export function nextFreeDaliGroupChannel(groups, bus) {
   const b = Number(bus);
