@@ -7897,8 +7897,8 @@
       stop.textContent = "Остановить";
       const csvDown = document.createElement("a");
       csvDown.className = "ghost";
-      csvDown.href = "/runtime/desk-mark.csv";
-      csvDown.download = "razmetka.csv";
+      csvDown.href = "/runtime/desk-mark.xlsx";
+      csvDown.download = "razmetka.xlsx";
       csvDown.textContent = "Excel: скачать каналы";
       const csvUp = document.createElement("button");
       csvUp.type = "button";
@@ -7906,17 +7906,17 @@
       csvUp.textContent = "Excel: залить таблицу";
       const csvFile = document.createElement("input");
       csvFile.type = "file";
-      csvFile.accept = ".csv,text/csv";
+      csvFile.accept = ".xlsx,.csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
       csvFile.hidden = true;
       csvUp.addEventListener("click", () => csvFile.click());
       csvFile.addEventListener("change", () => {
         const file = csvFile.files && csvFile.files[0];
         csvFile.value = "";
         if (!file) return;
-        file.text().then((text) => fetch("/runtime/desk-mark.csv", {
+        file.arrayBuffer().then((buf) => fetch("/runtime/desk-mark.xlsx", {
           method: "POST",
-          headers: { "content-type": "text/csv; charset=utf-8" },
-          body: text,
+          headers: { "content-type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" },
+          body: buf,
         }).then((r) => r.json()).then((j) => {
           lead.textContent = j.ok ? ("Залил имён: " + (j.named || 0)) : "Таблица не принялась";
           void loadHaLights();

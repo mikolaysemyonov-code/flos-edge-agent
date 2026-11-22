@@ -26,7 +26,7 @@ import { hideFormLogicOsGhostsNow } from "./runtime-desk-pour-mqtt.mjs";
 import { preserveDeskRules } from "./runtime-desk-pour-user.mjs";
 import { buildDeskKeysXlsx, buildDeskPassportXlsx } from "./runtime-desk-passport.mjs";
 import { applyMarksToShelves, readDeskDocument, replaceDeskDocument } from "./runtime-desk-marking.mjs";
-import { applyMarkSheetRows, markSheetCsv, markSheetRows, parseMarkSheetCsv } from "./runtime-desk-mark-sheet.mjs";
+import { applyMarkSheetRows, markSheetRows, markSheetXlsx, parseMarkSheet } from "./runtime-desk-mark-sheet.mjs";
 import { deskHaDashboardRecipe, deskHaDashboardYaml } from "./runtime-desk-ha-dashboard.mjs";
 import { findContinuousOutputClash, findScheduleOutputClash } from "./runtime-desk-solutions.mjs";
 import {
@@ -896,6 +896,7 @@ function deskWriteLocked(method, urlPath) {
     urlPath === "/runtime/desk-clock" ||
     urlPath === "/runtime/desk-ha" ||
     urlPath === "/runtime/desk-mark.csv" ||
+    urlPath === "/runtime/desk-mark.xlsx" ||
     urlPath === "/runtime/mqtt-scan"
   );
 }
@@ -1032,28 +1033,30 @@ export function runtimeHttpPathHandler(req, res) {
     res.end(yaml);
     return true;
   }
-  if (method === "GET" && urlPath === "/runtime/desk-mark.csv") {
+  if (method === "GET" && (urlPath === "/runtime/desk-mark.xlsx" || urlPath === "/runtime/desk-mark.csv")) {
     const last = readLastDeskShelves();
-    const csv = markSheetCsv(markSheetRows(applyMarksToShelves(last.shelves || [])));
+    const bytes = markSheetXlsx(markSheetRows(applyMarksToShelves(last.shelves || [])));
     res.statusCode = 200;
-    res.setHeader("content-type", "text/csv; charset=utf-8");
+    res.setHeader("content-type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
     res.setHeader(
       "content-disposition",
-      "attachment; filename=\"mark.csv\"; filename*=UTF-8''%D1%80%D0%B0%D0%B7%D0%BC%D0%B5%D1%82%D0%BA%D0%B0.csv",
+      "attachment; filename=\"mark.xlsx\"; filename*=UTF-8''%D1%80%D0%B0%D0%B7%D0%BC%D0%B5%D1%82%D0%BA%D0%B0.xlsx",
     );
     res.setHeader("cache-control", "no-store");
-    res.end(csv);
+    res.end(bytes);
     return true;
   }
-  if (method === "POST" && urlPath === "/runtime/desk-mark.csv") {
+  if (method === "POST" && (urlPath === "/runtime/desk-mark.xlsx" || urlPath === "/runtime/desk-mark.csv")) {
     void (async () => {
       try {
         const chunks = [];
         for await (const c of req) chunks.push(c);
-        const rows = parseMarkSheetCsv(Buffer.concat(chunks).toString("utf8"));
+        const last = readLastDeskShelves();
+        const shelves = applyMarksToShelves(last.shelves || []);
+        const rows = parseMarkSheet(Buffer.concat(chunks), shelves);
         jsonWrite(res, 200, applyMarkSheetRows(rows));
       } catch (err) {
-        if (!res.headersSent) jsonWrite(res, 400, { ok: false, error: err?.message || "csv" });
+        if (!res.headersSent) jsonWrite(res, 400, { ok: false, error: err?.message || "sheet" });
       }
     })();
     return true;
