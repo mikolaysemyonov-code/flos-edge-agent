@@ -120,18 +120,22 @@ export async function probeDaliLatency({ gateway, controlId, timeoutMs }) {
   };
 }
 
-export async function verifyDaliGroupOnBus({ gateway, controlId, members }) {
+export async function verifyDaliGroupOnBus({ gateway, controlId, members, apply = true }) {
   const parsed = parseDaliChannelId(controlId);
   if (parsed?.kind !== "group") return { ok: false, error: "need_group" };
   const want = [...new Set((Array.isArray(members) ? members : []).map(String))];
   const addAddrs = memberAddrsOf(want);
-  const applied = await applyDaliGroupMembers({
-    gateway,
-    bus: parsed.bus,
-    group: parsed.group,
-    addAddrs,
-    removeAddrs: [],
-  });
+  const applied =
+    apply === false
+      ? { ok: true, skipped: true }
+      : await applyDaliGroupMembers({
+          gateway,
+          bus: parsed.bus,
+          group: parsed.group,
+          addAddrs,
+          removeAddrs: [],
+          memberControlIds: want,
+        });
   const got = await readDaliGroupMembers(gateway, parsed.bus, parsed.group);
   const onBus = Array.isArray(got.members) ? got.members : [];
   const missing = want.filter((m) => !onBus.includes(m));

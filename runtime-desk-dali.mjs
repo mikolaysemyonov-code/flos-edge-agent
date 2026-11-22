@@ -45,6 +45,23 @@ export function parseDaliChannelId(controlId) {
   return { kind: "addr", bus: Number(a[1]), addr: Number(a[2]), channelId: `bus_${a[1]}_${a[2]}` };
 }
 
+/** Свободный слот 0–15. Пустые MQTT-каналы групп после скана не считаются занятыми. */
+export function nextFreeDaliGroupChannel(groups, bus) {
+  const b = Number(bus);
+  const used = new Set();
+  for (const ch of Array.isArray(groups) ? groups : []) {
+    const p = parseDaliChannelId(ch?.controlId);
+    if (!p || p.kind !== "group" || p.bus !== b) continue;
+    const named = String(ch.name || "").trim();
+    const members = Array.isArray(ch.members) ? ch.members : [];
+    if (named || members.length) used.add(p.group);
+  }
+  for (let n = 0; n < 16; n += 1) {
+    if (!used.has(n)) return `bus_${b}_g${n}`;
+  }
+  return "";
+}
+
 export function isDaliActuateId(controlId) {
   const p = parseDaliChannelId(controlId);
   return Boolean(p && (p.kind === "addr" || p.kind === "group" || p.kind === "broadcast"));

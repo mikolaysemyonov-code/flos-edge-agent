@@ -4655,7 +4655,20 @@
       const bus = (parseDaliCh(members[0] || "") || {}).bus || 1;
       const controlId = daliGroupEdit || nextDaliGroupId(s, bus);
       const parsed = parseDaliCh(controlId);
-      if (!parsed || parsed.kind !== "group" || !name || !members.length) return Promise.resolve();
+      if (!name) {
+        daliProbeHint = "Нужно имя группы";
+        return Promise.resolve(false);
+      }
+      if (!members.length) {
+        daliProbeHint = "Отметь адреса в группу";
+        return Promise.resolve(false);
+      }
+      if (!parsed || parsed.kind !== "group") {
+        daliProbeHint = "На этой шине заняты все 16 групп DALI";
+        return Promise.resolve(false);
+      }
+      daliProbeHint = "Пишу группу " + parsed.channelId + " на шину…";
+      renderMark();
       return fetch("/runtime/desk-dali-group", {
         method: "POST",
         headers: { "content-type": "application/json" },
@@ -4666,11 +4679,16 @@
           name: name,
         }),
       }).then((r) => r.json()).then((j) => {
+        const err = j && (j.error || (j.bus && j.bus.error));
         if (j && j.match) daliProbeHint = "Группа на шине: " + (j.onBus || []).length + " адресов";
-        else if (j && j.ok) daliProbeHint = "Записал на стол, шина не подтвердила состав";
-        else daliProbeHint = "Группа не записалась";
-        if (j && j.ok) return loadLast();
-      }).catch(() => {});
+        else if (j && j.ok) daliProbeHint = "Группа на столе" + (err ? " · шина: " + err : "");
+        else daliProbeHint = "Группа не записалась" + (err ? ": " + err : "");
+        if (j && j.ok) return loadLast().then(() => true);
+        return false;
+      }).catch((e) => {
+        daliProbeHint = "Группа не записалась: " + (e && e.message ? e.message : "сеть");
+        return false;
+      });
     }
     function daliMemberPicker(s, groupCh, daliG) {
       daliPane = "pick";
@@ -4682,15 +4700,18 @@
       return document.createElement("div");
     }
     function nextDaliGroupId(s, bus) {
+      if (daliGroupEdit) {
+        const cur = parseDaliCh(daliGroupEdit);
+        if (cur && cur.kind === "group" && cur.bus === bus) return daliGroupEdit;
+      }
       const used = new Set();
       splitDaliChannels(s).groups.forEach((ch) => {
         const p = parseDaliCh(ch.controlId);
-        if (p && p.bus === bus) used.add(p.group);
+        if (!p || p.bus !== bus) return;
+        const named = String(pairName(s, ch) || ch.name || "").trim();
+        const members = Array.isArray(ch.members) ? ch.members : [];
+        if (named || members.length) used.add(p.group);
       });
-      if (daliGroupEdit) {
-        const cur = parseDaliCh(daliGroupEdit);
-        if (cur && cur.bus === bus) return daliGroupEdit;
-      }
       let n = 0;
       while (used.has(n) && n < 16) n += 1;
       if (n > 15) return "";
@@ -4874,7 +4895,13 @@
       syncSave();
       save.addEventListener("click", () => {
         daliWalkMeta = { name: name.value.trim() };
-        void saveDaliGroupNow(s).then(() => {
+        save.disabled = true;
+        void saveDaliGroupNow(s).then((ok) => {
+          if (!ok) {
+            save.disabled = false;
+            renderMark();
+            return;
+          }
           daliGroupEdit = "";
           daliDraftMembers = [];
           daliWalkMeta = { name: "" };

@@ -971,17 +971,6 @@ export async function handleRuntimeDeskDaliGroup(req, res) {
   const nextSet = new Set(members);
   const addAddrs = memberAddrsOf(members.filter((m) => !prevSet.has(m)));
   const removeAddrs = memberAddrsOf([...prevSet].filter((m) => !nextSet.has(m)));
-  const bus = await applyDaliGroupMembers({
-    gateway,
-    bus: parsed.bus,
-    group: parsed.group,
-    addAddrs,
-    removeAddrs,
-  });
-  if (!bus.ok && !bus.skipped) {
-    jsonEnd(res, 409, { ok: false, error: bus.error || "dali_group", bus });
-    return;
-  }
   const name = typeof body.name === "string" ? body.name : undefined;
   const marked = upsertDeskShelfMark({
     deviceTopicKey: gateway,
@@ -989,17 +978,35 @@ export async function handleRuntimeDeskDaliGroup(req, res) {
     name,
     members,
   });
-  const proof = await verifyDaliGroupOnBus({ gateway, controlId: parsed.channelId, members });
+  if (!marked.ok) {
+    jsonEnd(res, 409, { ok: false, error: marked.error || "desk_group" });
+    return;
+  }
+  const bus = await applyDaliGroupMembers({
+    gateway,
+    bus: parsed.bus,
+    group: parsed.group,
+    addAddrs,
+    removeAddrs,
+    memberControlIds: members,
+  });
+  const proof = await verifyDaliGroupOnBus({
+    gateway,
+    controlId: parsed.channelId,
+    members,
+    apply: false,
+  });
   jsonEnd(res, 200, {
     ok: true,
     controlId: parsed.channelId,
     members,
-    marked: marked.ok,
+    marked: true,
     bus,
     onBus: proof.members,
     missing: proof.missing,
     extra: proof.extra,
     match: proof.ok === true,
+    error: bus.ok || bus.skipped ? undefined : bus.error || "dali_group",
   });
 }
 

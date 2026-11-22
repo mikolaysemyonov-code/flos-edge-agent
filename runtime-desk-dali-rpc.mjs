@@ -8,6 +8,7 @@ import {
   daliMqttFromChannel,
   parseDaliChannelId,
   parseDaliGroupConfig,
+  pickDaliScanBusId,
   scanProgressDone,
 } from "./runtime-desk-dali.mjs";
 
@@ -286,11 +287,46 @@ export async function readDaliGroupMembers(gateway, bus, group) {
   }
 }
 
-export async function applyDaliGroupMembers({ gateway, bus, group, addAddrs, removeAddrs }) {
-  const busId = daliBusUid(gateway, bus);
+export async function applyDaliGroupMembers({
+  gateway,
+  bus,
+  group,
+  addAddrs,
+  removeAddrs,
+  memberControlIds,
+}) {
   const cmds = daliGroupMemberCommands(addAddrs, removeAddrs, group);
+  let busId = daliBusUid(gateway, bus);
+  try {
+    const listed = await listDaliGateways();
+    const picked = pickDaliScanBusId(listed.gateways, bus, gateway);
+    if (picked) busId = picked;
+  } catch {
+    /* fallback uid */
+  }
   if (!busId) return { ok: false, error: "need_bus" };
-  return daliSendCommands(busId, cmds);
+  let sent = { ok: true, skipped: true, reason: "no_change" };
+  if (cmds.length) {
+    const timeoutMs = Math.min(90_000, 20_000 + cmds.length * 8_000);
+    sent = await daliSendCommands(busId, cmds, timeoutMs);
+  }
+  const groupId = daliMqttFromChannel(gateway, `bus_${bus}_g${group}`);
+  const devices = (Array.isArray(memberControlIds) ? memberControlIds : [])
+    .map((id) => daliMqttFromChannel(gateway, id))
+    .filter(Boolean);
+  if (groupId) {
+    try {
+      const payload = await daliMqttRpc("Editor/SetGroup", { groupId, config: { devices } }, 25_000);
+      if (payload?.error) sent = { ...sent, editor: payload.error?.message || "set_group" };
+      else {
+        sent = { ...sent, editor: "ok" };
+        if (!sent.ok) sent = { ...sent, ok: true, via: "editor" };
+      }
+    } catch (e) {
+      sent = { ...sent, editor: String(e?.message || e) };
+    }
+  }
+  return sent;
 }
 
 export function memberAddrsOf(controlIds) {
