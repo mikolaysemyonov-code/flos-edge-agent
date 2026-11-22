@@ -2,14 +2,15 @@
  * Секундомер DALI: нажатие → wanted_level → actual_level. Проверка группы на шине.
  */
 import mqtt from "mqtt";
-import { daliBusUid, daliMqttFromChannel, parseDaliChannelId, pickDaliScanBusId } from "./runtime-desk-dali.mjs";
+import { daliMqttFromChannel, parseDaliChannelId } from "./runtime-desk-dali.mjs";
 import {
   applyDaliGroupMembers,
-  daliGroupLevelCommands,
+  daliGroupDriveCommands,
   daliSendCommands,
-  listDaliGateways,
   memberAddrsOf,
+  queryAddrsInGroup,
   readDaliGroupMembers,
+  resolveDaliBusId,
 } from "./runtime-desk-dali-rpc.mjs";
 
 function brokerUrl() {
@@ -143,19 +144,22 @@ export async function verifyDaliGroupOnBus({ gateway, controlId, members, apply 
           removeAddrs: [],
           memberControlIds: want,
         });
-  const got = await readDaliGroupMembers(gateway, parsed.bus, parsed.group);
-  const onBus = Array.isArray(got.members) ? got.members : [];
-  const missing = want.filter((m) => !onBus.includes(m));
-  const extra = onBus.filter((m) => !want.includes(m));
-  const match = got.ok && missing.length === 0 && want.length > 0;
+  const busId = await resolveDaliBusId(gateway, parsed.bus);
+  const q = await queryAddrsInGroup({ busId, addrs: addAddrs, group: parsed.group });
+  const onBus = (q.onBus || []).map((a) => `bus_${parsed.bus}_${a}`);
+  const missing = (q.missing || []).map((a) => `bus_${parsed.bus}_${a}`);
+  const listed = await readDaliGroupMembers(gateway, parsed.bus, parsed.group);
+  const extra = (Array.isArray(listed.members) ? listed.members : []).filter((m) => !want.includes(m));
+  const match = want.length > 0 && missing.length === 0 && onBus.length === want.length;
   return {
     ok: match,
     applied: applied.ok !== false,
-    readOk: got.ok === true,
+    readOk: q.ok === true || listed.ok === true,
     members: onBus,
     missing,
     extra,
-    error: match ? undefined : got.error || (want.length ? "group_mismatch" : "need_members"),
+    query: q,
+    error: match ? undefined : q.error || listed.error || (want.length ? "group_mismatch" : "need_members"),
   };
 }
 
@@ -202,8 +206,13 @@ export function daliActuateProofLine(proof) {
   if (!proof) return "";
   const of = Number(proof.of) || 0;
   const n = Array.isArray(proof.followed) ? proof.followed.length : 0;
-  if (n > 0) return "Лампы ответили: " + n + (of ? " из " + of : "") + (proof.via === "dapc" ? " · шина DAPC" : " · MQTT");
-  if (proof.via === "dapc") return "DAPC на группу ушёл, actual_level молчит";
+  if (n > 0) {
+    return "Лампы ответили: " + n + (of ? " из " + of : "")
+      + (proof.inGroup != null ? " · в группе " + proof.inGroup : "");
+  }
+  if (proof.missing && proof.missing.length) return "Не в группе DALI: адреса " + proof.missing.join(", ");
+  if (proof.error === "not_in_group") return "Адреса не записались в группу на шине";
+  if (proof.via === "dapc") return "DAPC на группу ушёл, лампы молчат";
   if (proof.error) return "Шина: " + proof.error;
   return "Команду опубликовал, лампы не ответили";
 }
@@ -245,25 +254,39 @@ export async function watchDaliMemberLevels({ gateway, members, timeoutMs }) {
 
 export async function proveDaliActuate({ gateway, controlId, members, pct }) {
   const parsed = parseDaliChannelId(controlId);
-  const first = await watchDaliMemberLevels({ gateway, members, timeoutMs: 2_800 });
-  if (first.followed.length) return { ok: true, via: "mqtt", ...first };
-  if (parsed?.kind !== "group") {
-    return { ok: false, via: "mqtt", ...first, error: first.error || "lamps_silent" };
+  if (parsed?.kind === "addr") {
+    const watch = await watchDaliMemberLevels({ gateway, members: [parsed.channelId], timeoutMs: 3_000 });
+    return { ok: watch.followed.length > 0, via: "mqtt", ...watch, error: watch.followed.length ? undefined : "lamps_silent" };
   }
-  const listed = await listDaliGateways();
-  const busId = pickDaliScanBusId(listed.gateways, parsed.bus, gateway) || daliBusUid(gateway, parsed.bus);
-  const cmds = daliGroupLevelCommands(parsed.group, pct);
-  const sent = await daliSendCommands(busId, cmds, 20_000);
-  if (!sent.ok && !sent.skipped) {
-    return { ok: false, via: "dapc", ...first, error: sent.error || "dapc", busId, cmds };
+  if (parsed?.kind !== "group") return { ok: false, error: "need_group", followed: [], of: 0 };
+  const addrs = memberAddrsOf(members);
+  const busId = await resolveDaliBusId(gateway, parsed.bus);
+  let q = await queryAddrsInGroup({ busId, addrs, group: parsed.group });
+  if (q.missing && q.missing.length) {
+    await applyDaliGroupMembers({
+      gateway,
+      bus: parsed.bus,
+      group: parsed.group,
+      addAddrs: q.missing,
+      removeAddrs: [],
+      memberControlIds: members,
+    });
+    q = await queryAddrsInGroup({ busId, addrs, group: parsed.group });
   }
-  const second = await watchDaliMemberLevels({ gateway, members, timeoutMs: 3_500 });
+  const cmds = daliGroupDriveCommands(parsed.group, pct, addrs);
+  const sent = await daliSendCommands(busId, cmds, Math.min(60_000, 12_000 + cmds.length * 2_000));
+  const watch = await watchDaliMemberLevels({ gateway, members, timeoutMs: 4_000 });
+  const inGroup = (q.onBus || []).length;
   return {
-    ok: second.followed.length > 0,
+    ok: watch.followed.length > 0,
     via: "dapc",
-    ...second,
+    ...watch,
     busId,
     cmds,
-    error: second.followed.length ? undefined : sent.error || "lamps_silent",
+    inGroup,
+    missing: q.missing,
+    error: watch.followed.length
+      ? undefined
+      : sent.error || (q.missing && q.missing.length ? "not_in_group" : "lamps_silent"),
   };
 }

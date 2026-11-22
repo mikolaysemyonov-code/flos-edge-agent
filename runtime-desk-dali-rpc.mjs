@@ -133,6 +133,31 @@ export function daliGroupLevelCommands(group, pct) {
   return [`DAPC(G${g}, ${arc})`];
 }
 
+export function daliGroupDriveCommands(group, pct, addrs) {
+  const cmds = daliGroupLevelCommands(group, pct);
+  for (const a of Array.isArray(addrs) ? addrs : []) {
+    const n = Number(a);
+    if (Number.isInteger(n) && n >= 0 && n <= 63) cmds.push(`QueryActualLevel(A${n})`);
+  }
+  return cmds;
+}
+
+export function parseDaliGroupBitmask(lo, hi) {
+  const raw = (row) => {
+    if (row == null) return NaN;
+    if (typeof row === "number") return row;
+    const r = row.response && typeof row.response === "object" ? row.response : row;
+    const n = Number(r.raw ?? r.value);
+    return n;
+  };
+  const bits = [];
+  const a = raw(lo);
+  const b = raw(hi);
+  if (Number.isFinite(a)) for (let i = 0; i < 8; i += 1) if ((a >> i) & 1) bits.push(i);
+  if (Number.isFinite(b)) for (let i = 0; i < 8; i += 1) if ((b >> i) & 1) bits.push(i + 8);
+  return bits;
+}
+
 export async function daliMqttRpc(service, params, timeoutMs = 10_000) {
   const svc = String(service || "").replace(/^\/+|\/+$/g, "");
   if (!svc) throw new Error("need_rpc");
@@ -160,7 +185,7 @@ export async function daliMqttRpc(service, params, timeoutMs = 10_000) {
     });
     return await new Promise((resolve, reject) => {
       const t = setTimeout(() => reject(new Error("dali_rpc_timeout")), timeoutMs);
-      client.subscribe(reply, { qos: 1 }, (err) => {
+      client.subscribe(reply, { qos: 2 }, (err) => {
         if (err) {
           clearTimeout(t);
           reject(err);
@@ -170,7 +195,7 @@ export async function daliMqttRpc(service, params, timeoutMs = 10_000) {
         if (topic !== reply && topic !== reply.replace(/^\//, "")) return;
         try {
           const json = JSON.parse(String(buf || ""));
-          if (Number(json?.id) !== id) return;
+          if (json?.id != null && Number(json.id) !== Number(id) && String(json.id) !== String(id)) return;
           clearTimeout(t);
           resolve(json);
         } catch (e) {
@@ -326,15 +351,7 @@ export async function readDaliGroupMembers(gateway, bus, group) {
   return { ok: false, members: [], error: lastErr || "get_group" };
 }
 
-export async function applyDaliGroupMembers({
-  gateway,
-  bus,
-  group,
-  addAddrs,
-  removeAddrs,
-  memberControlIds,
-}) {
-  const cmds = daliGroupMemberCommands(addAddrs, removeAddrs, group);
+export async function resolveDaliBusId(gateway, bus) {
   let busId = daliBusUid(gateway, bus);
   try {
     const listed = await listDaliGateways();
@@ -343,29 +360,77 @@ export async function applyDaliGroupMembers({
   } catch {
     /* fallback uid */
   }
+  return busId;
+}
+
+export async function queryAddrsInGroup({ busId, addrs, group }) {
+  const list = [...new Set((Array.isArray(addrs) ? addrs : []).map(Number))].filter((a) => Number.isInteger(a) && a >= 0 && a <= 63);
+  const g = Number(group);
+  if (!busId || !list.length) return { ok: false, onBus: [], missing: list, error: "need_bus" };
+  const cmds = list.flatMap((a) => [`QueryGroupsZeroToSeven(A${a})`, `QueryGroupsEightToFifteen(A${a})`]);
+  const sent = await daliSendCommands(busId, cmds, Math.min(90_000, 10_000 + cmds.length * 2_500));
+  const rows = Array.isArray(sent.result) ? sent.result : [];
+  const onBus = [];
+  const missing = [];
+  list.forEach((a, i) => {
+    const bits = parseDaliGroupBitmask(rows[i * 2], rows[i * 2 + 1]);
+    if (bits.includes(g)) onBus.push(a);
+    else missing.push(a);
+  });
+  return {
+    ok: Boolean(sent.ok && missing.length === 0 && onBus.length > 0),
+    onBus,
+    missing,
+    error: sent.ok ? (missing.length ? "group_mismatch" : undefined) : sent.error,
+    query: sent,
+  };
+}
+
+async function patchDaliDeviceGroupBit({ gateway, bus, addr, group, want }) {
+  const deviceId = daliMqttFromChannel(gateway, `bus_${bus}_${addr}`);
+  if (!deviceId) return { ok: false, error: "need_device" };
+  const got = await daliMqttRpc("Editor/GetDevice", { deviceId }, 12_000);
+  if (got?.error) return { ok: false, error: rpcErr(got, "get_device"), deviceId };
+  const cfg = { ...((got.result && got.result.config) || {}) };
+  const groups = Array.from({ length: 16 }, (_, i) => Boolean((Array.isArray(cfg.groups) ? cfg.groups : [])[i]));
+  groups[Number(group)] = Boolean(want);
+  const set = await daliMqttRpc("Editor/SetDevice", { deviceId, config: { ...cfg, groups } }, 30_000);
+  if (set?.error) return { ok: false, error: rpcErr(set, "set_device"), deviceId };
+  return { ok: true, deviceId };
+}
+
+export async function applyDaliGroupMembers({
+  gateway,
+  bus,
+  group,
+  addAddrs,
+  removeAddrs,
+  memberControlIds,
+}) {
+  const busId = await resolveDaliBusId(gateway, bus);
   if (!busId) return { ok: false, error: "need_bus" };
+  const cmds = daliGroupMemberCommands(addAddrs, removeAddrs, group);
   let sent = { ok: true, skipped: true, reason: "no_change" };
   if (cmds.length) {
-    const timeoutMs = Math.min(90_000, 20_000 + cmds.length * 8_000);
-    sent = await daliSendCommands(busId, cmds, timeoutMs);
+    sent = await daliSendCommands(busId, cmds, Math.min(90_000, 15_000 + cmds.length * 4_000));
   }
-  const groupId = daliEditorGroupId(gateway, bus, group);
-  const devices = (Array.isArray(memberControlIds) ? memberControlIds : [])
-    .map((id) => daliMqttFromChannel(gateway, id))
-    .filter(Boolean);
-  if (groupId) {
-    try {
-      const payload = await daliMqttRpc("Editor/SetGroup", { groupId, config: { devices } }, 25_000);
-      if (payload?.error) sent = { ...sent, editor: rpcErr(payload, "set_group") };
-      else {
-        sent = { ...sent, editor: "ok" };
-        if (!sent.ok) sent = { ...sent, ok: true, via: "editor" };
-      }
-    } catch (e) {
-      sent = { ...sent, editor: String(e?.message || e) };
-    }
-  }
-  return sent;
+  const patched = [];
+  for (const a of addAddrs || []) patched.push(await patchDaliDeviceGroupBit({ gateway, bus, addr: a, group, want: true }));
+  for (const a of removeAddrs || []) patched.push(await patchDaliDeviceGroupBit({ gateway, bus, addr: a, group, want: false }));
+  const addrs = memberAddrsOf(memberControlIds).length ? memberAddrsOf(memberControlIds) : [...(addAddrs || [])];
+  const q = await queryAddrsInGroup({ busId, addrs, group });
+  const deviceOk = patched.filter((p) => p && p.ok).length;
+  const ok = q.ok || (sent.ok && q.onBus.length > 0);
+  return {
+    ok,
+    skipped: Boolean(sent.skipped && !patched.length),
+    busId,
+    sent,
+    patched: deviceOk,
+    onBus: q.onBus,
+    missing: q.missing,
+    error: ok ? undefined : q.error || sent.error || patched.find((p) => p && !p.ok)?.error || "dali_group",
+  };
 }
 
 export function memberAddrsOf(controlIds) {
