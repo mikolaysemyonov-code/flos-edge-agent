@@ -36,7 +36,7 @@ import {
 } from "./wb-rules-journal-incidents.mjs";
 
 /** Одна строка в heartbeat и snapshot — иначе UI врёт версией. */
-const EDGE_AGENT_VERSION = "edge-pilot-v2.lan-desk-323";
+const EDGE_AGENT_VERSION = "edge-pilot-v2.lan-desk-324";
 
 /** Prefer `FLOS_*` (FL OS); fall back to legacy `REACTOR_*` for existing deployments. */
 function env(primary, legacy) {
@@ -1131,23 +1131,6 @@ function isResyncDumpReady() {
 }
 
 const MQTT_MIRROR_BUS_TOPICS = ["/devices/#", "devices/#", "/devices/+/controls/+", "devices/+/controls/+"];
-const MQTT_MIRROR_HA_TOPIC = "homeassistant/#";
-
-function subscribeHaDiscoveryWhenBusWarm(client) {
-  const started = Date.now();
-  const tick = () => {
-    if (mqttMirrorState.client !== client) return;
-    const warm = mqttMirrorState.entriesByPath.size >= 80 || Date.now() - started > 10_000;
-    if (!warm) {
-      setTimeout(tick, 400);
-      return;
-    }
-    client.subscribe(MQTT_MIRROR_HA_TOPIC, { qos: 0 }, (haErr) => {
-      if (haErr) mqttMirrorState.lastError = haErr.message ?? String(haErr);
-    });
-  };
-  setTimeout(tick, 600);
-}
 
 function subscribeMqttMirrorTopics(client, url) {
   client.subscribe(MQTT_MIRROR_BUS_TOPICS, { qos: 0 }, (err) => {
@@ -1157,16 +1140,16 @@ function subscribeMqttMirrorTopics(client, url) {
       return;
     }
     mqttMirrorState.connected = true;
+    mqttMirrorState.lastError = null;
     mqttMirrorState.subscribedAtMs = Date.now();
     if (url) console.log(`[flos-edge-agent] mqtt bus mirror connected ${url}`);
-    subscribeHaDiscoveryWhenBusWarm(client);
   });
 }
 
 async function resyncMqttMirrorFromBroker(waitMs) {
   const client = mqttMirrorState.client;
   if (!client || mqttMirrorState.connected !== true) return false;
-  const topics = [...MQTT_MIRROR_BUS_TOPICS, MQTT_MIRROR_HA_TOPIC];
+  const topics = [...MQTT_MIRROR_BUS_TOPICS];
   mqttMirrorState.acceptIngest = false;
   mqttMirrorState.subscribedAtMs = null;
   const subscribed = await new Promise((resolve) => {
@@ -1184,7 +1167,6 @@ async function resyncMqttMirrorFromBroker(waitMs) {
         clearMqttMirrorEntries();
         mqttMirrorState.subscribedAtMs = Date.now();
         mqttMirrorState.acceptIngest = true;
-        if (!err) subscribeHaDiscoveryWhenBusWarm(client);
         finish(!err);
       });
     });
@@ -1864,9 +1846,18 @@ async function startMqttBusMirror() {
     console.log("[flos-edge-agent] mqtt bus mirror disabled (FLOS_MQTT_MIRROR=0)");
     return;
   }
-  const host =
-    (env("FLOS_MQTT_MIRROR_HOST", "REACTOR_MQTT_MIRROR_HOST") ?? "").trim() || "127.0.0.1";
-  const port = Number(env("FLOS_MQTT_MIRROR_PORT", "REACTOR_MQTT_MIRROR_PORT") ?? 1883) || 1883;
+  let host = (env("FLOS_MQTT_MIRROR_HOST", "REACTOR_MQTT_MIRROR_HOST") ?? "").trim();
+  let port = Number(env("FLOS_MQTT_MIRROR_PORT", "REACTOR_MQTT_MIRROR_PORT") ?? 1883) || 1883;
+  if (!host) {
+    const raw = String(env("FLOS_CONTROLLER_MQTT_URL", "REACTOR_CONTROLLER_MQTT_URL") || "mqtt://127.0.0.1:1883");
+    try {
+      const u = new URL(raw);
+      host = u.hostname || "127.0.0.1";
+      if (u.port) port = Number(u.port) || 1883;
+    } catch {
+      host = "127.0.0.1";
+    }
+  }
   let mqttMod;
   try {
     mqttMod = await import("mqtt");
@@ -1884,10 +1875,13 @@ async function startMqttBusMirror() {
   mqttMirrorState.brokerHost = host;
   mqttMirrorState.brokerPort = port;
   const client = connect(url, {
-    connectTimeout: 8_000,
-    reconnectPeriod: 3_000,
+    clientId: `flos-mirror-${process.pid}`,
+    connectTimeout: 25_000,
+    reconnectPeriod: 8_000,
+    keepalive: 60,
     protocolVersion: 4,
     clean: true,
+    resubscribe: true,
   });
   mqttMirrorState.client = client;
   mqttMirrorState.startedAt = new Date().toISOString();
@@ -3498,7 +3492,6 @@ async function main() {
       },
     };
   });
-  startMqttDiagnosticsBridge().catch((err) => console.warn("[flos-edge-agent] mqtt bridge failed:", err?.message ?? err));
   bindDeskHaMirror({
     version: EDGE_AGENT_VERSION,
     map: mqttMirrorState.entriesByPath,
@@ -3522,6 +3515,9 @@ async function main() {
     },
   });
   startMqttBusMirror().catch((err) => console.warn("[flos-edge-agent] mqtt mirror failed:", err?.message ?? err));
+  setTimeout(() => {
+    startMqttDiagnosticsBridge().catch((err) => console.warn("[flos-edge-agent] mqtt bridge failed:", err?.message ?? err));
+  }, 12_000);
   startHandshakeHttpServerIfEnabled();
   for (;;) {
     try {
