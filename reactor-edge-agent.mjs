@@ -36,7 +36,7 @@ import {
 } from "./wb-rules-journal-incidents.mjs";
 
 /** Одна строка в heartbeat и snapshot — иначе UI врёт версией. */
-const EDGE_AGENT_VERSION = "edge-pilot-v2.lan-desk-324";
+const EDGE_AGENT_VERSION = "edge-pilot-v2.lan-desk-325";
 
 /** Prefer `FLOS_*` (FL OS); fall back to legacy `REACTOR_*` for existing deployments. */
 function env(primary, legacy) {
@@ -1875,13 +1875,10 @@ async function startMqttBusMirror() {
   mqttMirrorState.brokerHost = host;
   mqttMirrorState.brokerPort = port;
   const client = connect(url, {
-    clientId: `flos-mirror-${process.pid}`,
-    connectTimeout: 25_000,
-    reconnectPeriod: 8_000,
-    keepalive: 60,
+    connectTimeout: 8_000,
+    reconnectPeriod: 3_000,
     protocolVersion: 4,
     clean: true,
-    resubscribe: true,
   });
   mqttMirrorState.client = client;
   mqttMirrorState.startedAt = new Date().toISOString();
@@ -3355,11 +3352,18 @@ function startHandshakeHttpServerIfEnabled() {
       console.log(
         `[flos-edge-agent] runtime http://${bind}:${port}/ (стол пуска) + /runtime/health + /runtime/apply + ${EDGE_HANDSHAKE_HELLO_PATH} + ${ROUTER_SETUP_PREFLIGHT_PATH} + ${ROUTER_SETUP_APPLY_PATH}`,
       );
-      try {
-        resumeDeskHaBridgeFromDisk();
-      } catch (err) {
-        console.warn("[flos-edge-agent] ha raw bridge:", err?.message ?? err);
-      }
+      const waitHa = (n) => {
+        if (mqttMirrorState.connected === true && mqttMirrorState.entriesByPath.size > 0) {
+          try {
+            resumeDeskHaBridgeFromDisk();
+          } catch (err) {
+            console.warn("[flos-edge-agent] ha raw bridge:", err?.message ?? err);
+          }
+          return;
+        }
+        if (n < 40) setTimeout(() => waitHa(n + 1), 500);
+      };
+      waitHa(0);
     });
   };
   tryListen(0);
@@ -3510,8 +3514,8 @@ async function main() {
     topicCount: () => mqttMirrorState.entriesByPath.size,
     publish(topic, payload, retain) {
       const c = mqttMirrorState.client;
-      if (!c) return;
-      c.publish(String(topic), String(payload ?? ""), { qos: 1, retain: retain === true });
+      if (!c || mqttMirrorState.connected !== true) return;
+      c.publish(String(topic), String(payload ?? ""), { qos: 0, retain: retain === true });
     },
   });
   startMqttBusMirror().catch((err) => console.warn("[flos-edge-agent] mqtt mirror failed:", err?.message ?? err));

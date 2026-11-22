@@ -55,9 +55,20 @@ function mirrorEntries() {
   }
 }
 
+function mirrorReady() {
+  try {
+    if (typeof mirror?.connected === "function" && mirror.connected() !== true) return false;
+    if (typeof mirror?.topicCount === "function" && Number(mirror.topicCount()) < 1) return false;
+  } catch {
+    return false;
+  }
+  return typeof mirror?.publish === "function";
+}
+
 function mirrorPublish(topic, payload, retain) {
   try {
-    if (typeof mirror?.publish === "function") mirror.publish(topic, payload, retain === true);
+    if (!mirrorReady()) return;
+    mirror.publish(topic, payload, retain === true);
   } catch {
     /* ignore */
   }
@@ -447,7 +458,7 @@ function scheduleDiscover() {
     if (!state.running) return;
     discoverAll();
     tries += 1;
-    if (tries < 16) setTimeout(tick, 2000);
+    if (tries < 4) setTimeout(tick, 2500);
   };
   setTimeout(tick, 200);
 }
@@ -595,8 +606,16 @@ function connectLocalViaMirror() {
   state.remote = stub;
   state.localOk = true;
   state.remoteOk = true;
-  discoverAll();
-  scheduleDiscover();
+  const wait = (n) => {
+    if (!state.running) return;
+    if (mirrorReady() || n >= 40) {
+      discoverAll();
+      scheduleDiscover();
+      return;
+    }
+    setTimeout(() => wait(n + 1), 400);
+  };
+  wait(0);
 }
 
 function connectPair(cfg) {
