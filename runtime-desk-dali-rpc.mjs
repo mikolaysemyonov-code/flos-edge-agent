@@ -118,6 +118,21 @@ export function daliGroupMemberCommands(add, remove, group) {
   return cmds;
 }
 
+export function daliArcFromPercent(pct) {
+  const n = Math.max(0, Math.min(100, Number(pct) || 0));
+  if (n <= 0) return 0;
+  if (n >= 100) return 254;
+  return Math.max(1, Math.round((n / 100) * 254));
+}
+
+/** Яркость на группу шины: G — адрес назначения. MQTT-устройства группы может не быть. */
+export function daliGroupLevelCommands(group, pct) {
+  const g = Number(group);
+  const arc = daliArcFromPercent(pct);
+  if (arc <= 0) return [`Off(G${g})`];
+  return [`DAPC(G${g}, ${arc})`];
+}
+
 export async function daliMqttRpc(service, params, timeoutMs = 10_000) {
   const svc = String(service || "").replace(/^\/+|\/+$/g, "");
   if (!svc) throw new Error("need_rpc");

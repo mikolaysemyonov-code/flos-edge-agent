@@ -214,7 +214,18 @@
           body: JSON.stringify(body),
         });
         const j = await r.json().catch(() => ({}));
-        if (j && j.ok) {
+        if (j && j.line) daliProbeHint = j.line;
+        const heard = Array.isArray(j && j.followed) ? j.followed : [];
+        if (j && j.ok && heard.length) {
+          if (desired === "on") patchChannelValue(deviceTopicKey, controlId, j.value || "1");
+          else if (desired === "off") patchChannelValue(deviceTopicKey, controlId, "0");
+          else if (desired === "level") patchChannelValue(deviceTopicKey, controlId, extra && extra.level);
+          heard.forEach((id) => {
+            if (desired === "off") patchChannelValue(deviceTopicKey, id, "0");
+            else if (desired === "level") patchChannelValue(deviceTopicKey, id, extra && extra.level);
+            else patchChannelValue(deviceTopicKey, id, j.value || "1");
+          });
+        } else if (j && j.ok && !parseDaliCh(controlId)) {
           if (desired === "on") patchChannelValue(deviceTopicKey, controlId, j.value || "1");
           else if (desired === "off") patchChannelValue(deviceTopicKey, controlId, "0");
           else if (desired === "level") patchChannelValue(deviceTopicKey, controlId, extra && extra.level);

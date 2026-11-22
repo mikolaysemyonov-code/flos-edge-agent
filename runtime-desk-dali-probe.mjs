@@ -2,8 +2,15 @@
  * Секундомер DALI: нажатие → wanted_level → actual_level. Проверка группы на шине.
  */
 import mqtt from "mqtt";
-import { daliMqttFromChannel, parseDaliChannelId } from "./runtime-desk-dali.mjs";
-import { applyDaliGroupMembers, memberAddrsOf, readDaliGroupMembers } from "./runtime-desk-dali-rpc.mjs";
+import { daliBusUid, daliMqttFromChannel, parseDaliChannelId, pickDaliScanBusId } from "./runtime-desk-dali.mjs";
+import {
+  applyDaliGroupMembers,
+  daliGroupLevelCommands,
+  daliSendCommands,
+  listDaliGateways,
+  memberAddrsOf,
+  readDaliGroupMembers,
+} from "./runtime-desk-dali-rpc.mjs";
 
 function brokerUrl() {
   const host = (process.env.FLOS_MQTT_MIRROR_HOST || process.env.REACTOR_MQTT_MIRROR_HOST || "127.0.0.1").trim();
@@ -188,5 +195,75 @@ export async function followDaliGroup({ gateway, controlId, members, timeoutMs }
     followed: [...moved],
     silent: addrs.filter((id) => !moved.has(id)),
     of: addrs.length,
+  };
+}
+
+export function daliActuateProofLine(proof) {
+  if (!proof) return "";
+  const of = Number(proof.of) || 0;
+  const n = Array.isArray(proof.followed) ? proof.followed.length : 0;
+  if (n > 0) return "Лампы ответили: " + n + (of ? " из " + of : "") + (proof.via === "dapc" ? " · шина DAPC" : " · MQTT");
+  if (proof.via === "dapc") return "DAPC на группу ушёл, actual_level молчит";
+  if (proof.error) return "Шина: " + proof.error;
+  return "Команду опубликовал, лампы не ответили";
+}
+
+export async function watchDaliMemberLevels({ gateway, members, timeoutMs }) {
+  const addrs = (Array.isArray(members) ? members : []).filter((m) => parseDaliChannelId(m)?.kind === "addr");
+  if (!addrs.length) return { followed: [], silent: [], of: 0 };
+  const { client, stop, ready, timeoutMs: wait } = withClient(timeoutMs || 3_500);
+  const moved = new Set();
+  try {
+    await ready;
+    const actuals = addrs.map((id) => daliLevelTopics(gateway, id)?.actual).filter(Boolean);
+    await new Promise((resolve) => {
+      const t = setTimeout(() => resolve(), wait);
+      client.subscribe(["/devices/#", "devices/#"], { qos: 0 }, () => {});
+      client.on("message", (topic) => {
+        const tpc = String(topic || "").replace(/^\/+/, "");
+        for (let i = 0; i < addrs.length; i += 1) {
+          const a = String(actuals[i] || "").replace(/^\/+/, "");
+          if (a && (tpc === a || tpc === `${a}/on`)) moved.add(addrs[i]);
+        }
+        if (moved.size >= addrs.length) {
+          clearTimeout(t);
+          resolve();
+        }
+      });
+    });
+  } catch {
+    stop();
+    return { followed: [], silent: addrs, of: addrs.length, error: "watch" };
+  }
+  stop();
+  return {
+    followed: [...moved],
+    silent: addrs.filter((id) => !moved.has(id)),
+    of: addrs.length,
+  };
+}
+
+export async function proveDaliActuate({ gateway, controlId, members, pct }) {
+  const parsed = parseDaliChannelId(controlId);
+  const first = await watchDaliMemberLevels({ gateway, members, timeoutMs: 2_800 });
+  if (first.followed.length) return { ok: true, via: "mqtt", ...first };
+  if (parsed?.kind !== "group") {
+    return { ok: false, via: "mqtt", ...first, error: first.error || "lamps_silent" };
+  }
+  const listed = await listDaliGateways();
+  const busId = pickDaliScanBusId(listed.gateways, parsed.bus, gateway) || daliBusUid(gateway, parsed.bus);
+  const cmds = daliGroupLevelCommands(parsed.group, pct);
+  const sent = await daliSendCommands(busId, cmds, 20_000);
+  if (!sent.ok && !sent.skipped) {
+    return { ok: false, via: "dapc", ...first, error: sent.error || "dapc", busId, cmds };
+  }
+  const second = await watchDaliMemberLevels({ gateway, members, timeoutMs: 3_500 });
+  return {
+    ok: second.followed.length > 0,
+    via: "dapc",
+    ...second,
+    busId,
+    cmds,
+    error: second.followed.length ? undefined : sent.error || "lamps_silent",
   };
 }

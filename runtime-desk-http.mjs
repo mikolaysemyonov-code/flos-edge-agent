@@ -65,7 +65,14 @@ import {
   readDaliGroupMembers,
   scanDaliBus,
 } from "./runtime-desk-dali-rpc.mjs";
-import { daliProbeLine, followDaliGroup, probeDaliLatency, verifyDaliGroupOnBus } from "./runtime-desk-dali-probe.mjs";
+import {
+  daliActuateProofLine,
+  daliProbeLine,
+  followDaliGroup,
+  probeDaliLatency,
+  proveDaliActuate,
+  verifyDaliGroupOnBus,
+} from "./runtime-desk-dali-probe.mjs";
 import {
   bindDeskKeyPlanItem,
   captureDeskKeyPlanItem,
@@ -914,17 +921,43 @@ export async function handleRuntimeDeskActuate(req, res) {
     jsonEnd(res, 400, { ok: false, error: "invalid_json" });
     return;
   }
-  const out = await actuateDeskChannel(body);
+  let out = await actuateDeskChannel(body);
+  const parsed = parseDaliChannelId(body.controlId);
+  if (parsed && (parsed.kind === "group" || parsed.kind === "addr")) {
+    const desired = String(body.desired || out.desired || "").toLowerCase();
+    const pct = desired === "off" ? 0 : desired === "level" ? Number(body.level ?? out.value) : 100;
+    const members =
+      parsed.kind === "group"
+        ? (readDeskMarking()?.shelves?.[body.deviceTopicKey]?.channels?.[parsed.channelId]?.members || [])
+        : [parsed.channelId];
+    const proof = await proveDaliActuate({
+      gateway: body.deviceTopicKey,
+      controlId: parsed.channelId,
+      members,
+      pct,
+    });
+    out = {
+      ...out,
+      ...proof,
+      line: daliActuateProofLine(proof),
+      ok: Boolean(out.ok || proof.ok),
+    };
+  }
   if (out.ok && body.deviceTopicKey && body.controlId) {
     const desired = String(body.desired || out.desired || "").toLowerCase();
     if (desired === "on" || desired === "off" || desired === "level") {
+      const heard = new Set(Array.isArray(out.followed) ? out.followed : []);
       const shelves = readLastDeskShelves().shelves || [];
       const next = shelves.map((s) => {
         if (!s || s.deviceTopicKey !== body.deviceTopicKey) return s;
         return {
           ...s,
           channels: (s.channels || []).map((c) => {
-            if (!c || c.controlId !== body.controlId) return c;
+            if (!c) return c;
+            const isTarget = c.controlId === body.controlId;
+            const isMember = heard.has(c.controlId);
+            if (!isTarget && !isMember) return c;
+            if (parsed && !heard.size && isTarget) return c;
             const lastValue =
               desired === "off" ? "0" : desired === "level" ? String(body.level ?? out.value ?? "0") : (out.value ?? "1");
             return { ...c, lastValue };
