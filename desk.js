@@ -140,6 +140,8 @@
     let daliGroupEdit = "";
     let daliDraftMembers = [];
     let daliWalkMeta = { name: "" };
+    let daliProbeHint = "";
+    let daliProbeBusy = false;
     let curtainPane = "modules";
     let deskGroups = [];
     let curtainDraft = null;
@@ -4664,6 +4666,9 @@
           name: name,
         }),
       }).then((r) => r.json()).then((j) => {
+        if (j && j.match) daliProbeHint = "Группа на шине: " + (j.onBus || []).length + " адресов";
+        else if (j && j.ok) daliProbeHint = "Записал на стол, шина не подтвердила состав";
+        else daliProbeHint = "Группа не записалась";
         if (j && j.ok) return loadLast();
       }).catch(() => {});
     }
@@ -4690,6 +4695,79 @@
       while (used.has(n) && n < 16) n += 1;
       if (n > 15) return "";
       return "bus_" + bus + "_g" + n;
+    }
+    function daliProbeTarget(s) {
+      if (daliGroupEdit) return daliGroupEdit;
+      if (daliDraftMembers[0]) return daliDraftMembers[0];
+      const { addrs, groups } = splitDaliChannels(s);
+      if (groups[0]) return groups[0].controlId;
+      return addrs[0] ? addrs[0].controlId : "";
+    }
+    function daliProbeMembers(s) {
+      if (daliDraftMembers.length) return daliDraftMembers.slice();
+      const { groups } = splitDaliChannels(s);
+      const g = groups.find((ch) => ch.controlId === daliGroupEdit) || groups[0];
+      return Array.isArray(g?.members) ? g.members.slice() : [];
+    }
+    function runDaliProbe(s, kind) {
+      const controlId = daliProbeTarget(s);
+      if (!controlId) {
+        daliProbeHint = "Сначала выбери адрес или группу";
+        renderMark();
+        return;
+      }
+      daliProbeBusy = true;
+      daliProbeHint = kind === "group" ? "Пишу группу на шину…" : "Жду нажатие выключателя…";
+      renderMark();
+      fetch("/runtime/desk-dali-probe", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          kind: kind,
+          gateway: s.deviceTopicKey,
+          controlId: kind === "group" ? (daliGroupEdit || nextDaliGroupId(s, (parseDaliCh(daliProbeMembers(s)[0] || "") || {}).bus || 1)) : controlId,
+          members: daliProbeMembers(s),
+        }),
+      }).then((r) => r.json()).then((j) => {
+        daliProbeHint = j.line || (j.ok ? "Ок" : "Не вышло");
+        if (j.controlId) daliGroupEdit = j.controlId;
+      }).catch(() => {
+        daliProbeHint = "Агент не ответил";
+      }).finally(() => {
+        daliProbeBusy = false;
+        void loadLast();
+      });
+    }
+    function paintDaliProbeBar(box, s) {
+      const bar = document.createElement("div");
+      bar.className = "dali-probe";
+      const hint = document.createElement("p");
+      hint.className = "hint";
+      hint.textContent = daliProbeHint || "Секундомер: нажми выключатель, пока ждёт. Группа — состав на шине, не только на столе.";
+      const row = document.createElement("div");
+      row.className = "dali-walk-act";
+      const clock = document.createElement("button");
+      clock.type = "button";
+      clock.className = "ghost";
+      clock.disabled = daliProbeBusy;
+      clock.textContent = daliProbeBusy ? "Слушаю…" : "Секундомер";
+      clock.addEventListener("click", () => runDaliProbe(s, "latency"));
+      const proof = document.createElement("button");
+      proof.type = "button";
+      proof.className = "ghost bind";
+      proof.disabled = daliProbeBusy;
+      proof.textContent = "Проверить группу";
+      proof.addEventListener("click", () => {
+        if (daliProbeMembers(s).length < 2 && !daliGroupEdit) {
+          daliProbeHint = "Отметь ≥2 адреса или открой группу";
+          renderMark();
+          return;
+        }
+        runDaliProbe(s, "group");
+      });
+      row.append(clock, proof);
+      bar.append(hint, row);
+      box.appendChild(bar);
     }
     function startNewDaliGroup() {
       daliPane = "pick";
@@ -4858,6 +4936,7 @@
           tabs.appendChild(b);
         });
         box.append(back, head, tabs);
+        paintDaliProbeBar(box, s);
         const { addrs, groups } = splitDaliChannels(s);
         if (daliPane === "pick") {
           renderDaliPick(box, s);

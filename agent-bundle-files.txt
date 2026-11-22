@@ -9,6 +9,7 @@ runtime-desk-http.mjs
 runtime-desk-shelves.mjs
 runtime-desk-dali.mjs
 runtime-desk-dali-rpc.mjs
+runtime-desk-dali-probe.mjs
 runtime-desk-marking.mjs
 runtime-desk-groups.mjs
 runtime-desk-solutions.mjs

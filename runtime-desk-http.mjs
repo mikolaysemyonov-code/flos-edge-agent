@@ -65,6 +65,7 @@ import {
   readDaliGroupMembers,
   scanDaliBus,
 } from "./runtime-desk-dali-rpc.mjs";
+import { daliProbeLine, followDaliGroup, probeDaliLatency, verifyDaliGroupOnBus } from "./runtime-desk-dali-probe.mjs";
 import {
   bindDeskKeyPlanItem,
   captureDeskKeyPlanItem,
@@ -988,7 +989,57 @@ export async function handleRuntimeDeskDaliGroup(req, res) {
     name,
     members,
   });
-  jsonEnd(res, 200, { ok: true, controlId: parsed.channelId, members, marked: marked.ok, bus });
+  const proof = await verifyDaliGroupOnBus({ gateway, controlId: parsed.channelId, members });
+  jsonEnd(res, 200, {
+    ok: true,
+    controlId: parsed.channelId,
+    members,
+    marked: marked.ok,
+    bus,
+    onBus: proof.members,
+    missing: proof.missing,
+    extra: proof.extra,
+    match: proof.ok === true,
+  });
+}
+
+/** POST /runtime/desk-dali-probe — секундомер клавиша→лампа или проверка группы. */
+export async function handleRuntimeDeskDaliProbe(req, res) {
+  if ((req.method ?? "GET").toUpperCase() !== "POST") {
+    jsonEnd(res, 405, { ok: false, error: "method" });
+    return;
+  }
+  const chunks = [];
+  for await (const c of req) chunks.push(c);
+  let body = {};
+  try {
+    const raw = Buffer.concat(chunks).toString("utf8");
+    if (raw.trim()) body = JSON.parse(raw);
+  } catch {
+    jsonEnd(res, 400, { ok: false, error: "invalid_json" });
+    return;
+  }
+  const gateway = String(body.gateway || body.deviceTopicKey || "").trim();
+  const controlId = String(body.controlId || "").trim();
+  if (body.kind === "group" || body.verify === true) {
+    const members = Array.isArray(body.members) ? body.members : [];
+    const proof = await verifyDaliGroupOnBus({ gateway, controlId, members });
+    const follow = proof.ok
+      ? await followDaliGroup({ gateway, controlId, members, timeoutMs: 5000 })
+      : { ok: false, followed: [], silent: members, of: members.length };
+    jsonEnd(res, 200, {
+      ...proof,
+      follow,
+      line: proof.ok
+        ? (follow.ok
+          ? "Группа на шине: " + follow.followed.length + " из " + follow.of + " пошли за группой"
+          : "Состав на шине есть, но лампы не пошли за группой")
+        : "Группа на шине не подтвердилась",
+    });
+    return;
+  }
+  const probe = await probeDaliLatency({ gateway, controlId, timeoutMs: body.timeoutMs });
+  jsonEnd(res, probe.ok ? 200 : 409, { ...probe, line: daliProbeLine(probe) });
 }
 
 /** GET/POST /runtime/desk-dali-bridge — статус / apt wb-mqtt-dali на хосте щита. */

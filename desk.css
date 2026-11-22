@@ -970,6 +970,8 @@
     .ghost-back:hover { color: rgb(186 230 253) !important; }
     .dali-tabs { margin: .2rem 0 .55rem; }
     .dali-add { margin: 0 0 .55rem; }
+    .dali-probe { margin: 0 0 .7rem; }
+    .dali-probe .hint { margin: 0 0 .4rem; }
     .dali-walk {
       margin: 0 0 .7rem; padding: .75rem .85rem; border-radius: 1rem;
       border: 1px solid rgb(255 255 255 / .1); background: rgb(255 255 255 / .04);
