@@ -1,0 +1,1452 @@
+views:
+  - title: Шторы
+    type: panel
+    cards:
+      - type: vertical-stack
+        card_mod:
+          style: |
+            ha-card {
+              background: transparent !important;
+              box-shadow: none !important;
+              padding: 8px 16px 32px !important;
+            }
+            :host {
+              --grid-card-gap: 12px !important;
+              background:
+                radial-gradient(circle at 12% 8%, rgba(0, 210, 255, 0.12) 0%, transparent 42%),
+                radial-gradient(circle at 88% 92%, rgba(185, 65, 255, 0.10) 0%, transparent 48%),
+                linear-gradient(165deg, #07090e 0%, #10141d 52%, #080a0f 100%) !important;
+            }
+        cards:
+          - type: markdown
+            content: '### Второй свет'
+            card_mod:
+              style: |
+                ha-card {
+                  background: none !important;
+                  box-shadow: none !important;
+                  border: none !important;
+                  padding: 18px 4px 8px !important;
+                }
+                ha-markdown {
+                  color: rgba(255,255,255,0.78) !important;
+                }
+          - type: grid
+            columns: 8
+            square: true
+            card_mod:
+              style: |
+                ha-card {
+                  background: none !important;
+                  box-shadow: none !important;
+                  border: none !important;
+                  padding: 0 !important;
+                  overflow: visible !important;
+                }
+                .grid {
+                  gap: 12px !important;
+                }
+            cards:
+              - type: tile
+                entity: cover.shtory_vtoroi_svet
+                name: Все шторы
+                icon: mdi:curtains
+                color: cyan
+                vertical: true
+                hide_state: false
+                tap_action:
+                  action: toggle
+                card_mod:
+                  style: |
+                    ha-card {
+                      height: 100% !important;
+                      background: rgba(16, 20, 30, 0.78) !important;
+                      backdrop-filter: blur(18px) saturate(150%) !important;
+                      -webkit-backdrop-filter: blur(18px) saturate(150%) !important;
+                      border-radius: 24px !important;
+                      border: 1px solid rgba(255, 255, 255, 0.10) !important;
+                      box-shadow: 0 10px 24px rgba(0, 0, 0, 0.28) !important;
+                    }
+                    ha-card:active {
+                      transform: scale(0.98);
+                    }
+                    .container {
+                      height: 100% !important;
+                      padding: 10px 8px 8px !important;
+                      box-sizing: border-box !important;
+                      justify-content: space-between !important;
+                    }
+                    ha-tile-icon {
+                      --mdc-icon-size: 26px !important;
+                      --tile-icon-size: 40px !important;
+                      --tile-icon-border-radius: 12px !important;
+                    }
+                    .primary {
+                      font-size: 12px !important;
+                      font-weight: 600 !important;
+                      line-height: 1.25 !important;
+                    }
+                    .secondary {
+                      font-size: 10px !important;
+                      opacity: 0.58 !important;
+                    }
+                    {% if is_state(config.entity, 'open') or is_state(config.entity, 'opening') or is_state(config.entity, 'on') %}
+                    ha-card {
+                      border: 1.5px solid rgba(0, 229, 255, 0.9) !important;
+                      box-shadow: 0 0 18px rgba(0, 229, 255, 0.36), inset 0 0 12px rgba(0, 229, 255, 0.12) !important;
+                      background: rgba(0, 229, 255, 0.14) !important;
+                    }
+                    {% endif %}
+              - type: tile
+                entity: cover.tiul_vtoroi_svet
+                name: Вся тюль
+                icon: mdi:curtains
+                color: purple
+                vertical: true
+                hide_state: false
+                tap_action:
+                  action: toggle
+                card_mod:
+                  style: |
+                    ha-card {
+                      height: 100% !important;
+                      background: rgba(16, 20, 30, 0.78) !important;
+                      backdrop-filter: blur(18px) saturate(150%) !important;
+                      -webkit-backdrop-filter: blur(18px) saturate(150%) !important;
+                      border-radius: 24px !important;
+                      border: 1px solid rgba(255, 255, 255, 0.10) !important;
+                      box-shadow: 0 10px 24px rgba(0, 0, 0, 0.28) !important;
+                    }
+                    ha-card:active {
+                      transform: scale(0.98);
+                    }
+                    .container {
+                      height: 100% !important;
+                      padding: 10px 8px 8px !important;
+                      box-sizing: border-box !important;
+                      justify-content: space-between !important;
+                    }
+                    ha-tile-icon {
+                      --mdc-icon-size: 26px !important;
+                      --tile-icon-size: 40px !important;
+                      --tile-icon-border-radius: 12px !important;
+                    }
+                    .primary {
+                      font-size: 12px !important;
+                      font-weight: 600 !important;
+                      line-height: 1.25 !important;
+                    }
+                    .secondary {
+                      font-size: 10px !important;
+                      opacity: 0.58 !important;
+                    }
+                    {% if is_state(config.entity, 'open') or is_state(config.entity, 'opening') or is_state(config.entity, 'on') %}
+                    ha-card {
+                      border: 1.5px solid rgba(196, 94, 255, 0.9) !important;
+                      box-shadow: 0 0 18px rgba(196, 94, 255, 0.36), inset 0 0 12px rgba(196, 94, 255, 0.12) !important;
+                      background: rgba(196, 94, 255, 0.14) !important;
+                    }
+                    {% endif %}
+          - type: markdown
+            content: '### Шторы'
+            card_mod:
+              style: |
+                ha-card {
+                  background: none !important;
+                  box-shadow: none !important;
+                  border: none !important;
+                  padding: 18px 4px 8px !important;
+                }
+                ha-markdown {
+                  color: rgba(255,255,255,0.78) !important;
+                }
+          - type: grid
+            columns: 8
+            square: true
+            card_mod:
+              style: |
+                ha-card {
+                  background: none !important;
+                  box-shadow: none !important;
+                  border: none !important;
+                  padding: 0 !important;
+                  overflow: visible !important;
+                }
+                .grid {
+                  gap: 12px !important;
+                }
+            cards:
+              - type: tile
+                entity: cover.wb_mr6cu_no93_curtain_1
+                name: Окно 1
+                icon: mdi:curtains
+                color: cyan
+                vertical: true
+                hide_state: false
+                tap_action:
+                  action: toggle
+                card_mod:
+                  style: |
+                    ha-card {
+                      height: 100% !important;
+                      background: rgba(16, 20, 30, 0.78) !important;
+                      backdrop-filter: blur(18px) saturate(150%) !important;
+                      -webkit-backdrop-filter: blur(18px) saturate(150%) !important;
+                      border-radius: 24px !important;
+                      border: 1px solid rgba(255, 255, 255, 0.10) !important;
+                      box-shadow: 0 10px 24px rgba(0, 0, 0, 0.28) !important;
+                    }
+                    ha-card:active {
+                      transform: scale(0.98);
+                    }
+                    .container {
+                      height: 100% !important;
+                      padding: 10px 8px 8px !important;
+                      box-sizing: border-box !important;
+                      justify-content: space-between !important;
+                    }
+                    ha-tile-icon {
+                      --mdc-icon-size: 26px !important;
+                      --tile-icon-size: 40px !important;
+                      --tile-icon-border-radius: 12px !important;
+                    }
+                    .primary {
+                      font-size: 12px !important;
+                      font-weight: 600 !important;
+                      line-height: 1.25 !important;
+                    }
+                    .secondary {
+                      font-size: 10px !important;
+                      opacity: 0.58 !important;
+                    }
+                    {% if is_state(config.entity, 'open') or is_state(config.entity, 'opening') or is_state(config.entity, 'on') %}
+                    ha-card {
+                      border: 1.5px solid rgba(0, 229, 255, 0.9) !important;
+                      box-shadow: 0 0 18px rgba(0, 229, 255, 0.36), inset 0 0 12px rgba(0, 229, 255, 0.12) !important;
+                      background: rgba(0, 229, 255, 0.14) !important;
+                    }
+                    {% endif %}
+              - type: tile
+                entity: cover.wb_mr6cu_no93_curtain_2
+                name: Окно 2
+                icon: mdi:curtains
+                color: cyan
+                vertical: true
+                hide_state: false
+                tap_action:
+                  action: toggle
+                card_mod:
+                  style: |
+                    ha-card {
+                      height: 100% !important;
+                      background: rgba(16, 20, 30, 0.78) !important;
+                      backdrop-filter: blur(18px) saturate(150%) !important;
+                      -webkit-backdrop-filter: blur(18px) saturate(150%) !important;
+                      border-radius: 24px !important;
+                      border: 1px solid rgba(255, 255, 255, 0.10) !important;
+                      box-shadow: 0 10px 24px rgba(0, 0, 0, 0.28) !important;
+                    }
+                    ha-card:active {
+                      transform: scale(0.98);
+                    }
+                    .container {
+                      height: 100% !important;
+                      padding: 10px 8px 8px !important;
+                      box-sizing: border-box !important;
+                      justify-content: space-between !important;
+                    }
+                    ha-tile-icon {
+                      --mdc-icon-size: 26px !important;
+                      --tile-icon-size: 40px !important;
+                      --tile-icon-border-radius: 12px !important;
+                    }
+                    .primary {
+                      font-size: 12px !important;
+                      font-weight: 600 !important;
+                      line-height: 1.25 !important;
+                    }
+                    .secondary {
+                      font-size: 10px !important;
+                      opacity: 0.58 !important;
+                    }
+                    {% if is_state(config.entity, 'open') or is_state(config.entity, 'opening') or is_state(config.entity, 'on') %}
+                    ha-card {
+                      border: 1.5px solid rgba(0, 229, 255, 0.9) !important;
+                      box-shadow: 0 0 18px rgba(0, 229, 255, 0.36), inset 0 0 12px rgba(0, 229, 255, 0.12) !important;
+                      background: rgba(0, 229, 255, 0.14) !important;
+                    }
+                    {% endif %}
+              - type: tile
+                entity: cover.wb_mr6cu_no93_curtain_3
+                name: Окно 3
+                icon: mdi:curtains
+                color: cyan
+                vertical: true
+                hide_state: false
+                tap_action:
+                  action: toggle
+                card_mod:
+                  style: |
+                    ha-card {
+                      height: 100% !important;
+                      background: rgba(16, 20, 30, 0.78) !important;
+                      backdrop-filter: blur(18px) saturate(150%) !important;
+                      -webkit-backdrop-filter: blur(18px) saturate(150%) !important;
+                      border-radius: 24px !important;
+                      border: 1px solid rgba(255, 255, 255, 0.10) !important;
+                      box-shadow: 0 10px 24px rgba(0, 0, 0, 0.28) !important;
+                    }
+                    ha-card:active {
+                      transform: scale(0.98);
+                    }
+                    .container {
+                      height: 100% !important;
+                      padding: 10px 8px 8px !important;
+                      box-sizing: border-box !important;
+                      justify-content: space-between !important;
+                    }
+                    ha-tile-icon {
+                      --mdc-icon-size: 26px !important;
+                      --tile-icon-size: 40px !important;
+                      --tile-icon-border-radius: 12px !important;
+                    }
+                    .primary {
+                      font-size: 12px !important;
+                      font-weight: 600 !important;
+                      line-height: 1.25 !important;
+                    }
+                    .secondary {
+                      font-size: 10px !important;
+                      opacity: 0.58 !important;
+                    }
+                    {% if is_state(config.entity, 'open') or is_state(config.entity, 'opening') or is_state(config.entity, 'on') %}
+                    ha-card {
+                      border: 1.5px solid rgba(0, 229, 255, 0.9) !important;
+                      box-shadow: 0 0 18px rgba(0, 229, 255, 0.36), inset 0 0 12px rgba(0, 229, 255, 0.12) !important;
+                      background: rgba(0, 229, 255, 0.14) !important;
+                    }
+                    {% endif %}
+              - type: tile
+                entity: cover.wb_mr6cu_no14_curtain_1
+                name: Окно 4
+                icon: mdi:curtains
+                color: cyan
+                vertical: true
+                hide_state: false
+                tap_action:
+                  action: toggle
+                card_mod:
+                  style: |
+                    ha-card {
+                      height: 100% !important;
+                      background: rgba(16, 20, 30, 0.78) !important;
+                      backdrop-filter: blur(18px) saturate(150%) !important;
+                      -webkit-backdrop-filter: blur(18px) saturate(150%) !important;
+                      border-radius: 24px !important;
+                      border: 1px solid rgba(255, 255, 255, 0.10) !important;
+                      box-shadow: 0 10px 24px rgba(0, 0, 0, 0.28) !important;
+                    }
+                    ha-card:active {
+                      transform: scale(0.98);
+                    }
+                    .container {
+                      height: 100% !important;
+                      padding: 10px 8px 8px !important;
+                      box-sizing: border-box !important;
+                      justify-content: space-between !important;
+                    }
+                    ha-tile-icon {
+                      --mdc-icon-size: 26px !important;
+                      --tile-icon-size: 40px !important;
+                      --tile-icon-border-radius: 12px !important;
+                    }
+                    .primary {
+                      font-size: 12px !important;
+                      font-weight: 600 !important;
+                      line-height: 1.25 !important;
+                    }
+                    .secondary {
+                      font-size: 10px !important;
+                      opacity: 0.58 !important;
+                    }
+                    {% if is_state(config.entity, 'open') or is_state(config.entity, 'opening') or is_state(config.entity, 'on') %}
+                    ha-card {
+                      border: 1.5px solid rgba(0, 229, 255, 0.9) !important;
+                      box-shadow: 0 0 18px rgba(0, 229, 255, 0.36), inset 0 0 12px rgba(0, 229, 255, 0.12) !important;
+                      background: rgba(0, 229, 255, 0.14) !important;
+                    }
+                    {% endif %}
+              - type: tile
+                entity: cover.wb_mr6cu_no14_curtain_2
+                name: Окно 5
+                icon: mdi:curtains
+                color: cyan
+                vertical: true
+                hide_state: false
+                tap_action:
+                  action: toggle
+                card_mod:
+                  style: |
+                    ha-card {
+                      height: 100% !important;
+                      background: rgba(16, 20, 30, 0.78) !important;
+                      backdrop-filter: blur(18px) saturate(150%) !important;
+                      -webkit-backdrop-filter: blur(18px) saturate(150%) !important;
+                      border-radius: 24px !important;
+                      border: 1px solid rgba(255, 255, 255, 0.10) !important;
+                      box-shadow: 0 10px 24px rgba(0, 0, 0, 0.28) !important;
+                    }
+                    ha-card:active {
+                      transform: scale(0.98);
+                    }
+                    .container {
+                      height: 100% !important;
+                      padding: 10px 8px 8px !important;
+                      box-sizing: border-box !important;
+                      justify-content: space-between !important;
+                    }
+                    ha-tile-icon {
+                      --mdc-icon-size: 26px !important;
+                      --tile-icon-size: 40px !important;
+                      --tile-icon-border-radius: 12px !important;
+                    }
+                    .primary {
+                      font-size: 12px !important;
+                      font-weight: 600 !important;
+                      line-height: 1.25 !important;
+                    }
+                    .secondary {
+                      font-size: 10px !important;
+                      opacity: 0.58 !important;
+                    }
+                    {% if is_state(config.entity, 'open') or is_state(config.entity, 'opening') or is_state(config.entity, 'on') %}
+                    ha-card {
+                      border: 1.5px solid rgba(0, 229, 255, 0.9) !important;
+                      box-shadow: 0 0 18px rgba(0, 229, 255, 0.36), inset 0 0 12px rgba(0, 229, 255, 0.12) !important;
+                      background: rgba(0, 229, 255, 0.14) !important;
+                    }
+                    {% endif %}
+          - type: markdown
+            content: '### Тюль'
+            card_mod:
+              style: |
+                ha-card {
+                  background: none !important;
+                  box-shadow: none !important;
+                  border: none !important;
+                  padding: 18px 4px 8px !important;
+                }
+                ha-markdown {
+                  color: rgba(255,255,255,0.78) !important;
+                }
+          - type: grid
+            columns: 8
+            square: true
+            card_mod:
+              style: |
+                ha-card {
+                  background: none !important;
+                  box-shadow: none !important;
+                  border: none !important;
+                  padding: 0 !important;
+                  overflow: visible !important;
+                }
+                .grid {
+                  gap: 12px !important;
+                }
+            cards:
+              - type: tile
+                entity: cover.wb_mr6cu_no14_curtain_3
+                name: Окно 1
+                icon: mdi:curtains
+                color: purple
+                vertical: true
+                hide_state: false
+                tap_action:
+                  action: toggle
+                card_mod:
+                  style: |
+                    ha-card {
+                      height: 100% !important;
+                      background: rgba(16, 20, 30, 0.78) !important;
+                      backdrop-filter: blur(18px) saturate(150%) !important;
+                      -webkit-backdrop-filter: blur(18px) saturate(150%) !important;
+                      border-radius: 24px !important;
+                      border: 1px solid rgba(255, 255, 255, 0.10) !important;
+                      box-shadow: 0 10px 24px rgba(0, 0, 0, 0.28) !important;
+                    }
+                    ha-card:active {
+                      transform: scale(0.98);
+                    }
+                    .container {
+                      height: 100% !important;
+                      padding: 10px 8px 8px !important;
+                      box-sizing: border-box !important;
+                      justify-content: space-between !important;
+                    }
+                    ha-tile-icon {
+                      --mdc-icon-size: 26px !important;
+                      --tile-icon-size: 40px !important;
+                      --tile-icon-border-radius: 12px !important;
+                    }
+                    .primary {
+                      font-size: 12px !important;
+                      font-weight: 600 !important;
+                      line-height: 1.25 !important;
+                    }
+                    .secondary {
+                      font-size: 10px !important;
+                      opacity: 0.58 !important;
+                    }
+                    {% if is_state(config.entity, 'open') or is_state(config.entity, 'opening') or is_state(config.entity, 'on') %}
+                    ha-card {
+                      border: 1.5px solid rgba(196, 94, 255, 0.9) !important;
+                      box-shadow: 0 0 18px rgba(196, 94, 255, 0.36), inset 0 0 12px rgba(196, 94, 255, 0.12) !important;
+                      background: rgba(196, 94, 255, 0.14) !important;
+                    }
+                    {% endif %}
+              - type: tile
+                entity: cover.wb_mr6cu_no79_curtain_1
+                name: Окно 2
+                icon: mdi:curtains
+                color: purple
+                vertical: true
+                hide_state: false
+                tap_action:
+                  action: toggle
+                card_mod:
+                  style: |
+                    ha-card {
+                      height: 100% !important;
+                      background: rgba(16, 20, 30, 0.78) !important;
+                      backdrop-filter: blur(18px) saturate(150%) !important;
+                      -webkit-backdrop-filter: blur(18px) saturate(150%) !important;
+                      border-radius: 24px !important;
+                      border: 1px solid rgba(255, 255, 255, 0.10) !important;
+                      box-shadow: 0 10px 24px rgba(0, 0, 0, 0.28) !important;
+                    }
+                    ha-card:active {
+                      transform: scale(0.98);
+                    }
+                    .container {
+                      height: 100% !important;
+                      padding: 10px 8px 8px !important;
+                      box-sizing: border-box !important;
+                      justify-content: space-between !important;
+                    }
+                    ha-tile-icon {
+                      --mdc-icon-size: 26px !important;
+                      --tile-icon-size: 40px !important;
+                      --tile-icon-border-radius: 12px !important;
+                    }
+                    .primary {
+                      font-size: 12px !important;
+                      font-weight: 600 !important;
+                      line-height: 1.25 !important;
+                    }
+                    .secondary {
+                      font-size: 10px !important;
+                      opacity: 0.58 !important;
+                    }
+                    {% if is_state(config.entity, 'open') or is_state(config.entity, 'opening') or is_state(config.entity, 'on') %}
+                    ha-card {
+                      border: 1.5px solid rgba(196, 94, 255, 0.9) !important;
+                      box-shadow: 0 0 18px rgba(196, 94, 255, 0.36), inset 0 0 12px rgba(196, 94, 255, 0.12) !important;
+                      background: rgba(196, 94, 255, 0.14) !important;
+                    }
+                    {% endif %}
+              - type: tile
+                entity: cover.wb_mr6cu_no79_curtain_2
+                name: Окно 3
+                icon: mdi:curtains
+                color: purple
+                vertical: true
+                hide_state: false
+                tap_action:
+                  action: toggle
+                card_mod:
+                  style: |
+                    ha-card {
+                      height: 100% !important;
+                      background: rgba(16, 20, 30, 0.78) !important;
+                      backdrop-filter: blur(18px) saturate(150%) !important;
+                      -webkit-backdrop-filter: blur(18px) saturate(150%) !important;
+                      border-radius: 24px !important;
+                      border: 1px solid rgba(255, 255, 255, 0.10) !important;
+                      box-shadow: 0 10px 24px rgba(0, 0, 0, 0.28) !important;
+                    }
+                    ha-card:active {
+                      transform: scale(0.98);
+                    }
+                    .container {
+                      height: 100% !important;
+                      padding: 10px 8px 8px !important;
+                      box-sizing: border-box !important;
+                      justify-content: space-between !important;
+                    }
+                    ha-tile-icon {
+                      --mdc-icon-size: 26px !important;
+                      --tile-icon-size: 40px !important;
+                      --tile-icon-border-radius: 12px !important;
+                    }
+                    .primary {
+                      font-size: 12px !important;
+                      font-weight: 600 !important;
+                      line-height: 1.25 !important;
+                    }
+                    .secondary {
+                      font-size: 10px !important;
+                      opacity: 0.58 !important;
+                    }
+                    {% if is_state(config.entity, 'open') or is_state(config.entity, 'opening') or is_state(config.entity, 'on') %}
+                    ha-card {
+                      border: 1.5px solid rgba(196, 94, 255, 0.9) !important;
+                      box-shadow: 0 0 18px rgba(196, 94, 255, 0.36), inset 0 0 12px rgba(196, 94, 255, 0.12) !important;
+                      background: rgba(196, 94, 255, 0.14) !important;
+                    }
+                    {% endif %}
+              - type: tile
+                entity: cover.wb_mr6cu_no79_curtain_3
+                name: Окно 4
+                icon: mdi:curtains
+                color: purple
+                vertical: true
+                hide_state: false
+                tap_action:
+                  action: toggle
+                card_mod:
+                  style: |
+                    ha-card {
+                      height: 100% !important;
+                      background: rgba(16, 20, 30, 0.78) !important;
+                      backdrop-filter: blur(18px) saturate(150%) !important;
+                      -webkit-backdrop-filter: blur(18px) saturate(150%) !important;
+                      border-radius: 24px !important;
+                      border: 1px solid rgba(255, 255, 255, 0.10) !important;
+                      box-shadow: 0 10px 24px rgba(0, 0, 0, 0.28) !important;
+                    }
+                    ha-card:active {
+                      transform: scale(0.98);
+                    }
+                    .container {
+                      height: 100% !important;
+                      padding: 10px 8px 8px !important;
+                      box-sizing: border-box !important;
+                      justify-content: space-between !important;
+                    }
+                    ha-tile-icon {
+                      --mdc-icon-size: 26px !important;
+                      --tile-icon-size: 40px !important;
+                      --tile-icon-border-radius: 12px !important;
+                    }
+                    .primary {
+                      font-size: 12px !important;
+                      font-weight: 600 !important;
+                      line-height: 1.25 !important;
+                    }
+                    .secondary {
+                      font-size: 10px !important;
+                      opacity: 0.58 !important;
+                    }
+                    {% if is_state(config.entity, 'open') or is_state(config.entity, 'opening') or is_state(config.entity, 'on') %}
+                    ha-card {
+                      border: 1.5px solid rgba(196, 94, 255, 0.9) !important;
+                      box-shadow: 0 0 18px rgba(196, 94, 255, 0.36), inset 0 0 12px rgba(196, 94, 255, 0.12) !important;
+                      background: rgba(196, 94, 255, 0.14) !important;
+                    }
+                    {% endif %}
+              - type: tile
+                entity: cover.wb_mr6cu_no96_curtain_1
+                name: Окно 5
+                icon: mdi:curtains
+                color: purple
+                vertical: true
+                hide_state: false
+                tap_action:
+                  action: toggle
+                card_mod:
+                  style: |
+                    ha-card {
+                      height: 100% !important;
+                      background: rgba(16, 20, 30, 0.78) !important;
+                      backdrop-filter: blur(18px) saturate(150%) !important;
+                      -webkit-backdrop-filter: blur(18px) saturate(150%) !important;
+                      border-radius: 24px !important;
+                      border: 1px solid rgba(255, 255, 255, 0.10) !important;
+                      box-shadow: 0 10px 24px rgba(0, 0, 0, 0.28) !important;
+                    }
+                    ha-card:active {
+                      transform: scale(0.98);
+                    }
+                    .container {
+                      height: 100% !important;
+                      padding: 10px 8px 8px !important;
+                      box-sizing: border-box !important;
+                      justify-content: space-between !important;
+                    }
+                    ha-tile-icon {
+                      --mdc-icon-size: 26px !important;
+                      --tile-icon-size: 40px !important;
+                      --tile-icon-border-radius: 12px !important;
+                    }
+                    .primary {
+                      font-size: 12px !important;
+                      font-weight: 600 !important;
+                      line-height: 1.25 !important;
+                    }
+                    .secondary {
+                      font-size: 10px !important;
+                      opacity: 0.58 !important;
+                    }
+                    {% if is_state(config.entity, 'open') or is_state(config.entity, 'opening') or is_state(config.entity, 'on') %}
+                    ha-card {
+                      border: 1.5px solid rgba(196, 94, 255, 0.9) !important;
+                      box-shadow: 0 0 18px rgba(196, 94, 255, 0.36), inset 0 0 12px rgba(196, 94, 255, 0.12) !important;
+                      background: rgba(196, 94, 255, 0.14) !important;
+                    }
+                    {% endif %}
+          - type: markdown
+            content: '### Спальни'
+            card_mod:
+              style: |
+                ha-card {
+                  background: none !important;
+                  box-shadow: none !important;
+                  border: none !important;
+                  padding: 18px 4px 8px !important;
+                }
+                ha-markdown {
+                  color: rgba(255,255,255,0.78) !important;
+                }
+          - type: grid
+            columns: 8
+            square: true
+            card_mod:
+              style: |
+                ha-card {
+                  background: none !important;
+                  box-shadow: none !important;
+                  border: none !important;
+                  padding: 0 !important;
+                  overflow: visible !important;
+                }
+                .grid {
+                  gap: 12px !important;
+                }
+            cards:
+              - type: tile
+                entity: cover.wb_mr6cu_no96_curtain_2
+                name: Комната мальчика
+                icon: mdi:curtains
+                color: cyan
+                vertical: true
+                hide_state: false
+                tap_action:
+                  action: toggle
+                card_mod:
+                  style: |
+                    ha-card {
+                      height: 100% !important;
+                      background: rgba(16, 20, 30, 0.78) !important;
+                      backdrop-filter: blur(18px) saturate(150%) !important;
+                      -webkit-backdrop-filter: blur(18px) saturate(150%) !important;
+                      border-radius: 24px !important;
+                      border: 1px solid rgba(255, 255, 255, 0.10) !important;
+                      box-shadow: 0 10px 24px rgba(0, 0, 0, 0.28) !important;
+                    }
+                    ha-card:active {
+                      transform: scale(0.98);
+                    }
+                    .container {
+                      height: 100% !important;
+                      padding: 10px 8px 8px !important;
+                      box-sizing: border-box !important;
+                      justify-content: space-between !important;
+                    }
+                    ha-tile-icon {
+                      --mdc-icon-size: 26px !important;
+                      --tile-icon-size: 40px !important;
+                      --tile-icon-border-radius: 12px !important;
+                    }
+                    .primary {
+                      font-size: 12px !important;
+                      font-weight: 600 !important;
+                      line-height: 1.25 !important;
+                    }
+                    .secondary {
+                      font-size: 10px !important;
+                      opacity: 0.58 !important;
+                    }
+                    {% if is_state(config.entity, 'open') or is_state(config.entity, 'opening') or is_state(config.entity, 'on') %}
+                    ha-card {
+                      border: 1.5px solid rgba(0, 229, 255, 0.9) !important;
+                      box-shadow: 0 0 18px rgba(0, 229, 255, 0.36), inset 0 0 12px rgba(0, 229, 255, 0.12) !important;
+                      background: rgba(0, 229, 255, 0.14) !important;
+                    }
+                    {% endif %}
+              - type: tile
+                entity: cover.wb_mr6cu_no96_curtain_3
+                name: Комната девочки
+                icon: mdi:curtains
+                color: cyan
+                vertical: true
+                hide_state: false
+                tap_action:
+                  action: toggle
+                card_mod:
+                  style: |
+                    ha-card {
+                      height: 100% !important;
+                      background: rgba(16, 20, 30, 0.78) !important;
+                      backdrop-filter: blur(18px) saturate(150%) !important;
+                      -webkit-backdrop-filter: blur(18px) saturate(150%) !important;
+                      border-radius: 24px !important;
+                      border: 1px solid rgba(255, 255, 255, 0.10) !important;
+                      box-shadow: 0 10px 24px rgba(0, 0, 0, 0.28) !important;
+                    }
+                    ha-card:active {
+                      transform: scale(0.98);
+                    }
+                    .container {
+                      height: 100% !important;
+                      padding: 10px 8px 8px !important;
+                      box-sizing: border-box !important;
+                      justify-content: space-between !important;
+                    }
+                    ha-tile-icon {
+                      --mdc-icon-size: 26px !important;
+                      --tile-icon-size: 40px !important;
+                      --tile-icon-border-radius: 12px !important;
+                    }
+                    .primary {
+                      font-size: 12px !important;
+                      font-weight: 600 !important;
+                      line-height: 1.25 !important;
+                    }
+                    .secondary {
+                      font-size: 10px !important;
+                      opacity: 0.58 !important;
+                    }
+                    {% if is_state(config.entity, 'open') or is_state(config.entity, 'opening') or is_state(config.entity, 'on') %}
+                    ha-card {
+                      border: 1.5px solid rgba(0, 229, 255, 0.9) !important;
+                      box-shadow: 0 0 18px rgba(0, 229, 255, 0.36), inset 0 0 12px rgba(0, 229, 255, 0.12) !important;
+                      background: rgba(0, 229, 255, 0.14) !important;
+                    }
+                    {% endif %}
+              - type: tile
+                entity: cover.wb_mr6cu_no163_curtain_1
+                name: Мастер-спальня 1
+                icon: mdi:curtains
+                color: cyan
+                vertical: true
+                hide_state: false
+                tap_action:
+                  action: toggle
+                card_mod:
+                  style: |
+                    ha-card {
+                      height: 100% !important;
+                      background: rgba(16, 20, 30, 0.78) !important;
+                      backdrop-filter: blur(18px) saturate(150%) !important;
+                      -webkit-backdrop-filter: blur(18px) saturate(150%) !important;
+                      border-radius: 24px !important;
+                      border: 1px solid rgba(255, 255, 255, 0.10) !important;
+                      box-shadow: 0 10px 24px rgba(0, 0, 0, 0.28) !important;
+                    }
+                    ha-card:active {
+                      transform: scale(0.98);
+                    }
+                    .container {
+                      height: 100% !important;
+                      padding: 10px 8px 8px !important;
+                      box-sizing: border-box !important;
+                      justify-content: space-between !important;
+                    }
+                    ha-tile-icon {
+                      --mdc-icon-size: 26px !important;
+                      --tile-icon-size: 40px !important;
+                      --tile-icon-border-radius: 12px !important;
+                    }
+                    .primary {
+                      font-size: 12px !important;
+                      font-weight: 600 !important;
+                      line-height: 1.25 !important;
+                    }
+                    .secondary {
+                      font-size: 10px !important;
+                      opacity: 0.58 !important;
+                    }
+                    {% if is_state(config.entity, 'open') or is_state(config.entity, 'opening') or is_state(config.entity, 'on') %}
+                    ha-card {
+                      border: 1.5px solid rgba(0, 229, 255, 0.9) !important;
+                      box-shadow: 0 0 18px rgba(0, 229, 255, 0.36), inset 0 0 12px rgba(0, 229, 255, 0.12) !important;
+                      background: rgba(0, 229, 255, 0.14) !important;
+                    }
+                    {% endif %}
+              - type: tile
+                entity: cover.wb_mr6cu_no163_curtain_2
+                name: Мастер-спальня 2
+                icon: mdi:curtains
+                color: cyan
+                vertical: true
+                hide_state: false
+                tap_action:
+                  action: toggle
+                card_mod:
+                  style: |
+                    ha-card {
+                      height: 100% !important;
+                      background: rgba(16, 20, 30, 0.78) !important;
+                      backdrop-filter: blur(18px) saturate(150%) !important;
+                      -webkit-backdrop-filter: blur(18px) saturate(150%) !important;
+                      border-radius: 24px !important;
+                      border: 1px solid rgba(255, 255, 255, 0.10) !important;
+                      box-shadow: 0 10px 24px rgba(0, 0, 0, 0.28) !important;
+                    }
+                    ha-card:active {
+                      transform: scale(0.98);
+                    }
+                    .container {
+                      height: 100% !important;
+                      padding: 10px 8px 8px !important;
+                      box-sizing: border-box !important;
+                      justify-content: space-between !important;
+                    }
+                    ha-tile-icon {
+                      --mdc-icon-size: 26px !important;
+                      --tile-icon-size: 40px !important;
+                      --tile-icon-border-radius: 12px !important;
+                    }
+                    .primary {
+                      font-size: 12px !important;
+                      font-weight: 600 !important;
+                      line-height: 1.25 !important;
+                    }
+                    .secondary {
+                      font-size: 10px !important;
+                      opacity: 0.58 !important;
+                    }
+                    {% if is_state(config.entity, 'open') or is_state(config.entity, 'opening') or is_state(config.entity, 'on') %}
+                    ha-card {
+                      border: 1.5px solid rgba(0, 229, 255, 0.9) !important;
+                      box-shadow: 0 0 18px rgba(0, 229, 255, 0.36), inset 0 0 12px rgba(0, 229, 255, 0.12) !important;
+                      background: rgba(0, 229, 255, 0.14) !important;
+                    }
+                    {% endif %}
+          - type: markdown
+            content: '### Кинотеатр и гараж'
+            card_mod:
+              style: |
+                ha-card {
+                  background: none !important;
+                  box-shadow: none !important;
+                  border: none !important;
+                  padding: 18px 4px 8px !important;
+                }
+                ha-markdown {
+                  color: rgba(255,255,255,0.78) !important;
+                }
+          - type: grid
+            columns: 8
+            square: true
+            card_mod:
+              style: |
+                ha-card {
+                  background: none !important;
+                  box-shadow: none !important;
+                  border: none !important;
+                  padding: 0 !important;
+                  overflow: visible !important;
+                }
+                .grid {
+                  gap: 12px !important;
+                }
+            cards:
+              - type: tile
+                entity: cover.wb_mr6cu_no7_curtain_1
+                name: Комната Озеро
+                icon: mdi:curtains
+                color: cyan
+                vertical: true
+                hide_state: false
+                tap_action:
+                  action: toggle
+                card_mod:
+                  style: |
+                    ha-card {
+                      height: 100% !important;
+                      background: rgba(16, 20, 30, 0.78) !important;
+                      backdrop-filter: blur(18px) saturate(150%) !important;
+                      -webkit-backdrop-filter: blur(18px) saturate(150%) !important;
+                      border-radius: 24px !important;
+                      border: 1px solid rgba(255, 255, 255, 0.10) !important;
+                      box-shadow: 0 10px 24px rgba(0, 0, 0, 0.28) !important;
+                    }
+                    ha-card:active {
+                      transform: scale(0.98);
+                    }
+                    .container {
+                      height: 100% !important;
+                      padding: 10px 8px 8px !important;
+                      box-sizing: border-box !important;
+                      justify-content: space-between !important;
+                    }
+                    ha-tile-icon {
+                      --mdc-icon-size: 26px !important;
+                      --tile-icon-size: 40px !important;
+                      --tile-icon-border-radius: 12px !important;
+                    }
+                    .primary {
+                      font-size: 12px !important;
+                      font-weight: 600 !important;
+                      line-height: 1.25 !important;
+                    }
+                    .secondary {
+                      font-size: 10px !important;
+                      opacity: 0.58 !important;
+                    }
+                    {% if is_state(config.entity, 'open') or is_state(config.entity, 'opening') or is_state(config.entity, 'on') %}
+                    ha-card {
+                      border: 1.5px solid rgba(0, 229, 255, 0.9) !important;
+                      box-shadow: 0 0 18px rgba(0, 229, 255, 0.36), inset 0 0 12px rgba(0, 229, 255, 0.12) !important;
+                      background: rgba(0, 229, 255, 0.14) !important;
+                    }
+                    {% endif %}
+              - type: tile
+                entity: cover.wb_mr6cu_no7_curtain_3
+                name: Гараж
+                icon: mdi:curtains
+                color: cyan
+                vertical: true
+                hide_state: false
+                tap_action:
+                  action: toggle
+                card_mod:
+                  style: |
+                    ha-card {
+                      height: 100% !important;
+                      background: rgba(16, 20, 30, 0.78) !important;
+                      backdrop-filter: blur(18px) saturate(150%) !important;
+                      -webkit-backdrop-filter: blur(18px) saturate(150%) !important;
+                      border-radius: 24px !important;
+                      border: 1px solid rgba(255, 255, 255, 0.10) !important;
+                      box-shadow: 0 10px 24px rgba(0, 0, 0, 0.28) !important;
+                    }
+                    ha-card:active {
+                      transform: scale(0.98);
+                    }
+                    .container {
+                      height: 100% !important;
+                      padding: 10px 8px 8px !important;
+                      box-sizing: border-box !important;
+                      justify-content: space-between !important;
+                    }
+                    ha-tile-icon {
+                      --mdc-icon-size: 26px !important;
+                      --tile-icon-size: 40px !important;
+                      --tile-icon-border-radius: 12px !important;
+                    }
+                    .primary {
+                      font-size: 12px !important;
+                      font-weight: 600 !important;
+                      line-height: 1.25 !important;
+                    }
+                    .secondary {
+                      font-size: 10px !important;
+                      opacity: 0.58 !important;
+                    }
+                    {% if is_state(config.entity, 'open') or is_state(config.entity, 'opening') or is_state(config.entity, 'on') %}
+                    ha-card {
+                      border: 1.5px solid rgba(0, 229, 255, 0.9) !important;
+                      box-shadow: 0 0 18px rgba(0, 229, 255, 0.36), inset 0 0 12px rgba(0, 229, 255, 0.12) !important;
+                      background: rgba(0, 229, 255, 0.14) !important;
+                    }
+                    {% endif %}
+              - type: tile
+                entity: cover.wb_mr6cu_no7_curtain_2
+                name: Ролеты
+                icon: mdi:roller-shade
+                color: purple
+                vertical: true
+                hide_state: false
+                tap_action:
+                  action: toggle
+                card_mod:
+                  style: |
+                    ha-card {
+                      height: 100% !important;
+                      background: rgba(16, 20, 30, 0.78) !important;
+                      backdrop-filter: blur(18px) saturate(150%) !important;
+                      -webkit-backdrop-filter: blur(18px) saturate(150%) !important;
+                      border-radius: 24px !important;
+                      border: 1px solid rgba(255, 255, 255, 0.10) !important;
+                      box-shadow: 0 10px 24px rgba(0, 0, 0, 0.28) !important;
+                    }
+                    ha-card:active {
+                      transform: scale(0.98);
+                    }
+                    .container {
+                      height: 100% !important;
+                      padding: 10px 8px 8px !important;
+                      box-sizing: border-box !important;
+                      justify-content: space-between !important;
+                    }
+                    ha-tile-icon {
+                      --mdc-icon-size: 26px !important;
+                      --tile-icon-size: 40px !important;
+                      --tile-icon-border-radius: 12px !important;
+                    }
+                    .primary {
+                      font-size: 12px !important;
+                      font-weight: 600 !important;
+                      line-height: 1.25 !important;
+                    }
+                    .secondary {
+                      font-size: 10px !important;
+                      opacity: 0.58 !important;
+                    }
+                    {% if is_state(config.entity, 'open') or is_state(config.entity, 'opening') or is_state(config.entity, 'on') %}
+                    ha-card {
+                      border: 1.5px solid rgba(196, 94, 255, 0.9) !important;
+                      box-shadow: 0 0 18px rgba(196, 94, 255, 0.36), inset 0 0 12px rgba(196, 94, 255, 0.12) !important;
+                      background: rgba(196, 94, 255, 0.14) !important;
+                    }
+                    {% endif %}
+          - type: markdown
+            content: '### Бассейн'
+            card_mod:
+              style: |
+                ha-card {
+                  background: none !important;
+                  box-shadow: none !important;
+                  border: none !important;
+                  padding: 18px 4px 8px !important;
+                }
+                ha-markdown {
+                  color: rgba(255,255,255,0.78) !important;
+                }
+          - type: grid
+            columns: 8
+            square: true
+            card_mod:
+              style: |
+                ha-card {
+                  background: none !important;
+                  box-shadow: none !important;
+                  border: none !important;
+                  padding: 0 !important;
+                  overflow: visible !important;
+                }
+                .grid {
+                  gap: 12px !important;
+                }
+            cards:
+              - type: tile
+                entity: cover.wb_mr6c_no160_curtain_1
+                name: Все шторы
+                icon: mdi:pool
+                color: cyan
+                vertical: true
+                hide_state: false
+                tap_action:
+                  action: call-service
+                  service: cover.toggle
+                  target:
+                    entity_id:
+                      - cover.wb_mr6c_no160_curtain_1
+                      - cover.wb_mr6c_no160_curtain_2
+                      - cover.wb_mr6c_no160_curtain_3
+                      - cover.wb_mr6c_no120_curtain_1
+                      - cover.wb_mr6c_no120_curtain_2
+                card_mod:
+                  style: |
+                    ha-card {
+                      height: 100% !important;
+                      background: rgba(16, 20, 30, 0.78) !important;
+                      backdrop-filter: blur(18px) saturate(150%) !important;
+                      -webkit-backdrop-filter: blur(18px) saturate(150%) !important;
+                      border-radius: 24px !important;
+                      border: 1px solid rgba(255, 255, 255, 0.10) !important;
+                      box-shadow: 0 10px 24px rgba(0, 0, 0, 0.28) !important;
+                    }
+                    ha-card:active {
+                      transform: scale(0.98);
+                    }
+                    .container {
+                      height: 100% !important;
+                      padding: 10px 8px 8px !important;
+                      box-sizing: border-box !important;
+                      justify-content: space-between !important;
+                    }
+                    ha-tile-icon {
+                      --mdc-icon-size: 26px !important;
+                      --tile-icon-size: 40px !important;
+                      --tile-icon-border-radius: 12px !important;
+                    }
+                    .primary {
+                      font-size: 12px !important;
+                      font-weight: 600 !important;
+                      line-height: 1.25 !important;
+                    }
+                    .secondary {
+                      font-size: 10px !important;
+                      opacity: 0.58 !important;
+                    }
+                    {% if is_state(config.entity, 'open') or is_state(config.entity, 'opening') or is_state(config.entity, 'on') %}
+                    ha-card {
+                      border: 1.5px solid rgba(0, 229, 255, 0.9) !important;
+                      box-shadow: 0 0 18px rgba(0, 229, 255, 0.36), inset 0 0 12px rgba(0, 229, 255, 0.12) !important;
+                      background: rgba(0, 229, 255, 0.14) !important;
+                    }
+                    {% endif %}
+              - type: tile
+                entity: cover.wb_mr6c_no160_curtain_1
+                name: Штора 1
+                icon: mdi:curtains
+                color: cyan
+                vertical: true
+                hide_state: false
+                tap_action:
+                  action: toggle
+                card_mod:
+                  style: |
+                    ha-card {
+                      height: 100% !important;
+                      background: rgba(16, 20, 30, 0.78) !important;
+                      backdrop-filter: blur(18px) saturate(150%) !important;
+                      -webkit-backdrop-filter: blur(18px) saturate(150%) !important;
+                      border-radius: 24px !important;
+                      border: 1px solid rgba(255, 255, 255, 0.10) !important;
+                      box-shadow: 0 10px 24px rgba(0, 0, 0, 0.28) !important;
+                    }
+                    ha-card:active {
+                      transform: scale(0.98);
+                    }
+                    .container {
+                      height: 100% !important;
+                      padding: 10px 8px 8px !important;
+                      box-sizing: border-box !important;
+                      justify-content: space-between !important;
+                    }
+                    ha-tile-icon {
+                      --mdc-icon-size: 26px !important;
+                      --tile-icon-size: 40px !important;
+                      --tile-icon-border-radius: 12px !important;
+                    }
+                    .primary {
+                      font-size: 12px !important;
+                      font-weight: 600 !important;
+                      line-height: 1.25 !important;
+                    }
+                    .secondary {
+                      font-size: 10px !important;
+                      opacity: 0.58 !important;
+                    }
+                    {% if is_state(config.entity, 'open') or is_state(config.entity, 'opening') or is_state(config.entity, 'on') %}
+                    ha-card {
+                      border: 1.5px solid rgba(0, 229, 255, 0.9) !important;
+                      box-shadow: 0 0 18px rgba(0, 229, 255, 0.36), inset 0 0 12px rgba(0, 229, 255, 0.12) !important;
+                      background: rgba(0, 229, 255, 0.14) !important;
+                    }
+                    {% endif %}
+              - type: tile
+                entity: cover.wb_mr6c_no160_curtain_2
+                name: Штора 2
+                icon: mdi:curtains
+                color: cyan
+                vertical: true
+                hide_state: false
+                tap_action:
+                  action: toggle
+                card_mod:
+                  style: |
+                    ha-card {
+                      height: 100% !important;
+                      background: rgba(16, 20, 30, 0.78) !important;
+                      backdrop-filter: blur(18px) saturate(150%) !important;
+                      -webkit-backdrop-filter: blur(18px) saturate(150%) !important;
+                      border-radius: 24px !important;
+                      border: 1px solid rgba(255, 255, 255, 0.10) !important;
+                      box-shadow: 0 10px 24px rgba(0, 0, 0, 0.28) !important;
+                    }
+                    ha-card:active {
+                      transform: scale(0.98);
+                    }
+                    .container {
+                      height: 100% !important;
+                      padding: 10px 8px 8px !important;
+                      box-sizing: border-box !important;
+                      justify-content: space-between !important;
+                    }
+                    ha-tile-icon {
+                      --mdc-icon-size: 26px !important;
+                      --tile-icon-size: 40px !important;
+                      --tile-icon-border-radius: 12px !important;
+                    }
+                    .primary {
+                      font-size: 12px !important;
+                      font-weight: 600 !important;
+                      line-height: 1.25 !important;
+                    }
+                    .secondary {
+                      font-size: 10px !important;
+                      opacity: 0.58 !important;
+                    }
+                    {% if is_state(config.entity, 'open') or is_state(config.entity, 'opening') or is_state(config.entity, 'on') %}
+                    ha-card {
+                      border: 1.5px solid rgba(0, 229, 255, 0.9) !important;
+                      box-shadow: 0 0 18px rgba(0, 229, 255, 0.36), inset 0 0 12px rgba(0, 229, 255, 0.12) !important;
+                      background: rgba(0, 229, 255, 0.14) !important;
+                    }
+                    {% endif %}
+              - type: tile
+                entity: cover.wb_mr6c_no160_curtain_3
+                name: Штора 3
+                icon: mdi:curtains
+                color: cyan
+                vertical: true
+                hide_state: false
+                tap_action:
+                  action: toggle
+                card_mod:
+                  style: |
+                    ha-card {
+                      height: 100% !important;
+                      background: rgba(16, 20, 30, 0.78) !important;
+                      backdrop-filter: blur(18px) saturate(150%) !important;
+                      -webkit-backdrop-filter: blur(18px) saturate(150%) !important;
+                      border-radius: 24px !important;
+                      border: 1px solid rgba(255, 255, 255, 0.10) !important;
+                      box-shadow: 0 10px 24px rgba(0, 0, 0, 0.28) !important;
+                    }
+                    ha-card:active {
+                      transform: scale(0.98);
+                    }
+                    .container {
+                      height: 100% !important;
+                      padding: 10px 8px 8px !important;
+                      box-sizing: border-box !important;
+                      justify-content: space-between !important;
+                    }
+                    ha-tile-icon {
+                      --mdc-icon-size: 26px !important;
+                      --tile-icon-size: 40px !important;
+                      --tile-icon-border-radius: 12px !important;
+                    }
+                    .primary {
+                      font-size: 12px !important;
+                      font-weight: 600 !important;
+                      line-height: 1.25 !important;
+                    }
+                    .secondary {
+                      font-size: 10px !important;
+                      opacity: 0.58 !important;
+                    }
+                    {% if is_state(config.entity, 'open') or is_state(config.entity, 'opening') or is_state(config.entity, 'on') %}
+                    ha-card {
+                      border: 1.5px solid rgba(0, 229, 255, 0.9) !important;
+                      box-shadow: 0 0 18px rgba(0, 229, 255, 0.36), inset 0 0 12px rgba(0, 229, 255, 0.12) !important;
+                      background: rgba(0, 229, 255, 0.14) !important;
+                    }
+                    {% endif %}
+              - type: tile
+                entity: cover.wb_mr6c_no120_curtain_1
+                name: Штора 4
+                icon: mdi:curtains
+                color: cyan
+                vertical: true
+                hide_state: false
+                tap_action:
+                  action: toggle
+                card_mod:
+                  style: |
+                    ha-card {
+                      height: 100% !important;
+                      background: rgba(16, 20, 30, 0.78) !important;
+                      backdrop-filter: blur(18px) saturate(150%) !important;
+                      -webkit-backdrop-filter: blur(18px) saturate(150%) !important;
+                      border-radius: 24px !important;
+                      border: 1px solid rgba(255, 255, 255, 0.10) !important;
+                      box-shadow: 0 10px 24px rgba(0, 0, 0, 0.28) !important;
+                    }
+                    ha-card:active {
+                      transform: scale(0.98);
+                    }
+                    .container {
+                      height: 100% !important;
+                      padding: 10px 8px 8px !important;
+                      box-sizing: border-box !important;
+                      justify-content: space-between !important;
+                    }
+                    ha-tile-icon {
+                      --mdc-icon-size: 26px !important;
+                      --tile-icon-size: 40px !important;
+                      --tile-icon-border-radius: 12px !important;
+                    }
+                    .primary {
+                      font-size: 12px !important;
+                      font-weight: 600 !important;
+                      line-height: 1.25 !important;
+                    }
+                    .secondary {
+                      font-size: 10px !important;
+                      opacity: 0.58 !important;
+                    }
+                    {% if is_state(config.entity, 'open') or is_state(config.entity, 'opening') or is_state(config.entity, 'on') %}
+                    ha-card {
+                      border: 1.5px solid rgba(0, 229, 255, 0.9) !important;
+                      box-shadow: 0 0 18px rgba(0, 229, 255, 0.36), inset 0 0 12px rgba(0, 229, 255, 0.12) !important;
+                      background: rgba(0, 229, 255, 0.14) !important;
+                    }
+                    {% endif %}
+              - type: tile
+                entity: cover.wb_mr6c_no120_curtain_2
+                name: Штора 5
+                icon: mdi:curtains
+                color: cyan
+                vertical: true
+                hide_state: false
+                tap_action:
+                  action: toggle
+                card_mod:
+                  style: |
+                    ha-card {
+                      height: 100% !important;
+                      background: rgba(16, 20, 30, 0.78) !important;
+                      backdrop-filter: blur(18px) saturate(150%) !important;
+                      -webkit-backdrop-filter: blur(18px) saturate(150%) !important;
+                      border-radius: 24px !important;
+                      border: 1px solid rgba(255, 255, 255, 0.10) !important;
+                      box-shadow: 0 10px 24px rgba(0, 0, 0, 0.28) !important;
+                    }
+                    ha-card:active {
+                      transform: scale(0.98);
+                    }
+                    .container {
+                      height: 100% !important;
+                      padding: 10px 8px 8px !important;
+                      box-sizing: border-box !important;
+                      justify-content: space-between !important;
+                    }
+                    ha-tile-icon {
+                      --mdc-icon-size: 26px !important;
+                      --tile-icon-size: 40px !important;
+                      --tile-icon-border-radius: 12px !important;
+                    }
+                    .primary {
+                      font-size: 12px !important;
+                      font-weight: 600 !important;
+                      line-height: 1.25 !important;
+                    }
+                    .secondary {
+                      font-size: 10px !important;
+                      opacity: 0.58 !important;
+                    }
+                    {% if is_state(config.entity, 'open') or is_state(config.entity, 'opening') or is_state(config.entity, 'on') %}
+                    ha-card {
+                      border: 1.5px solid rgba(0, 229, 255, 0.9) !important;
+                      box-shadow: 0 0 18px rgba(0, 229, 255, 0.36), inset 0 0 12px rgba(0, 229, 255, 0.12) !important;
+                      background: rgba(0, 229, 255, 0.14) !important;
+                    }
+                    {% endif %}

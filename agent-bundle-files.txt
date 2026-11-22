@@ -19,6 +19,10 @@ runtime-desk-pour-core.mjs
 runtime-desk-ha-lights.mjs
 runtime-desk-ha-raw.mjs
 runtime-desk-ha-bridge.mjs
+runtime-desk-ha-dashboard.mjs
+runtime-desk-mark-sheet.mjs
+desk-ha-dashboard-recipe.json
+desk-ha-dashboard-curtains.yaml
 runtime-desk-pour-user.mjs
 runtime-desk-pour-climate.mjs
 runtime-desk-pour-light.mjs

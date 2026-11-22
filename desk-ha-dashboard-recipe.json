@@ -1,0 +1,33 @@
+{
+  "id": "curtains-squares-v1",
+  "title": "Шторы",
+  "frozen": "2026-11-22",
+  "note": "Рецепт эталона. Генератор всех зон — после объекта.",
+  "view": "panel",
+  "stack": "vertical-stack",
+  "grid": {
+    "columns": 8,
+    "square": true,
+    "gapPx": 12
+  },
+  "tile": {
+    "vertical": true,
+    "radiusPx": 24,
+    "iconPx": 26,
+    "iconWellPx": 40,
+    "tap": "toggle"
+  },
+  "openGlow": {
+    "cyan": "0, 229, 255",
+    "purple": "196, 94, 255"
+  },
+  "yaml": "desk-ha-dashboard-curtains.yaml",
+  "chapters": [
+    { "title": "Второй свет", "tone": "mixed", "entities": ["cover.shtory_vtoroi_svet", "cover.tiul_vtoroi_svet"] },
+    { "title": "Шторы", "tone": "cyan", "entities": ["cover.wb_mr6cu_no93_curtain_1", "cover.wb_mr6cu_no93_curtain_2", "cover.wb_mr6cu_no93_curtain_3", "cover.wb_mr6cu_no14_curtain_1", "cover.wb_mr6cu_no14_curtain_2"] },
+    { "title": "Тюль", "tone": "purple", "entities": ["cover.wb_mr6cu_no14_curtain_3", "cover.wb_mr6cu_no79_curtain_1", "cover.wb_mr6cu_no79_curtain_2", "cover.wb_mr6cu_no79_curtain_3", "cover.wb_mr6cu_no96_curtain_1"] },
+    { "title": "Спальни", "tone": "cyan", "entities": ["cover.wb_mr6cu_no96_curtain_2", "cover.wb_mr6cu_no96_curtain_3", "cover.wb_mr6cu_no163_curtain_1", "cover.wb_mr6cu_no163_curtain_2"] },
+    { "title": "Кинотеатр и гараж", "tone": "mixed", "entities": ["cover.wb_mr6cu_no7_curtain_1", "cover.wb_mr6cu_no7_curtain_3", "cover.wb_mr6cu_no7_curtain_2"] },
+    { "title": "Бассейн", "tone": "cyan", "entities": ["cover.wb_mr6c_no160_curtain_1", "cover.wb_mr6c_no160_curtain_2", "cover.wb_mr6c_no160_curtain_3", "cover.wb_mr6c_no120_curtain_1", "cover.wb_mr6c_no120_curtain_2"] }
+  ]
+}

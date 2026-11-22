@@ -7895,7 +7895,39 @@
       stop.type = "button";
       stop.className = "ghost";
       stop.textContent = "Остановить";
-      strip.append(start, stop);
+      const csvDown = document.createElement("a");
+      csvDown.className = "ghost";
+      csvDown.href = "/runtime/desk-mark.csv";
+      csvDown.download = "razmetka.csv";
+      csvDown.textContent = "Excel: скачать каналы";
+      const csvUp = document.createElement("button");
+      csvUp.type = "button";
+      csvUp.className = "ghost";
+      csvUp.textContent = "Excel: залить таблицу";
+      const csvFile = document.createElement("input");
+      csvFile.type = "file";
+      csvFile.accept = ".csv,text/csv";
+      csvFile.hidden = true;
+      csvUp.addEventListener("click", () => csvFile.click());
+      csvFile.addEventListener("change", () => {
+        const file = csvFile.files && csvFile.files[0];
+        csvFile.value = "";
+        if (!file) return;
+        file.text().then((text) => fetch("/runtime/desk-mark.csv", {
+          method: "POST",
+          headers: { "content-type": "text/csv; charset=utf-8" },
+          body: text,
+        }).then((r) => r.json()).then((j) => {
+          lead.textContent = j.ok ? ("Залил имён: " + (j.named || 0)) : "Таблица не принялась";
+          void loadHaLights();
+        }).catch(() => { lead.textContent = "Таблица не дошла"; }));
+      });
+      const dash = document.createElement("a");
+      dash.className = "ghost";
+      dash.href = "/runtime/desk-ha-dashboard.yaml";
+      dash.download = "ha-curtains.yaml";
+      dash.textContent = "Рецепт дашборда штор";
+      strip.append(start, stop, csvDown, csvUp, csvFile, dash);
       start.addEventListener("click", () => {
         start.disabled = true;
         const go = () => fetch("/runtime/desk-ha", {
