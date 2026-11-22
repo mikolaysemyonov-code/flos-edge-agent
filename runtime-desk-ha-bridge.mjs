@@ -11,6 +11,8 @@ import {
   ghostHaDiscoveryTopics,
   haRawBrightnessControl,
   haRawCanonicalControl,
+  haRawCurtainIds,
+  haRawIsCurtainModule,
   haRawIsDriveControl,
   haRawIsSlavedRelay,
   haRawUniqueId,
@@ -286,13 +288,15 @@ function tombstoneUniqueId(uniqueId) {
   state.entities.delete(uniqueId);
 }
 
-function tombstoneGhosts(deviceTopicKey, controlId) {
+function tombstoneGhosts(deviceTopicKey, controlId, force) {
   for (const topic of ghostHaDiscoveryTopics(deviceTopicKey, controlId)) {
     const t = topic.replace(/^\/+/, "");
-    if (state.keepTopics.has(t) || state.ghosted.has(t)) continue;
+    if (state.keepTopics.has(t)) continue;
+    if (!force && state.ghosted.has(t)) continue;
     state.ghosted.add(t);
     pub(state.remote || state.local, topic, "", true);
   }
+  if (force) tombstoneUniqueId(haRawUniqueId(deviceTopicKey, controlId));
   for (const uid of legacyHaUniqueIds(deviceTopicKey, controlId)) tombstoneUniqueId(uid);
 }
 
@@ -356,10 +360,15 @@ function flushTombstones() {
 function refreshDriveKeys() {
   const keys = new Set();
   for (const e of mirrorEntries()) {
-    if (haRawIsDriveControl(e?.controlId)) {
-      const key = entryDeviceKey(e);
-      if (key) keys.add(key);
-    }
+    const key = entryDeviceKey(e);
+    if (haRawIsDriveControl(e?.controlId) && key) keys.add(key);
+    if (haRawIsCurtainModule(key)) keys.add(key);
+  }
+  for (const key of uniqueMirrorKeys()) {
+    if (haRawIsCurtainModule(key)) keys.add(key);
+  }
+  for (const s of loadShelves()) {
+    if (haRawIsCurtainModule(s?.deviceTopicKey)) keys.add(s.deviceTopicKey);
   }
   state.driveKeys = keys;
   return keys;
@@ -368,7 +377,7 @@ function refreshDriveKeys() {
 function tombstoneSlavedRelays(driveKeys) {
   for (const key of driveKeys) {
     for (let i = 1; i <= 12; i += 1) {
-      tombstoneGhosts(key, `K${i}`);
+      tombstoneGhosts(key, `K${i}`, true);
     }
   }
 }
@@ -377,7 +386,7 @@ function allLoadRows() {
   const driveKeys = refreshDriveKeys();
   const byId = new Map();
   const add = (deviceTopicKey, controlId, title) => {
-    if (haRawIsSlavedRelay(controlId, driveKeys.has(deviceTopicKey))) return;
+    if (haRawIsSlavedRelay(controlId, driveKeys.has(deviceTopicKey), deviceTopicKey)) return;
     const row = buildHaRawDiscovery(deviceTopicKey, controlId, title);
     if (!row) return;
     const prev = byId.get(row.uniqueId);
@@ -410,7 +419,8 @@ function allLoadRows() {
     add(key, controlId, "");
   }
   for (const key of bankKeys) {
-    for (const id of expectedDeskOutputIds(key)) add(key, id, "");
+    const ids = haRawIsCurtainModule(key) ? haRawCurtainIds(key) : expectedDeskOutputIds(key);
+    for (const id of ids) add(key, id, "");
   }
   return [...byId.values()];
 }

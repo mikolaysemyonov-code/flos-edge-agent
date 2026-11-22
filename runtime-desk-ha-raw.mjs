@@ -27,7 +27,7 @@ export function haRawCanonicalControl(controlId) {
 }
 
 export function isHaRawLoadControl(deviceTopicKey, controlId, driveOnDevice) {
-  if (haRawIsSlavedRelay(controlId, driveOnDevice)) return false;
+  if (haRawIsSlavedRelay(controlId, driveOnDevice, deviceTopicKey)) return false;
   const key = String(deviceTopicKey || "").toLowerCase();
   const type = parseDeskDeviceKey(deviceTopicKey)?.type || "";
   const rawId = String(controlId || "").trim();
@@ -68,9 +68,26 @@ export function haRawIsDriveControl(controlId) {
   return /^(Curtain|Actuator)\s+\d+\s+(Open|Close)$/i.test(String(controlId || "").trim());
 }
 
+/** MR6C / MR3 — шторы, не реле. MR6CU — реле, пока на шине нет Curtain. */
+export function haRawIsCurtainModule(deviceTopicKey) {
+  const type = String(parseDeskDeviceKey(deviceTopicKey)?.type || "");
+  return /^(mr6c|mr6cv3|mr6c-v3|mr3)$/i.test(type);
+}
+
+export function haRawCurtainIds(deviceTopicKey) {
+  if (!haRawIsCurtainModule(deviceTopicKey)) return [];
+  const type = String(parseDeskDeviceKey(deviceTopicKey)?.type || "");
+  const n = /^mr3$/i.test(type) ? 1 : 3;
+  const ids = [];
+  for (let i = 1; i <= n; i += 1) ids.push(`Curtain ${i} Open`, `Curtain ${i} Close`);
+  return ids;
+}
+
 /** На модуле со шторами K1–K6 — те же выходы, что Open/Close. */
-export function haRawIsSlavedRelay(controlId, driveOnDevice) {
-  return driveOnDevice === true && /^K\d+$/i.test(String(controlId || "").trim());
+export function haRawIsSlavedRelay(controlId, driveOnDevice, deviceTopicKey) {
+  if (!/^K\d+$/i.test(String(controlId || "").trim())) return false;
+  if (driveOnDevice === true) return true;
+  return Boolean(deviceTopicKey) && haRawIsCurtainModule(deviceTopicKey);
 }
 
 export function buildHaRawDiscovery(deviceTopicKey, controlId, title) {
