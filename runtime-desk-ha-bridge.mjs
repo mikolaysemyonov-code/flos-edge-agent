@@ -326,6 +326,7 @@ function offerDiscovery(parsed) {
 }
 
 function echoRetained(row) {
+  if (hostIsThisController(readDeskHaConfig().host)) return;
   const client = state.remote || state.local;
   if (!client || !row?.payload) return;
   const st = state.values.get(row.payload.state_topic);
@@ -486,6 +487,10 @@ export function onDeskHaBusTraffic(topic, buf) {
   if (!state.running) return;
   const parsed = parseHaRawTopic(topic);
   if (!parsed) return;
+  if (haRawIsSlavedRelay(parsed.controlId, state.driveKeys.has(parsed.deviceTopicKey), parsed.deviceTopicKey)) {
+    tombstoneGhosts(parsed.deviceTopicKey, parsed.controlId, true);
+    return;
+  }
   const text = buf ? buf.toString("utf8") : "";
   if (!parsed.isCommand) {
     state.values.set(parsed.stateTopic, text);

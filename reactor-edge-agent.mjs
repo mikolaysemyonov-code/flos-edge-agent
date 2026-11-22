@@ -36,7 +36,7 @@ import {
 } from "./wb-rules-journal-incidents.mjs";
 
 /** Одна строка в heartbeat и snapshot — иначе UI врёт версией. */
-const EDGE_AGENT_VERSION = "edge-pilot-v2.lan-desk-322";
+const EDGE_AGENT_VERSION = "edge-pilot-v2.lan-desk-323";
 
 /** Prefer `FLOS_*` (FL OS); fall back to legacy `REACTOR_*` for existing deployments. */
 function env(primary, legacy) {
@@ -1133,6 +1133,22 @@ function isResyncDumpReady() {
 const MQTT_MIRROR_BUS_TOPICS = ["/devices/#", "devices/#", "/devices/+/controls/+", "devices/+/controls/+"];
 const MQTT_MIRROR_HA_TOPIC = "homeassistant/#";
 
+function subscribeHaDiscoveryWhenBusWarm(client) {
+  const started = Date.now();
+  const tick = () => {
+    if (mqttMirrorState.client !== client) return;
+    const warm = mqttMirrorState.entriesByPath.size >= 80 || Date.now() - started > 10_000;
+    if (!warm) {
+      setTimeout(tick, 400);
+      return;
+    }
+    client.subscribe(MQTT_MIRROR_HA_TOPIC, { qos: 0 }, (haErr) => {
+      if (haErr) mqttMirrorState.lastError = haErr.message ?? String(haErr);
+    });
+  };
+  setTimeout(tick, 600);
+}
+
 function subscribeMqttMirrorTopics(client, url) {
   client.subscribe(MQTT_MIRROR_BUS_TOPICS, { qos: 0 }, (err) => {
     if (err) {
@@ -1140,11 +1156,10 @@ function subscribeMqttMirrorTopics(client, url) {
       console.warn("[flos-edge-agent] mqtt mirror subscribe failed:", mqttMirrorState.lastError);
       return;
     }
+    mqttMirrorState.connected = true;
     mqttMirrorState.subscribedAtMs = Date.now();
     if (url) console.log(`[flos-edge-agent] mqtt bus mirror connected ${url}`);
-    client.subscribe(MQTT_MIRROR_HA_TOPIC, { qos: 0 }, (haErr) => {
-      if (haErr) mqttMirrorState.lastError = haErr.message ?? String(haErr);
-    });
+    subscribeHaDiscoveryWhenBusWarm(client);
   });
 }
 
@@ -1169,7 +1184,7 @@ async function resyncMqttMirrorFromBroker(waitMs) {
         clearMqttMirrorEntries();
         mqttMirrorState.subscribedAtMs = Date.now();
         mqttMirrorState.acceptIngest = true;
-        if (!err) client.subscribe(MQTT_MIRROR_HA_TOPIC, { qos: 0 }, () => {});
+        if (!err) subscribeHaDiscoveryWhenBusWarm(client);
         finish(!err);
       });
     });
@@ -1617,6 +1632,7 @@ function ingestMqttMirrorMessage(topic, buf) {
   } catch {
     /* ignore */
   }
+  mqttMirrorState.connected = true;
   if (mqttMirrorState.acceptIngest === false) return;
   const parts = normalized.split("/").filter(Boolean);
   const importedAt = new Date().toISOString();
@@ -1885,15 +1901,11 @@ async function startMqttBusMirror() {
     subscribeMqttMirrorTopics(client, url);
   });
   client.on("reconnect", () => {
-    mqttMirrorState.connected = false;
     mqttMirrorState.subscribedAtMs = null;
   });
   client.on("close", () => {
     mqttMirrorState.connected = false;
     mqttMirrorState.subscribedAtMs = null;
-  });
-  client.on("offline", () => {
-    mqttMirrorState.connected = false;
   });
   client.on("error", (err) => {
     mqttMirrorState.lastError = err?.message ?? String(err);

@@ -3525,7 +3525,7 @@
         const j = await r.json();
         const mirror = j.mqttMirror || {};
         const topics = Number(mirror.topicCount) || 0;
-        const busOk = mirror.connected === true && topics > 0;
+        const busOk = topics > 0;
         const ver = String(j.agentVersion || "") || "—";
         if (!j.ok) {
           box.className = "status bad";
@@ -3562,6 +3562,7 @@
           else if (!shieldClockOk) bits.push("Часы не совпадают с телефоном");
           if (offline) bits.push(offline === 1 ? "Один модуль молчит" : ("Молчит модулей: " + offline));
           if (incident) bits.push(incident);
+          if (!topics && mirror.lastError) bits.push(String(mirror.lastError));
           sub.textContent = bits.join(" · ");
           sub.hidden = bits.length === 0;
         }
