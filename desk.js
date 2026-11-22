@@ -4546,6 +4546,24 @@
         });
         act.appendChild(bind);
       }
+      if (daliKind && daliKind.kind === "group" && bound) {
+        const pour = document.createElement("button");
+        pour.type = "button";
+        pour.className = "ghost bind";
+        pour.textContent = "Залить";
+        pour.title = "Имя группы на щит";
+        pour.addEventListener("click", (ev) => {
+          ev.preventDefault();
+          ev.stopPropagation();
+          runDeskPour("names", pour, null, (j) => {
+            daliProbeHint = j && j.ok
+              ? ("Залил на щит" + (j.namedCount ? " · имён " + j.namedCount : ""))
+              : ("Не залилось: " + ((j && (j.reason || j.error)) || "щит"));
+            renderMark();
+          });
+        });
+        act.appendChild(pour);
+      }
       if (bound) {
         const drop = document.createElement("button");
         drop.type = "button";
@@ -4923,6 +4941,35 @@
           renderMark();
         });
       });
+      const pour = document.createElement("button");
+      pour.type = "button";
+      pour.className = "ghost bind";
+      pour.textContent = "Залить";
+      pour.title = "Имя группы на щит: ячейка form_logic_os и мост на wanted_level";
+      pour.addEventListener("click", () => {
+        daliWalkMeta = { name: name.value.trim() };
+        pour.disabled = true;
+        const afterSave = (ok) => {
+          if (!ok) {
+            pour.disabled = false;
+            renderMark();
+            return;
+          }
+          runDeskPour("names", pour, null, (j) => {
+            daliProbeHint = j && j.ok
+              ? ("Залил на щит" + (j.namedCount ? " · имён " + j.namedCount : ""))
+              : ("Не залилось: " + ((j && (j.reason || j.error)) || "щит"));
+            daliGroupEdit = "";
+            daliDraftMembers = [];
+            daliWalkMeta = { name: "" };
+            daliPane = "groups";
+            renderMark();
+          });
+        };
+        if (name.value.trim() && daliDraftMembers.length) {
+          void saveDaliGroupNow(s).then(afterSave);
+        } else afterSave(Boolean(daliGroupEdit));
+      });
       const back = document.createElement("button");
       back.type = "button";
       back.className = "ghost";
@@ -4933,7 +4980,7 @@
         daliDraftMembers = [];
         renderMark();
       });
-      row.append(save, back);
+      row.append(save, pour, back);
       card.appendChild(row);
       box.append(card, list);
     }
@@ -8286,12 +8333,14 @@
       return [diskLine, busLine, timerLine, mqttLine].filter(Boolean).join(" · ");
     }
     function runDeskPour(scope, btn, solutionIds, onDone) {
-      if (!btn || btn.disabled) return;
-      const label = btn.textContent;
-      btn.disabled = true;
-      btn.textContent = solutionIds && solutionIds.length
-        ? "Пишу…"
-        : scope === "all" ? "Записываю…" : scope === "names" ? "Имена…" : scope === "rules" ? "Сценарии…" : "Убираю…";
+      if (btn && btn.disabled) return;
+      const label = btn ? btn.textContent : "";
+      if (btn) {
+        btn.disabled = true;
+        btn.textContent = solutionIds && solutionIds.length
+          ? "Пишу…"
+          : scope === "all" ? "Записываю…" : scope === "names" ? "Имена…" : scope === "rules" ? "Сценарии…" : "Убираю…";
+      }
       const payload = { scope: scope === "repair" ? "names" : scope };
       if (solutionIds && solutionIds.length) payload.solutionIds = solutionIds;
       fetch("/runtime/desk-pour", {
@@ -8301,8 +8350,10 @@
       })
         .then((r) => r.json())
         .then((j) => {
-          btn.disabled = false;
-          btn.textContent = label;
+          if (btn) {
+            btn.disabled = false;
+            btn.textContent = label;
+          }
           if (typeof onDone === "function") onDone(j);
           if (!j.ok) {
             paintPourButtons();
@@ -8333,8 +8384,10 @@
           loadPreview();
         })
         .catch((e) => {
-          btn.disabled = false;
-          btn.textContent = label;
+          if (btn) {
+            btn.disabled = false;
+            btn.textContent = label;
+          }
           paintPourButtons();
           const head = $("previewHead");
           if (head) {
