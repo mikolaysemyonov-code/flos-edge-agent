@@ -68,6 +68,25 @@ export function haRawIsDriveControl(controlId) {
   return /^(Curtain|Actuator)\s+\d+\s+(Open|Close)$/i.test(String(controlId || "").trim());
 }
 
+export function haRawCurtainPair(controlId) {
+  const m = /^(Curtain|Actuator)\s+(\d+)\s+(Open|Close)$/i.exec(String(controlId || "").trim());
+  if (!m) return null;
+  return { family: m[1], n: m[2], dir: m[3].toLowerCase() };
+}
+
+export function haCoverTopics(deviceTopicKey, n) {
+  return {
+    command: `/flos/cover/${deviceTopicKey}/${n}/set`,
+    state: `/flos/cover/${deviceTopicKey}/${n}/state`,
+  };
+}
+
+export function parseHaCoverCommand(topic) {
+  const m = /^\/?flos\/cover\/([^/]+)\/(\d+)\/set$/i.exec(String(topic || "").trim());
+  if (!m) return null;
+  return { deviceTopicKey: m[1], n: m[2] };
+}
+
 /** MR6C / MR3 — шторы, не реле. MR6CU — реле, пока на шине нет Curtain. */
 export function haRawIsCurtainModule(deviceTopicKey) {
   const type = String(parseDeskDeviceKey(deviceTopicKey)?.type || "");
@@ -93,6 +112,44 @@ export function haRawIsSlavedRelay(controlId, driveOnDevice, deviceTopicKey) {
 export function buildHaRawDiscovery(deviceTopicKey, controlId, title) {
   if (!isHaRawLoadControl(deviceTopicKey, controlId)) return null;
   const kind = haRawKind(controlId);
+  if (kind === "drive") {
+    const pair = haRawCurtainPair(controlId);
+    if (!pair) return null;
+    const label = `${pair.family} ${pair.n}`;
+    const uniqueId = haRawUniqueId(deviceTopicKey, label);
+    const topics = haCoverTopics(deviceTopicKey, pair.n);
+    const hardware = (formatDeskShelfLabel(deviceTopicKey) || deviceTopicKey) + " · " + label;
+    return {
+      component: "cover",
+      uniqueId,
+      kind,
+      deviceTopicKey,
+      controlId: label,
+      hardware,
+      topic: `homeassistant/cover/${uniqueId}/config`,
+      payload: {
+        name: label,
+        unique_id: uniqueId,
+        object_id: uniqueId,
+        device_class: "curtain",
+        command_topic: topics.command,
+        state_topic: topics.state,
+        payload_open: "OPEN",
+        payload_close: "CLOSE",
+        payload_stop: "STOP",
+        state_open: "open",
+        state_closed: "closed",
+        state_stopped: "stopped",
+        optimistic: false,
+        has_entity_name: true,
+        device: {
+          identifiers: ["flos_" + deviceTopicKey],
+          name: formatDeskShelfLabel(deviceTopicKey) || deviceTopicKey,
+          manufacturer: "Wiren Board",
+        },
+      },
+    };
+  }
   const uniqueId = haRawUniqueId(deviceTopicKey, controlId);
   const stateTopic = `/devices/${deviceTopicKey}/controls/${controlId}`;
   const dim = kind === "dim";
@@ -153,8 +210,9 @@ export function haRawEntitiesFromShelves(shelves) {
       if (!key || !controlId || seen.has(id)) continue;
       const title = String(ch?.name || ch?.title || "").trim();
       const row = buildHaRawDiscovery(key, controlId, title);
-      if (!row) continue;
+      if (!row || seen.has(row.uniqueId)) continue;
       seen.add(id);
+      seen.add(row.uniqueId);
       out.push({
         ...row,
         lastValue: ch?.lastValue,

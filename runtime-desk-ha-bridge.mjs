@@ -11,11 +11,14 @@ import {
   ghostHaDiscoveryTopics,
   haRawBrightnessControl,
   haRawCanonicalControl,
+  haCoverTopics,
   haRawCurtainIds,
+  haRawCurtainPair,
   haRawIsCurtainModule,
   haRawIsDriveControl,
   haRawIsSlavedRelay,
   haRawUniqueId,
+  parseHaCoverCommand,
   isForeignHaDiscovery,
   isHaRawLoadControl,
   shouldTombstoneHaDiscovery,
@@ -251,6 +254,35 @@ function publicEntities() {
   return [...state.entities.values()].sort((a, b) => a.uniqueId.localeCompare(b.uniqueId));
 }
 
+export function onDeskHaCoverCommand(topic, buf) {
+  const parsed = parseHaCoverCommand(topic);
+  if (!parsed) return false;
+  if (!state.running) return true;
+  const cmd = String(buf ? buf.toString("utf8") : "").trim().toUpperCase();
+  let family = "Curtain";
+  for (const e of state.entities.values()) {
+    if (e.deviceTopicKey === parsed.deviceTopicKey && /^Actuator/i.test(String(e.controlId || ""))) family = "Actuator";
+  }
+  const n = parsed.n;
+  const openT = `/devices/${parsed.deviceTopicKey}/controls/${family} ${n} Open/on`;
+  const closeT = `/devices/${parsed.deviceTopicKey}/controls/${family} ${n} Close/on`;
+  const st = haCoverTopics(parsed.deviceTopicKey, n).state;
+  if (cmd === "OPEN") {
+    pub(state.local, openT, "1", false);
+    pub(state.local, closeT, "0", false);
+    pub(state.local, st, "open", true);
+  } else if (cmd === "CLOSE") {
+    pub(state.local, closeT, "1", false);
+    pub(state.local, openT, "0", false);
+    pub(state.local, st, "closed", true);
+  } else if (cmd === "STOP") {
+    pub(state.local, openT, "0", false);
+    pub(state.local, closeT, "0", false);
+    pub(state.local, st, "stopped", true);
+  }
+  return true;
+}
+
 export function onDeskHaDiscovery(topic, buf) {
   if (!state.running) return;
   const text = buf ? buf.toString("utf8") : "";
@@ -313,6 +345,13 @@ function tombstoneGhosts(deviceTopicKey, controlId, force) {
 
 function publishDiscovery(row) {
   if (!row || !state.remote) return;
+  if (row.kind === "drive") {
+    const pair = haRawCurtainPair(row.payload?.name || row.controlId) || haRawCurtainPair(`${row.controlId} Open`);
+    const family = pair?.family || "Curtain";
+    const n = pair?.n || String(row.controlId || "").replace(/\D+/g, "") || "1";
+    tombstoneGhosts(row.deviceTopicKey, `${family} ${n} Open`, true);
+    tombstoneGhosts(row.deviceTopicKey, `${family} ${n} Close`, true);
+  }
   if (!state.discovered.has(row.uniqueId)) tombstoneGhosts(row.deviceTopicKey, row.controlId);
   const first = state.discovered.size === 0;
   pub(state.remote, row.topic, JSON.stringify(row.payload), true);
@@ -342,7 +381,7 @@ function echoRetained(row) {
   if (!client || !row?.payload) return;
   const st = state.values.get(row.payload.state_topic);
   if (st != null && st !== "") pub(client, row.payload.state_topic, st, true);
-  else if (row.kind !== "dim") pub(client, row.payload.state_topic, "0", true);
+  else if (row.kind !== "dim" && row.kind !== "drive") pub(client, row.payload.state_topic, "0", true);
   const bt = row.payload.brightness_state_topic;
   if (bt) {
     const bv = state.values.get(bt);
@@ -503,6 +542,13 @@ export function onDeskHaBusTraffic(topic, buf) {
     return;
   }
   const text = buf ? buf.toString("utf8") : "";
+  const pair = haRawCurtainPair(parsed.controlId);
+  if (pair && !parsed.isCommand) {
+    const on = /^(1|true|on)$/i.test(String(text).trim());
+    if (on) pub(state.local, haCoverTopics(parsed.deviceTopicKey, pair.n).state, pair.dir === "open" ? "open" : "closed", true);
+    offerDiscovery(parsed);
+    return;
+  }
   if (!parsed.isCommand) {
     state.values.set(parsed.stateTopic, text);
     if (/brightness/i.test(parsed.controlId)) {
