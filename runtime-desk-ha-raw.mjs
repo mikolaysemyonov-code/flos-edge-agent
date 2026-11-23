@@ -2,6 +2,35 @@
  * Сырые нагрузки щита → MQTT Discovery. Клавиши и счётчики нажатий не отдаём.
  */
 import { formatDeskShelfLabel, parseDeskDeviceKey } from "./runtime-desk-shelves.mjs";
+import {
+  daliMqttFromChannel,
+  isDaliChannelId,
+  parseDaliMqttId,
+} from "./runtime-desk-dali.mjs";
+
+/** Группа DALI для HA: MQTT wanted_level, даже если на щите нет group_00. */
+export function haDaliGroupTarget(deviceTopicKey, controlId) {
+  const mqtt = parseDaliMqttId(deviceTopicKey);
+  if (mqtt && /wanted_level/i.test(String(controlId || "")) && /_group_\d+$/i.test(mqtt.mqttId)) {
+    return {
+      mqttId: mqtt.mqttId,
+      gateway: mqtt.gateway,
+      channelId: mqtt.channelId,
+      controlId: "wanted_level",
+    };
+  }
+  if (!isDaliChannelId(controlId) || !/^bus_\d+_g\d+$/i.test(String(controlId || ""))) return null;
+  const gw = mqtt?.gateway || String(deviceTopicKey || "").trim();
+  const mqttId = daliMqttFromChannel(gw, controlId);
+  const parsed = parseDaliMqttId(mqttId);
+  if (!parsed) return null;
+  return {
+    mqttId: parsed.mqttId,
+    gateway: parsed.gateway,
+    channelId: parsed.channelId,
+    controlId: "wanted_level",
+  };
+}
 
 export function parseHaRawTopic(topic) {
   const t = String(topic || "").trim();
@@ -28,6 +57,7 @@ export function haRawCanonicalControl(controlId) {
 
 export function isHaRawLoadControl(deviceTopicKey, controlId, driveOnDevice) {
   if (haRawIsSlavedRelay(controlId, driveOnDevice, deviceTopicKey)) return false;
+  if (haDaliGroupTarget(deviceTopicKey, controlId)) return true;
   const key = String(deviceTopicKey || "").toLowerCase();
   const type = parseDeskDeviceKey(deviceTopicKey)?.type || "";
   const rawId = String(controlId || "").trim();
@@ -45,7 +75,8 @@ export function isHaRawLoadControl(deviceTopicKey, controlId, driveOnDevice) {
   return false;
 }
 
-export function haRawKind(controlId) {
+export function haRawKind(controlId, deviceTopicKey) {
+  if (haDaliGroupTarget(deviceTopicKey, controlId)) return "dim";
   if (/^Channel\s+\d+$/i.test(String(controlId || ""))) return "dim";
   if (/^(Curtain|Actuator)\s+/i.test(String(controlId || ""))) return "drive";
   return "relay";
@@ -111,7 +142,46 @@ export function haRawIsSlavedRelay(controlId, driveOnDevice, deviceTopicKey) {
 
 export function buildHaRawDiscovery(deviceTopicKey, controlId, title) {
   if (!isHaRawLoadControl(deviceTopicKey, controlId)) return null;
-  const kind = haRawKind(controlId);
+  const dali = haDaliGroupTarget(deviceTopicKey, controlId);
+  if (dali) {
+    const uniqueId = haRawUniqueId(dali.mqttId, "wanted_level");
+    const stateTopic = `/devices/${dali.mqttId}/controls/wanted_level`;
+    const label = String(title || "").trim() || dali.channelId.replace(/^bus_(\d+)_g(\d+)$/i, "Шина $1 · группа $2");
+    const hardware = (formatDeskShelfLabel(dali.gateway) || dali.gateway) + " · " + dali.channelId;
+    return {
+      component: "light",
+      uniqueId,
+      kind: "dim",
+      deviceTopicKey: dali.mqttId,
+      controlId: "wanted_level",
+      gateway: dali.gateway,
+      channelId: dali.channelId,
+      hardware,
+      topic: `homeassistant/light/${uniqueId}/config`,
+      payload: {
+        name: label,
+        unique_id: uniqueId,
+        object_id: uniqueId,
+        schema: "basic",
+        state_topic: stateTopic,
+        command_topic: `${stateTopic}/on`,
+        brightness_state_topic: stateTopic,
+        brightness_command_topic: `${stateTopic}/on`,
+        brightness_scale: 100,
+        payload_on: "100",
+        payload_off: "0",
+        on_command_type: "brightness",
+        optimistic: true,
+        has_entity_name: true,
+        device: {
+          identifiers: ["flos_" + dali.gateway],
+          name: formatDeskShelfLabel(dali.gateway) || dali.gateway,
+          manufacturer: "Wiren Board",
+        },
+      },
+    };
+  }
+  const kind = haRawKind(controlId, deviceTopicKey);
   if (kind === "drive") {
     const pair = haRawCurtainPair(controlId);
     if (!pair) return null;

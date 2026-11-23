@@ -5,10 +5,12 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import mqtt from "mqtt";
-import { deskMarkingPath } from "./runtime-desk-marking.mjs";
+import { deskMarkingPath, readDeskMarking } from "./runtime-desk-marking.mjs";
+import { proveDaliActuate } from "./runtime-desk-dali-probe.mjs";
 import {
   buildHaRawDiscovery,
   ghostHaDiscoveryTopics,
+  haDaliGroupTarget,
   haRawBrightnessControl,
   haRawCanonicalControl,
   haCoverTopics,
@@ -254,6 +256,48 @@ function publicEntities() {
   return [...state.entities.values()].sort((a, b) => a.uniqueId.localeCompare(b.uniqueId));
 }
 
+function daliPctFromHa(raw) {
+  const s = String(raw || "").trim();
+  if (!s || /^(off|false)$/i.test(s)) return 0;
+  if (/^(on|true)$/i.test(s)) return 100;
+  const n = Number(s);
+  if (!Number.isFinite(n)) return null;
+  if (n <= 0) return 0;
+  return Math.max(0, Math.min(100, n));
+}
+
+function daliMembersOf(gateway, channelId) {
+  try {
+    const ch = readDeskMarking()?.shelves?.[gateway]?.channels?.[channelId];
+    if (Array.isArray(ch?.members) && ch.members.length) return ch.members;
+  } catch {
+    /* ignore */
+  }
+  for (const s of loadShelves()) {
+    if (s?.deviceTopicKey !== gateway) continue;
+    const ch = (s.channels || []).find((c) => c && c.controlId === channelId);
+    if (Array.isArray(ch?.members) && ch.members.length) return ch.members;
+  }
+  return [];
+}
+
+function applyHaDaliCommand(parsed, payload) {
+  const t = haDaliGroupTarget(parsed?.deviceTopicKey, parsed?.controlId);
+  if (!t) return false;
+  const pct = daliPctFromHa(payload);
+  if (pct == null) return true;
+  const stateTopic = `/devices/${t.mqttId}/controls/wanted_level`;
+  state.values.set(stateTopic, String(pct));
+  pub(state.remote || state.local, stateTopic, String(pct), true);
+  void proveDaliActuate({
+    gateway: t.gateway,
+    controlId: t.channelId,
+    members: daliMembersOf(t.gateway, t.channelId),
+    pct,
+  }).catch(() => {});
+  return true;
+}
+
 export function onDeskHaCoverCommand(topic, buf) {
   const parsed = parseHaCoverCommand(topic);
   if (!parsed) return false;
@@ -396,6 +440,11 @@ function seedValuesFromShelves() {
       if (ch?.lastValue == null || ch.lastValue === "") continue;
       const t = `/devices/${s.deviceTopicKey}/controls/${ch.controlId}`;
       if (!state.values.has(t)) state.values.set(t, String(ch.lastValue));
+      const dali = haDaliGroupTarget(s.deviceTopicKey, ch.controlId);
+      if (dali) {
+        const mqttT = `/devices/${dali.mqttId}/controls/wanted_level`;
+        if (!state.values.has(mqttT)) state.values.set(mqttT, String(ch.lastValue));
+      }
     }
   }
 }
@@ -597,8 +646,10 @@ function onBrokerMessage(topic, buf) {
 function onRemoteMessage(topic, buf) {
   const parsed = parseHaRawTopic(topic);
   if (!parsed || !parsed.isCommand) return;
+  const text = buf ? buf.toString("utf8") : "";
+  if (applyHaDaliCommand(parsed, text)) return;
   if (!isHaRawLoadControl(parsed.deviceTopicKey, parsed.controlId)) return;
-  pub(state.local, parsed.commandTopic, buf.toString("utf8"), false);
+  pub(state.local, parsed.commandTopic, text, false);
 }
 
 function endClient(c) {

@@ -7967,7 +7967,8 @@
       if (/^Input\s+/i.test(c) || /Press Counter/i.test(c)) return false;
       if (/^IN\d+$/i.test(c) || /^EXT\d+_IN/i.test(c) || /^[A-D]\d+_IN/i.test(c)) return false;
       if (/mcm|mdi|gpio|wd14|mio-gpio/i.test(key)) return false;
-      return /^K\d+$/i.test(c) || /^Channel\s+\d+$/i.test(c) || /^(Curtain|Actuator)\s+/i.test(c);
+      return /^K\d+$/i.test(c) || /^Channel\s+\d+$/i.test(c) || /^(Curtain|Actuator)\s+/i.test(c)
+        || /^bus_\d+_g\d+$/i.test(c);
     }
     function haLightsFromShelves() {
       const rows = [];
@@ -7980,7 +7981,9 @@
             deviceTopicKey: s.deviceTopicKey,
             controlId: ch.controlId,
             hardware,
-            kind: /^Channel/i.test(ch.controlId) ? "dim" : /Curtain|Actuator/i.test(ch.controlId) ? "drive" : "relay",
+            kind: /^Channel/i.test(ch.controlId) || /^bus_\d+_g\d+$/i.test(ch.controlId)
+              ? "dim"
+              : /Curtain|Actuator/i.test(ch.controlId) ? "drive" : "relay",
             title: title || hardware,
             named: Boolean(title),
           });
