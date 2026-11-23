@@ -2408,7 +2408,8 @@
             chip.className = "tag-chip";
             const lab = document.createElement("span");
             lab.className = "tag-chip-lab";
-            lab.textContent = room + " · " + shortLabel(r);
+            const short = shortLabel(r);
+            lab.textContent = short && short !== room ? room + " · " + short : (short || room);
             chip.appendChild(lab);
             if (withLevel) chip.appendChild(makeLevelCtrl(k, onChange));
             const x = document.createElement("button");
@@ -3684,11 +3685,12 @@
           if (isDriveClose(ch.controlId)) return;
           const name = pairName(s, ch);
           if (!name) return;
+          const daliGrp = /^bus_\d+_g\d+$/i.test(String(ch.controlId || ""));
           raw.push({
             deviceTopicKey: s.deviceTopicKey,
             controlId: ch.controlId,
             name: shortLoadName(name, ch.controlId),
-            room: nameRoom(name),
+            room: nameRoom(name) || (daliGrp ? prettyRoom(name) : ""),
             slave: Number((/_(\d+)$/.exec(s.deviceTopicKey) || [])[1] || 0),
             ch: Number((/(\d+)/.exec(ch.controlId) || [])[1] || 0),
           });

@@ -3,7 +3,7 @@
  * Новые ячейки не плодим, если физика уже в 00_core — иначе дубли в UI.
  */
 import { liveDeskDeviceKey } from "./runtime-desk-rules-marks.mjs";
-import { deskPhysPath, isDaliChannelId } from "./runtime-desk-dali.mjs";
+import { deskPhysPath, isDaliChannelId, parseDaliMqttId } from "./runtime-desk-dali.mjs";
 import { installDeskCurtainGroups, listDeskLoadGroups } from "./runtime-desk-groups.mjs";
 
 function esc(s) {
@@ -26,6 +26,18 @@ export function physPath(deviceTopicKey, controlId) {
   const key = liveDeskDeviceKey(deviceTopicKey);
   if (isDaliChannelId(controlId)) return deskPhysPath(key, controlId);
   return key + "/" + String(controlId || "").trim();
+}
+
+/** Ячейка form_logic_os, которую пишет кнопка и слушает fl_rt_cmd. Не MQTT group_00. */
+export function virtCell(path) {
+  const p = String(path || "").trim();
+  if (!p) return "";
+  const mqtt = p.replace(/\/wanted_level$/i, "");
+  const dali = parseDaliMqttId(mqtt);
+  if (dali) return cellId(dali.gateway, dali.channelId);
+  const i = p.indexOf("/");
+  if (i <= 0) return "";
+  return cellId(p.slice(0, i), p.slice(i + 1));
 }
 
 function isDriveClose(controlId) {

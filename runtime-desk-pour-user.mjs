@@ -1,7 +1,7 @@
 /**
  * Типовые со стола → defineRule в 40_rules_user.
  */
-import { cellId, physPath } from "./runtime-desk-pour-core.mjs";
+import { physPath, virtCell } from "./runtime-desk-pour-core.mjs";
 import { deskButtonCounter, deskEmitRule } from "./runtime-desk-marking.mjs";
 import { liveDeskDeviceKey } from "./runtime-desk-rules-marks.mjs";
 import { emitDeskClimate, isDeskClimateSolution } from "./runtime-desk-pour-climate.mjs";
@@ -150,12 +150,6 @@ export function preserveDeskRules(previous, incoming) {
   }
   if (!extra.length) return next;
   return `${next.replace(/\s*$/, "")}\n\n${extra.join("\n\n")}\n`;
-}
-
-function virtCell(path) {
-  const i = String(path || "").indexOf("/");
-  if (i <= 0) return "";
-  return cellId(path.slice(0, i), path.slice(i + 1));
 }
 
 /** Кнопка только переключает ячейку. Яркость и канал пишет мост fl_rt_cmd. */
