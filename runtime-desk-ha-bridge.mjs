@@ -115,6 +115,12 @@ function writeDeskHaConfig(cfg) {
   fs.renameSync(tmp, file);
 }
 
+function fieldHaMqttHost(host) {
+  const h = String(host || "").trim();
+  if (h && !hostIsThisController(h)) return h;
+  return String(process.env.FLOS_HA_MQTT_HOST || "100.105.69.95").trim() || "100.105.69.95";
+}
+
 function hostIsThisController(host) {
   const h = String(host || "").trim().toLowerCase();
   if (h === "127.0.0.1" || h === "localhost" || h === "::1") return true;
@@ -159,6 +165,8 @@ const state = {
   values: new Map(),
   lastError: "",
   lastAt: "",
+  sidekick: null,
+  sidekickOk: false,
 };
 
 function publicStatus() {
@@ -178,6 +186,7 @@ function publicStatus() {
     discovered: state.discovered.size,
     lastError: state.lastError,
     lastAt: state.lastAt,
+    haCmdOk: state.sidekickOk === true || state.remoteOk === true,
     mirrorTopics: Number(mirror?.topicCount?.() || 0) || 0,
     agentVersion: String(mirror?.version || ""),
     hint: state.discovered.size ? "" : loadHint(),
@@ -266,8 +275,9 @@ async function driveHaDaliGroup(gateway, channelId, pct) {
   if (parsed?.kind !== "group") return { ok: false, error: "need_group" };
   const busId = await resolveDaliBusId(gateway, parsed.bus);
   const cmds = daliGroupLevelCommands(parsed.group, pct);
-  await daliSendCommands(busId, cmds, 8_000);
-  return { ok: true, busId, cmds };
+  const sent = await daliSendCommands(busId, cmds, 8_000);
+  state.lastError = sent && sent.ok === false ? String(sent.error || "dali_rpc") : "";
+  return { ok: sent?.ok !== false, busId, cmds };
 }
 
 function publishHaDaliState(gateway, channelId, pct) {
@@ -279,7 +289,11 @@ function publishHaDaliState(gateway, channelId, pct) {
 
 function queueHaDaliDrive(gateway, channelId, pct) {
   publishHaDaliState(gateway, channelId, pct);
-  void driveHaDaliGroup(gateway, channelId, pct).catch(() => {});
+  void driveHaDaliGroup(gateway, channelId, pct).then((r) => {
+    if (r && r.ok === false) state.lastError = String(r.error || "dali_dapc");
+  }).catch((e) => {
+    state.lastError = String(e?.message || e || "dali_dapc");
+  });
 }
 
 /** Стол задимировал группу — HA не должна висеть «Неизвестно». */
@@ -303,7 +317,6 @@ function applyHaDaliCommand(parsed, payload) {
 export function onDeskHaDaliCommand(topic, buf) {
   const parsed = parseHaDaliCommand(topic);
   if (!parsed) return false;
-  if (!state.running) return true;
   const pct = haDaliPctFromPayload(buf ? buf.toString("utf8") : "");
   if (pct == null) return true;
   queueHaDaliDrive(parsed.gateway, parsed.channelId, pct);
@@ -620,6 +633,7 @@ export function onDeskHaBusTraffic(topic, buf) {
     }
     return;
   }
+  if (applyHaDaliCommand(parsed, text)) return;
   assistLedCommand(parsed, text);
   assistBrightnessZero(parsed, text);
 }
@@ -644,6 +658,7 @@ function onBrokerMessage(topic, buf) {
     return;
   }
   if (parsed?.isCommand) {
+    if (applyHaDaliCommand(parsed, text)) return;
     assistLedCommand(parsed, text);
     assistBrightnessZero(parsed, text);
     if (state.remote && state.remote !== state.local) onRemoteMessage(topic, buf);
@@ -682,12 +697,43 @@ export function stopDeskHaBridge() {
   state.running = false;
   state.localOk = false;
   state.remoteOk = false;
+  state.sidekickOk = false;
   const remote = state.remote;
   const local = state.local;
   if (remote && remote !== local) endClient(remote);
   endClient(local);
+  endClient(state.sidekick);
   state.local = null;
   state.remote = null;
+  state.sidekick = null;
+}
+
+function startHaDaliSidekick(alreadyHost) {
+  const host = fieldHaMqttHost("");
+  if (alreadyHost && String(alreadyHost).trim() === host) return;
+  endClient(state.sidekick);
+  state.sidekickOk = false;
+  const c = mqtt.connect(`mqtt://${host}:1883`, {
+    clientId: `flos-ha-dali-${process.pid}`,
+    reconnectPeriod: 4000,
+    connectTimeout: 8000,
+    protocolVersion: 4,
+  });
+  state.sidekick = c;
+  c.on("connect", () => {
+    state.sidekickOk = true;
+    c.subscribe("/flos/dali/+/+/set", { qos: 0 }, () => {});
+    c.subscribe("flos/dali/+/+/set", { qos: 0 }, () => {});
+  });
+  c.on("offline", () => {
+    state.sidekickOk = false;
+  });
+  c.on("error", (err) => {
+    state.lastError = String(err?.message || err || "ha_dali_mqtt");
+  });
+  c.on("message", (topic, buf) => {
+    onDeskHaDaliCommand(topic, buf);
+  });
 }
 
 function connectLocalViaMirror() {
@@ -729,6 +775,7 @@ function connectLocalViaMirror() {
     setTimeout(() => wait(n + 1), 400);
   };
   wait(0);
+  startHaDaliSidekick();
 }
 
 function connectPair(cfg) {
@@ -801,6 +848,7 @@ function connectPair(cfg) {
     state.lastError = String(err?.message || err || "ha_mqtt");
   });
   remote.on("message", onRemoteMessage);
+  startHaDaliSidekick(cfg.host);
 }
 
 export function startDeskHaBridge(input) {

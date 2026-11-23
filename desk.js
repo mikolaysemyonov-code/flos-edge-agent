@@ -4819,7 +4819,32 @@
         }
         runDaliProbe(s, "group");
       });
-      row.append(clock, proof);
+      const haSix = document.createElement("button");
+      haSix.type = "button";
+      haSix.className = "ghost bind";
+      haSix.textContent = "6 групп в HA";
+      haSix.addEventListener("click", () => {
+        haSix.disabled = true;
+        daliProbeHint = "Открываю 6 групп в HA…";
+        renderMark();
+        fetch("/runtime/desk-ha", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ host: "127.0.0.1", port: 1883, enabled: true }),
+        })
+          .then((r) => r.json())
+          .then((j) => {
+            daliProbeHint = j && j.ok !== false
+              ? ("HA " + (j.host || "127.0.0.1") + " · линий " + (j.discovered || 0) + (j.lastError ? " · " + j.lastError : ""))
+              : ("HA не открылся: " + ((j && j.error) || "ошибка"));
+          })
+          .catch(() => { daliProbeHint = "Агент не ответил HA"; })
+          .finally(() => {
+            haSix.disabled = false;
+            renderMark();
+          });
+      });
+      row.append(clock, proof, haSix);
       bar.append(hint, row);
       box.appendChild(bar);
     }
