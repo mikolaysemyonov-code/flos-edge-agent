@@ -5,7 +5,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import mqtt from "mqtt";
-import { deskMarkingPath } from "./runtime-desk-marking.mjs";
+import { applyMarksToShelves, deskMarkingPath, readDeskMarking } from "./runtime-desk-marking.mjs";
 import { parseDaliChannelId } from "./runtime-desk-dali.mjs";
 import { daliGroupLevelCommands, daliGroupTempCommands, daliSendCommands, resolveDaliBusId } from "./runtime-desk-dali-rpc.mjs";
 import {
@@ -140,11 +140,17 @@ function hostIsThisController(host) {
 }
 
 function loadShelves() {
+  let shelves = [];
   try {
     const json = JSON.parse(fs.readFileSync(shelvesPath(), "utf8"));
-    return Array.isArray(json?.shelves) ? json.shelves : [];
+    shelves = Array.isArray(json?.shelves) ? json.shelves : [];
   } catch {
-    return [];
+    shelves = [];
+  }
+  try {
+    return applyMarksToShelves(shelves, readDeskMarking());
+  } catch {
+    return shelves;
   }
 }
 
