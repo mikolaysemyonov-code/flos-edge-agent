@@ -224,6 +224,17 @@ export async function daliMqttRpc(service, params, timeoutMs = 10_000) {
   }
 }
 
+export function daliCommandExpectsReply(cmd) {
+  return /^Query/i.test(String(cmd || "").trim());
+}
+
+export function daliSendRowFailed(row, cmd) {
+  if (!row || row.status !== "error") return false;
+  const err = String(row.error || "").toLowerCase();
+  if (!daliCommandExpectsReply(cmd) && /no response|^false$/.test(err)) return false;
+  return true;
+}
+
 export async function daliSendCommands(busId, commands, timeoutMs = 10_000) {
   const bus = String(busId || "").trim();
   const list = (Array.isArray(commands) ? commands : []).map((c) => String(c || "").trim()).filter(Boolean);
@@ -234,7 +245,7 @@ export async function daliSendCommands(busId, commands, timeoutMs = 10_000) {
       return { ok: false, error: rpcErr(payload, "dali_rpc"), result: payload.result || [] };
     }
     const rows = Array.isArray(payload?.result) ? payload.result : [];
-    const bad = rows.find((r) => r && r.status === "error");
+    const bad = rows.find((r, i) => daliSendRowFailed(r, list[i]));
     if (bad) return { ok: false, error: bad.error || "dali_cmd", result: rows };
     return { ok: true, result: rows };
   } catch (e) {
