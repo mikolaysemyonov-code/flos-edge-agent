@@ -4566,7 +4566,7 @@
         });
         act.appendChild(pour);
       }
-      if (bound) {
+      if (bound || (daliKind && daliKind.kind === "group")) {
         const drop = document.createElement("button");
         drop.type = "button";
         drop.className = "ghost";
@@ -5065,7 +5065,10 @@
           add.textContent = "Создать группу";
           add.addEventListener("click", () => startNewDaliGroup());
           box.appendChild(add);
-          const shown = groups.slice();
+          const shown = groups.filter((ch) => {
+            const n = String(ch.name || "").trim();
+            return n && !/^свобод/i.test(n);
+          });
           if (daliGroupEdit && !shown.some((ch) => ch.controlId === daliGroupEdit)) {
             shown.push({ controlId: daliGroupEdit, members: daliDraftMembers.slice(), lastValue: 0 });
           }

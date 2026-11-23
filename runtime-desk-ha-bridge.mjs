@@ -606,12 +606,29 @@ function allLoadRows() {
   return [...byId.values()];
 }
 
+function tombstoneDroppedDali() {
+  for (const s of loadShelves()) {
+    const gw = String(s?.deviceTopicKey || "");
+    if (!/^wb-dali_/i.test(gw)) continue;
+    for (let bus = 1; bus <= 3; bus += 1) {
+      for (let g = 0; g <= 15; g += 1) {
+        const cid = `bus_${bus}_g${g}`;
+        const uid = haDaliUniqueId(gw, cid);
+        if (state.keepIds.has(uid)) continue;
+        for (const id of legacyHaDaliUniqueIds(gw, cid)) tombstoneUniqueId(id);
+        tombstoneUniqueId(uid);
+      }
+    }
+  }
+}
+
 function discoverAll() {
   seedValuesFromShelves();
   const rows = allLoadRows();
   state.keepIds = new Set(rows.map((r) => r.uniqueId));
   state.keepTopics = new Set(rows.map((r) => String(r.topic || "").replace(/^\/+/, "")));
   tombstoneSlavedRelays(state.driveKeys);
+  tombstoneDroppedDali();
   if (!rows.length) return false;
   for (const row of rows) {
     publishDiscovery(row);
