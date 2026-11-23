@@ -60,10 +60,13 @@ import {
 import {
   applyDaliGroupMembers,
   daliBridgeStatus,
+  daliGroupTempCommands,
+  daliSendCommands,
   installDaliBridge,
   listDaliGateways,
   memberAddrsOf,
   readDaliGroupMembers,
+  resolveDaliBusId,
   scanDaliBus,
 } from "./runtime-desk-dali-rpc.mjs";
 import {
@@ -924,8 +927,21 @@ export async function handleRuntimeDeskActuate(req, res) {
   }
   let out = await actuateDeskChannel(body);
   const parsed = parseDaliChannelId(body.controlId);
-  if (parsed && (parsed.kind === "group" || parsed.kind === "addr")) {
-    const desired = String(body.desired || out.desired || "").toLowerCase();
+  const desiredAct = String(body.desired || out.desired || "").toLowerCase();
+  if (parsed?.kind === "group" && desiredAct === "temp") {
+    const mired = Number(body.temp ?? out.value);
+    const busId = await resolveDaliBusId(body.deviceTopicKey, parsed.bus);
+    const sent = await daliSendCommands(busId, daliGroupTempCommands(parsed.group, mired), 8_000);
+    out = {
+      ...out,
+      ok: sent?.ok !== false,
+      via: "dt8",
+      busId,
+      error: sent?.ok === false ? sent.error : out.error,
+    };
+    syncHaDaliState(body.deviceTopicKey, parsed.channelId, 100, mired);
+  } else if (parsed && (parsed.kind === "group" || parsed.kind === "addr")) {
+    const desired = desiredAct;
     const pct = desired === "off" ? 0 : desired === "level" ? Number(body.level ?? out.value) : 100;
     const members =
       parsed.kind === "group"

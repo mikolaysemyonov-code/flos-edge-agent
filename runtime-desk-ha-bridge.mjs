@@ -7,12 +7,12 @@ import path from "node:path";
 import mqtt from "mqtt";
 import { deskMarkingPath } from "./runtime-desk-marking.mjs";
 import { parseDaliChannelId } from "./runtime-desk-dali.mjs";
-import { daliGroupLevelCommands, daliSendCommands, resolveDaliBusId } from "./runtime-desk-dali-rpc.mjs";
+import { daliGroupLevelCommands, daliGroupTempCommands, daliSendCommands, resolveDaliBusId } from "./runtime-desk-dali-rpc.mjs";
 import {
   buildHaRawDiscovery,
   ghostHaDiscoveryTopics,
   haDaliGroupTarget,
-  haDaliPctFromPayload,
+  haDaliCommandFromPayload,
   haDaliStatePayload,
   haDaliTopics,
   haRawBrightnessControl,
@@ -167,6 +167,7 @@ const state = {
   lastAt: "",
   sidekick: null,
   sidekickOk: false,
+  lastTc: new Map(),
 };
 
 function publicStatus() {
@@ -270,6 +271,10 @@ function publicEntities() {
   return [...state.entities.values()].sort((a, b) => a.uniqueId.localeCompare(b.uniqueId));
 }
 
+function tcKey(gateway, channelId) {
+  return String(gateway || "") + "\0" + String(channelId || "");
+}
+
 async function driveHaDaliGroup(gateway, channelId, pct) {
   const parsed = parseDaliChannelId(channelId);
   if (parsed?.kind !== "group") return { ok: false, error: "need_group" };
@@ -280,9 +285,21 @@ async function driveHaDaliGroup(gateway, channelId, pct) {
   return { ok: sent?.ok !== false, busId, cmds };
 }
 
-function publishHaDaliState(gateway, channelId, pct) {
+async function driveHaDaliTemp(gateway, channelId, mired) {
+  const parsed = parseDaliChannelId(channelId);
+  if (parsed?.kind !== "group") return { ok: false, error: "need_group" };
+  const busId = await resolveDaliBusId(gateway, parsed.bus);
+  const cmds = daliGroupTempCommands(parsed.group, mired);
+  const sent = await daliSendCommands(busId, cmds, 8_000);
+  state.lastError = sent && sent.ok === false ? String(sent.error || "dali_tc") : "";
+  return { ok: sent?.ok !== false, busId, cmds };
+}
+
+function publishHaDaliState(gateway, channelId, pct, mired) {
   const topics = haDaliTopics(gateway, channelId);
-  const body = haDaliStatePayload(pct);
+  const key = tcKey(gateway, channelId);
+  if (mired != null && Number.isFinite(Number(mired))) state.lastTc.set(key, Number(mired));
+  const body = haDaliStatePayload(pct, state.lastTc.get(key));
   state.values.set(topics.state, body);
   pub(state.remote || state.local, topics.state, body, true);
 }
@@ -296,30 +313,52 @@ function queueHaDaliDrive(gateway, channelId, pct) {
   });
 }
 
+function queueHaDaliTemp(gateway, channelId, mired) {
+  const topics = haDaliTopics(gateway, channelId);
+  let pct = 100;
+  try {
+    const cur = JSON.parse(String(state.values.get(topics.state) || "{}"));
+    if (String(cur.state || "").toUpperCase() === "OFF") pct = 0;
+    else if (Number.isFinite(Number(cur.brightness))) pct = Math.max(1, Math.round((Number(cur.brightness) * 100) / 255));
+  } catch {
+    pct = 100;
+  }
+  publishHaDaliState(gateway, channelId, pct, mired);
+  void driveHaDaliTemp(gateway, channelId, mired).then((r) => {
+    if (r && r.ok === false) state.lastError = String(r.error || "dali_tc");
+  }).catch((e) => {
+    state.lastError = String(e?.message || e || "dali_tc");
+  });
+}
+
 /** Стол задимировал группу — HA не должна висеть «Неизвестно». */
-export function syncHaDaliState(gateway, channelId, pct) {
-  if (!state.running) return false;
+export function syncHaDaliState(gateway, channelId, pct, mired) {
   const parsed = parseDaliChannelId(channelId);
   if (parsed?.kind !== "group") return false;
-  publishHaDaliState(gateway, parsed.channelId, pct);
+  publishHaDaliState(gateway, parsed.channelId, pct, mired);
   return true;
 }
 
 function applyHaDaliCommand(parsed, payload) {
   const t = haDaliGroupTarget(parsed?.deviceTopicKey, parsed?.controlId);
   if (!t) return false;
-  const pct = haDaliPctFromPayload(payload);
-  if (pct == null) return true;
-  queueHaDaliDrive(t.gateway, t.channelId, pct);
+  if (t.controlId === "wanted_colour_temperature") {
+    const mired = Number(String(payload || "").trim());
+    if (Number.isFinite(mired) && mired > 0) queueHaDaliTemp(t.gateway, t.channelId, mired);
+    return true;
+  }
+  const cmd = haDaliCommandFromPayload(payload);
+  if (cmd.mired != null) queueHaDaliTemp(t.gateway, t.channelId, cmd.mired);
+  if (cmd.pct != null) queueHaDaliDrive(t.gateway, t.channelId, cmd.pct);
   return true;
 }
 
 export function onDeskHaDaliCommand(topic, buf) {
   const parsed = parseHaDaliCommand(topic);
   if (!parsed) return false;
-  const pct = haDaliPctFromPayload(buf ? buf.toString("utf8") : "");
-  if (pct == null) return true;
-  queueHaDaliDrive(parsed.gateway, parsed.channelId, pct);
+  const cmd = haDaliCommandFromPayload(buf ? buf.toString("utf8") : "");
+  if (cmd.mired != null) queueHaDaliTemp(parsed.gateway, parsed.channelId, cmd.mired);
+  if (cmd.pct != null) queueHaDaliDrive(parsed.gateway, parsed.channelId, cmd.pct);
   return true;
 }
 
@@ -610,8 +649,10 @@ function assistBrightnessZero(parsed, payload) {
 }
 
 export function onDeskHaBusTraffic(topic, buf) {
-  if (!state.running) return;
   const parsed = parseHaRawTopic(topic);
+  const textEarly = buf ? buf.toString("utf8") : "";
+  if (parsed?.isCommand && applyHaDaliCommand(parsed, textEarly)) return;
+  if (!state.running) return;
   if (!parsed) return;
   if (haRawIsSlavedRelay(parsed.controlId, state.driveKeys.has(parsed.deviceTopicKey), parsed.deviceTopicKey)) {
     tombstoneGhosts(parsed.deviceTopicKey, parsed.controlId, true);

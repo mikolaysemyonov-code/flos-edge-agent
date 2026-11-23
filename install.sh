@@ -165,10 +165,9 @@ curl_get() {
 
 cloud_tip_reachable() {
   [[ -z "$CLOUD_URL" ]] && return 1
-  echo "[flos-edge-agent] проверяю tip (макс. 12с)…"
-  # IPv4 first: AAAA до Vercel с объекта часто висит.
-  curl -4 -fsS --connect-timeout 5 --max-time 12 -o /dev/null "$CLOUD_FILES/reactor-edge-agent.mjs" \
-    || curl -fsS --connect-timeout 5 --max-time 12 -o /dev/null "$CLOUD_FILES/reactor-edge-agent.mjs"
+  echo "[flos-edge-agent] проверяю tip (макс. 8с)…" >&2
+  # timeout(1): DNS AAAA до Vercel с щита игнорирует curl --max-time.
+  timeout 8 curl -4 -fsS --connect-timeout 3 --max-time 7 -o /dev/null "$CLOUD_FILES/reactor-edge-agent.mjs"
 }
 
 # --git-ref main — tip если живой. Любой другой ref (sha) — только GitHub.
@@ -213,8 +212,8 @@ ensure_agent_files() {
     return
   fi
   mkdir -p "$AGENT_DIR/lib"
-  if want_pinned_github; then
-    echo "[flos-edge-agent] --git-ref $GIT_REF — беру GitHub, tip не подменяю"
+  if want_pinned_github || [[ "$UPGRADE_ONLY" == "true" ]]; then
+    echo "[flos-edge-agent] беру GitHub ($GIT_REF), tip облака не жду"
   elif cloud_tip_reachable; then
     echo "[flos-edge-agent] скачиваю файлы с tip/облака ($CLOUD_FILES)…"
     if fetch_bundle "$CLOUD_FILES" \

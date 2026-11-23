@@ -11,12 +11,16 @@ import {
 /** Группа DALI для HA: MQTT wanted_level, даже если на щите нет group_00. */
 export function haDaliGroupTarget(deviceTopicKey, controlId) {
   const mqtt = parseDaliMqttId(deviceTopicKey);
-  if (mqtt && /wanted_level/i.test(String(controlId || "")) && /_group_\d+$/i.test(mqtt.mqttId)) {
+  if (
+    mqtt &&
+    /wanted_level|wanted_colour_temperature|colour.?temperature/i.test(String(controlId || "")) &&
+    /_group_\d+$/i.test(mqtt.mqttId)
+  ) {
     return {
       mqttId: mqtt.mqttId,
       gateway: mqtt.gateway,
       channelId: mqtt.channelId,
-      controlId: "wanted_level",
+      controlId: /colour|temp/i.test(String(controlId || "")) ? "wanted_colour_temperature" : "wanted_level",
     };
   }
   if (!isDaliChannelId(controlId) || !/^bus_\d+_g\d+$/i.test(String(controlId || ""))) return null;
@@ -131,41 +135,61 @@ export function parseHaDaliCommand(topic) {
   return { gateway: m[1], channelId: m[2] };
 }
 
-/** HA JSON light: brightness 0–255. Число 0–100 с ползунка стола тоже принимаем. */
-export function haDaliPctFromPayload(raw) {
-  const s = String(raw || "").trim();
-  if (!s) return null;
-  if (s.charAt(0) === "{") {
-    try {
-      const j = JSON.parse(s);
-      const st = String(j.state || "").toUpperCase();
-      if (st === "OFF") return 0;
-      const b = Number(j.brightness);
-      if (Number.isFinite(b) && b > 0) {
-        return b > 100 ? Math.max(1, Math.min(100, Math.round((b * 100) / 255))) : b;
-      }
-      if (st === "ON") return 100;
-    } catch {
-      return null;
-    }
-    return null;
-  }
-  if (/^(off|false)$/i.test(s)) return 0;
-  if (/^(on|true)$/i.test(s)) return 100;
-  const n = Number(s);
+function clampMired(n) {
+  const v = Number(n);
+  if (!Number.isFinite(v) || v <= 0) return null;
+  return Math.max(153, Math.min(1000, Math.round(v)));
+}
+
+function pctFromNumber(n) {
   if (!Number.isFinite(n)) return null;
   if (n <= 0) return 0;
   if (n > 100) return Math.max(1, Math.min(100, Math.round((n * 100) / 255)));
   return n;
 }
 
-export function haDaliStatePayload(pct) {
+/** HA JSON light: brightness 0–255. Число 0–100 с ползунка стола тоже принимаем. */
+export function haDaliPctFromPayload(raw) {
+  return haDaliCommandFromPayload(raw).pct;
+}
+
+export function haDaliCommandFromPayload(raw) {
+  const s = String(raw || "").trim();
+  const out = { pct: null, mired: null };
+  if (!s) return out;
+  if (s.charAt(0) === "{") {
+    try {
+      const j = JSON.parse(s);
+      const st = String(j.state || "").toUpperCase();
+      const mired = clampMired(j.color_temp ?? j.color_temp_mireds);
+      const kelvin = Number(j.color_temp_kelvin);
+      out.mired = mired || (Number.isFinite(kelvin) && kelvin > 0 ? clampMired(1e6 / kelvin) : null);
+      if (st === "OFF") {
+        out.pct = 0;
+        return out;
+      }
+      const b = Number(j.brightness);
+      if (Number.isFinite(b) && b > 0) out.pct = pctFromNumber(b);
+      else if (st === "ON" && out.mired == null) out.pct = 100;
+    } catch {
+      return out;
+    }
+    return out;
+  }
+  if (/^(off|false)$/i.test(s)) return { pct: 0, mired: null };
+  if (/^(on|true)$/i.test(s)) return { pct: 100, mired: null };
+  return { pct: pctFromNumber(Number(s)), mired: null };
+}
+
+export function haDaliStatePayload(pct, mired) {
   const n = Math.max(0, Math.min(100, Number(pct) || 0));
   if (n <= 0) return JSON.stringify({ state: "OFF" });
+  const tc = clampMired(mired) || 370;
   return JSON.stringify({
     state: "ON",
     brightness: Math.max(1, Math.round((n * 255) / 100)),
-    color_mode: "brightness",
+    color_temp: tc,
+    color_mode: "color_temp",
   });
 }
 
@@ -218,7 +242,9 @@ export function buildHaRawDiscovery(deviceTopicKey, controlId, title) {
         state_topic: topics.state,
         brightness: true,
         color_mode: true,
-        supported_color_modes: ["brightness"],
+        supported_color_modes: ["color_temp"],
+        min_mireds: 153,
+        max_mireds: 370,
         optimistic: false,
         has_entity_name: true,
         device: {

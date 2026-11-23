@@ -142,6 +142,20 @@ export function daliGroupDriveCommands(group, pct, addrs) {
   return cmds;
 }
 
+/** Tc в mired (153…1000). DTR + DT8 на группу — без MQTT group_00. */
+export function daliGroupTempCommands(group, mired) {
+  const g = Number(group);
+  const n = Math.max(153, Math.min(1000, Math.round(Number(mired) || 370)));
+  const lo = n & 0xff;
+  const hi = (n >> 8) & 0xff;
+  return [
+    `DTR0(${lo})`,
+    `DTR1(${hi})`,
+    `DT8.SetTemporaryColourTemperature(G${g})`,
+    `DT8.Activate(G${g})`,
+  ];
+}
+
 export function parseDaliGroupBitmask(lo, hi) {
   const raw = (row) => {
     if (row == null) return NaN;
