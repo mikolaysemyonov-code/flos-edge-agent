@@ -25,7 +25,7 @@ import {
   setRuntimeHealthExtraProvider,
 } from "./runtime-control-plane-http.mjs";
 import { setRuntimeClockSetter, setRuntimeMqttScanHandler, setRuntimeRootSetter } from "./runtime-desk-http.mjs";
-import { bindDeskHaMirror, onDeskHaBusTraffic, onDeskHaCoverCommand, onDeskHaDiscovery, resumeDeskHaBridgeFromDisk } from "./runtime-desk-ha-bridge.mjs";
+import { bindDeskHaMirror, onDeskHaBusTraffic, onDeskHaCoverCommand, onDeskHaDaliCommand, onDeskHaDiscovery, resumeDeskHaBridgeFromDisk } from "./runtime-desk-ha-bridge.mjs";
 import { isMarkShieldDiscoverableDeviceKey } from "./lib/mark-shield-discoverable-device.mjs";
 import { countOfflineDevices } from "./runtime-desk-shelves.mjs";
 import { cleanDeskPassword } from "./runtime-desk-gate.mjs";
@@ -36,7 +36,7 @@ import {
 } from "./wb-rules-journal-incidents.mjs";
 
 /** Одна строка в heartbeat и snapshot — иначе UI врёт версией. */
-const EDGE_AGENT_VERSION = "edge-pilot-v2.lan-desk-338";
+const EDGE_AGENT_VERSION = "edge-pilot-v2.lan-desk-339";
 
 /** Prefer `FLOS_*` (FL OS); fall back to legacy `REACTOR_*` for existing deployments. */
 function env(primary, legacy) {
@@ -1614,6 +1614,7 @@ function ingestMqttMirrorMessage(topic, buf) {
   if (haParts[0] === "flos") {
     try {
       onDeskHaCoverCommand(normalized, buf);
+      onDeskHaDaliCommand(normalized, buf);
     } catch {
       /* ignore */
     }

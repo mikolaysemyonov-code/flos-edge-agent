@@ -118,6 +118,57 @@ export function parseHaCoverCommand(topic) {
   return { deviceTopicKey: m[1], n: m[2] };
 }
 
+export function haDaliTopics(gateway, channelId) {
+  return {
+    command: `/flos/dali/${gateway}/${channelId}/set`,
+    state: `/flos/dali/${gateway}/${channelId}/state`,
+  };
+}
+
+export function parseHaDaliCommand(topic) {
+  const m = /^\/?flos\/dali\/([^/]+)\/([^/]+)\/set$/i.exec(String(topic || "").trim());
+  if (!m) return null;
+  return { gateway: m[1], channelId: m[2] };
+}
+
+/** HA JSON light: brightness 0–255. Число 0–100 с ползунка стола тоже принимаем. */
+export function haDaliPctFromPayload(raw) {
+  const s = String(raw || "").trim();
+  if (!s) return null;
+  if (s.charAt(0) === "{") {
+    try {
+      const j = JSON.parse(s);
+      const st = String(j.state || "").toUpperCase();
+      if (st === "OFF") return 0;
+      const b = Number(j.brightness);
+      if (Number.isFinite(b) && b > 0) {
+        return b > 100 ? Math.max(1, Math.min(100, Math.round((b * 100) / 255))) : b;
+      }
+      if (st === "ON") return 100;
+    } catch {
+      return null;
+    }
+    return null;
+  }
+  if (/^(off|false)$/i.test(s)) return 0;
+  if (/^(on|true)$/i.test(s)) return 100;
+  const n = Number(s);
+  if (!Number.isFinite(n)) return null;
+  if (n <= 0) return 0;
+  if (n > 100) return Math.max(1, Math.min(100, Math.round((n * 100) / 255)));
+  return n;
+}
+
+export function haDaliStatePayload(pct) {
+  const n = Math.max(0, Math.min(100, Number(pct) || 0));
+  if (n <= 0) return JSON.stringify({ state: "OFF" });
+  return JSON.stringify({
+    state: "ON",
+    brightness: Math.max(1, Math.round((n * 255) / 100)),
+    color_mode: "brightness",
+  });
+}
+
 /** MR6C / MR3 — шторы, не реле. MR6CU — реле, пока на шине нет Curtain. */
 export function haRawIsCurtainModule(deviceTopicKey) {
   const type = String(parseDeskDeviceKey(deviceTopicKey)?.type || "");
@@ -145,7 +196,7 @@ export function buildHaRawDiscovery(deviceTopicKey, controlId, title) {
   const dali = haDaliGroupTarget(deviceTopicKey, controlId);
   if (dali) {
     const uniqueId = haRawUniqueId(dali.mqttId, "wanted_level");
-    const stateTopic = `/devices/${dali.mqttId}/controls/wanted_level`;
+    const topics = haDaliTopics(dali.gateway, dali.channelId);
     const label = String(title || "").trim() || dali.channelId.replace(/^bus_(\d+)_g(\d+)$/i, "Шина $1 · группа $2");
     const hardware = (formatDeskShelfLabel(dali.gateway) || dali.gateway) + " · " + dali.channelId;
     return {
@@ -162,16 +213,13 @@ export function buildHaRawDiscovery(deviceTopicKey, controlId, title) {
         name: label,
         unique_id: uniqueId,
         object_id: uniqueId,
-        schema: "basic",
-        state_topic: stateTopic,
-        command_topic: `${stateTopic}/on`,
-        brightness_state_topic: stateTopic,
-        brightness_command_topic: `${stateTopic}/on`,
-        brightness_scale: 100,
-        payload_on: "100",
-        payload_off: "0",
-        on_command_type: "brightness",
-        optimistic: true,
+        schema: "json",
+        command_topic: topics.command,
+        state_topic: topics.state,
+        brightness: true,
+        color_mode: true,
+        supported_color_modes: ["brightness"],
+        optimistic: false,
         has_entity_name: true,
         device: {
           identifiers: ["flos_" + dali.gateway],

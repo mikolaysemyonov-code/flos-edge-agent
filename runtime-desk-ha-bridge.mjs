@@ -5,12 +5,16 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import mqtt from "mqtt";
-import { deskMarkingPath, readDeskMarking } from "./runtime-desk-marking.mjs";
-import { proveDaliActuate } from "./runtime-desk-dali-probe.mjs";
+import { deskMarkingPath } from "./runtime-desk-marking.mjs";
+import { parseDaliChannelId } from "./runtime-desk-dali.mjs";
+import { daliGroupLevelCommands, daliSendCommands, resolveDaliBusId } from "./runtime-desk-dali-rpc.mjs";
 import {
   buildHaRawDiscovery,
   ghostHaDiscoveryTopics,
   haDaliGroupTarget,
+  haDaliPctFromPayload,
+  haDaliStatePayload,
+  haDaliTopics,
   haRawBrightnessControl,
   haRawCanonicalControl,
   haCoverTopics,
@@ -21,6 +25,7 @@ import {
   haRawIsSlavedRelay,
   haRawUniqueId,
   parseHaCoverCommand,
+  parseHaDaliCommand,
   isForeignHaDiscovery,
   isHaRawLoadControl,
   shouldTombstoneHaDiscovery,
@@ -256,45 +261,43 @@ function publicEntities() {
   return [...state.entities.values()].sort((a, b) => a.uniqueId.localeCompare(b.uniqueId));
 }
 
-function daliPctFromHa(raw) {
-  const s = String(raw || "").trim();
-  if (!s || /^(off|false)$/i.test(s)) return 0;
-  if (/^(on|true)$/i.test(s)) return 100;
-  const n = Number(s);
-  if (!Number.isFinite(n)) return null;
-  if (n <= 0) return 0;
-  return Math.max(0, Math.min(100, n));
+async function driveHaDaliGroup(gateway, channelId, pct) {
+  const parsed = parseDaliChannelId(channelId);
+  if (parsed?.kind !== "group") return { ok: false, error: "need_group" };
+  const busId = await resolveDaliBusId(gateway, parsed.bus);
+  const cmds = daliGroupLevelCommands(parsed.group, pct);
+  await daliSendCommands(busId, cmds, 8_000);
+  return { ok: true, busId, cmds };
 }
 
-function daliMembersOf(gateway, channelId) {
-  try {
-    const ch = readDeskMarking()?.shelves?.[gateway]?.channels?.[channelId];
-    if (Array.isArray(ch?.members) && ch.members.length) return ch.members;
-  } catch {
-    /* ignore */
-  }
-  for (const s of loadShelves()) {
-    if (s?.deviceTopicKey !== gateway) continue;
-    const ch = (s.channels || []).find((c) => c && c.controlId === channelId);
-    if (Array.isArray(ch?.members) && ch.members.length) return ch.members;
-  }
-  return [];
+function publishHaDaliState(gateway, channelId, pct) {
+  const topics = haDaliTopics(gateway, channelId);
+  const body = haDaliStatePayload(pct);
+  state.values.set(topics.state, body);
+  pub(state.remote || state.local, topics.state, body, true);
+}
+
+function queueHaDaliDrive(gateway, channelId, pct) {
+  publishHaDaliState(gateway, channelId, pct);
+  void driveHaDaliGroup(gateway, channelId, pct).catch(() => {});
 }
 
 function applyHaDaliCommand(parsed, payload) {
   const t = haDaliGroupTarget(parsed?.deviceTopicKey, parsed?.controlId);
   if (!t) return false;
-  const pct = daliPctFromHa(payload);
+  const pct = haDaliPctFromPayload(payload);
   if (pct == null) return true;
-  const stateTopic = `/devices/${t.mqttId}/controls/wanted_level`;
-  state.values.set(stateTopic, String(pct));
-  pub(state.remote || state.local, stateTopic, String(pct), true);
-  void proveDaliActuate({
-    gateway: t.gateway,
-    controlId: t.channelId,
-    members: daliMembersOf(t.gateway, t.channelId),
-    pct,
-  }).catch(() => {});
+  queueHaDaliDrive(t.gateway, t.channelId, pct);
+  return true;
+}
+
+export function onDeskHaDaliCommand(topic, buf) {
+  const parsed = parseHaDaliCommand(topic);
+  if (!parsed) return false;
+  if (!state.running) return true;
+  const pct = haDaliPctFromPayload(buf ? buf.toString("utf8") : "");
+  if (pct == null) return true;
+  queueHaDaliDrive(parsed.gateway, parsed.channelId, pct);
   return true;
 }
 
@@ -442,8 +445,8 @@ function seedValuesFromShelves() {
       if (!state.values.has(t)) state.values.set(t, String(ch.lastValue));
       const dali = haDaliGroupTarget(s.deviceTopicKey, ch.controlId);
       if (dali) {
-        const mqttT = `/devices/${dali.mqttId}/controls/wanted_level`;
-        if (!state.values.has(mqttT)) state.values.set(mqttT, String(ch.lastValue));
+        const st = haDaliTopics(dali.gateway, dali.channelId).state;
+        if (!state.values.has(st)) state.values.set(st, haDaliStatePayload(Number(ch.lastValue) || 0));
       }
     }
   }
@@ -644,6 +647,8 @@ function onBrokerMessage(topic, buf) {
 }
 
 function onRemoteMessage(topic, buf) {
+  if (onDeskHaCoverCommand(topic, buf)) return;
+  if (onDeskHaDaliCommand(topic, buf)) return;
   const parsed = parseHaRawTopic(topic);
   if (!parsed || !parsed.isCommand) return;
   const text = buf ? buf.toString("utf8") : "";
@@ -773,6 +778,9 @@ function connectPair(cfg) {
     state.remoteOk = true;
     state.lastError = "";
     remote.subscribe("/devices/+/controls/+/on", { qos: 0 }, () => {});
+    remote.subscribe("/flos/cover/+/+/set", { qos: 0 }, () => {});
+    remote.subscribe("/flos/dali/+/+/set", { qos: 0 }, () => {});
+    remote.subscribe("flos/dali/+/+/set", { qos: 0 }, () => {});
     scheduleDiscover();
   });
   remote.on("offline", () => {
