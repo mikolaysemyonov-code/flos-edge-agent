@@ -99,6 +99,23 @@ export function haRawUniqueId(deviceTopicKey, controlId) {
   return `flos_ha_${deviceTopicKey}_${controlId}`.replace(/\W+/g, "_").toLowerCase();
 }
 
+export function haDaliHaTitle(name) {
+  const t = String(name || "").trim();
+  if (!t || /^свобод/i.test(t)) return "";
+  return t;
+}
+
+export function haDaliUniqueId(gateway, channelId) {
+  return `flos_dali_${gateway}_${channelId}`.replace(/\W+/g, "_").toLowerCase();
+}
+
+export function legacyHaDaliUniqueIds(gateway, channelId) {
+  const gw = String(gateway || "").trim();
+  const cid = String(channelId || "").trim();
+  const mqtt = daliMqttFromChannel(gw, cid);
+  return [...new Set([haRawUniqueId(mqtt, "wanted_level"), haRawUniqueId(gw, cid), haDaliUniqueId(gw, cid)].filter(Boolean))];
+}
+
 export function haRawIsDriveControl(controlId) {
   return /^(Curtain|Actuator)\s+\d+\s+(Open|Close)$/i.test(String(controlId || "").trim());
 }
@@ -219,9 +236,9 @@ export function buildHaRawDiscovery(deviceTopicKey, controlId, title) {
   if (!isHaRawLoadControl(deviceTopicKey, controlId)) return null;
   const dali = haDaliGroupTarget(deviceTopicKey, controlId);
   if (dali) {
-    const uniqueId = haRawUniqueId(dali.mqttId, "wanted_level");
+    const uniqueId = haDaliUniqueId(dali.gateway, dali.channelId);
     const topics = haDaliTopics(dali.gateway, dali.channelId);
-    const label = String(title || "").trim() || dali.channelId.replace(/^bus_(\d+)_g(\d+)$/i, "Шина $1 · группа $2");
+    const label = haDaliHaTitle(title) || dali.channelId.replace(/^bus_(\d+)_g(\d+)$/i, "Шина $1 · группа $2");
     const hardware = (formatDeskShelfLabel(dali.gateway) || dali.gateway) + " · " + dali.channelId;
     return {
       component: "light",

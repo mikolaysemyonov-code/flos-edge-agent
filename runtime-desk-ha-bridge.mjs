@@ -13,7 +13,10 @@ import {
   ghostHaDiscoveryTopics,
   haDaliGroupTarget,
   haDaliCommandFromPayload,
+  haDaliHaTitle,
+  haDaliUniqueId,
   haDaliStatePayload,
+  legacyHaDaliUniqueIds,
   haDaliTopics,
   haRawBrightnessControl,
   haRawCanonicalControl,
@@ -453,6 +456,11 @@ function tombstoneGhosts(deviceTopicKey, controlId, force) {
 
 function publishDiscovery(row) {
   if (!row || !state.remote) return;
+  if (row.gateway && row.channelId) {
+    for (const uid of legacyHaDaliUniqueIds(row.gateway, row.channelId)) {
+      if (uid !== row.uniqueId) tombstoneUniqueId(uid);
+    }
+  }
   if (row.kind === "drive") {
     const pair = haRawCurtainPair(row.payload?.name || row.controlId) || haRawCurtainPair(`${row.controlId} Open`);
     const family = pair?.family || "Curtain";
@@ -552,6 +560,7 @@ function allLoadRows() {
   const driveKeys = refreshDriveKeys();
   const byId = new Map();
   const add = (deviceTopicKey, controlId, title) => {
+    if (haDaliGroupTarget(deviceTopicKey, controlId) && !haDaliHaTitle(title)) return;
     if (haRawIsSlavedRelay(controlId, driveKeys.has(deviceTopicKey), deviceTopicKey)) return;
     const row = buildHaRawDiscovery(deviceTopicKey, controlId, title);
     if (!row) return;
@@ -890,6 +899,37 @@ function connectPair(cfg) {
   });
   remote.on("message", onRemoteMessage);
   startHaDaliSidekick(cfg.host);
+}
+
+export function republishNamedDaliHa() {
+  if (!state.running) startDeskHaBridge({ host: "127.0.0.1", port: 1883 });
+  const gws = new Set();
+  for (const s of loadShelves()) {
+    const gw = String(s?.deviceTopicKey || "");
+    if (/^wb-dali_/i.test(gw)) gws.add(gw);
+  }
+  for (const gw of gws) {
+    for (let bus = 1; bus <= 3; bus += 1) {
+      for (let g = 0; g <= 15; g += 1) {
+        const cid = `bus_${bus}_g${g}`;
+        for (const uid of legacyHaDaliUniqueIds(gw, cid)) tombstoneUniqueId(uid);
+        tombstoneUniqueId(haDaliUniqueId(gw, cid));
+      }
+    }
+  }
+  const names = [];
+  for (const s of loadShelves()) {
+    for (const ch of Array.isArray(s?.channels) ? s.channels : []) {
+      const title = haDaliHaTitle(ch?.name || ch?.title);
+      if (!title) continue;
+      const row = buildHaRawDiscovery(s.deviceTopicKey, ch.controlId, title);
+      if (!row?.gateway) continue;
+      publishDiscovery(row);
+      echoRetained(row);
+      names.push(title);
+    }
+  }
+  return { ok: true, daliNamed: names.length, names };
 }
 
 export function startDeskHaBridge(input) {

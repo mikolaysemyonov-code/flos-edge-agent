@@ -4830,12 +4830,13 @@
         fetch("/runtime/desk-ha", {
           method: "POST",
           headers: { "content-type": "application/json" },
-          body: JSON.stringify({ host: "127.0.0.1", port: 1883, enabled: true }),
+          body: JSON.stringify({ host: "127.0.0.1", port: 1883, enabled: true, daliNamed: true }),
         })
           .then((r) => r.json())
           .then((j) => {
+            const n = Number(j && j.daliNamed);
             daliProbeHint = j && j.ok !== false
-              ? ("HA " + (j.host || "127.0.0.1") + " · линий " + (j.discovered || 0) + (j.lastError ? " · " + j.lastError : ""))
+              ? ("HA группы: " + (Number.isFinite(n) ? n : 0) + ((j.names && j.names.length) ? " · " + j.names.join(", ") : ""))
               : ("HA не открылся: " + ((j && j.error) || "ошибка"));
           })
           .catch(() => { daliProbeHint = "Агент не ответил HA"; })

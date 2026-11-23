@@ -41,6 +41,7 @@ import { deskHaLights } from "./runtime-desk-ha-lights.mjs";
 import {
   deskHaStatus,
   disableDeskHaBridge,
+  republishNamedDaliHa,
   startDeskHaBridge,
   syncHaDaliState,
 } from "./runtime-desk-ha-bridge.mjs";
@@ -836,6 +837,11 @@ export async function handleRuntimeDeskHa(req, res) {
   }
   if (body.enabled === false || body.stop === true) {
     jsonEnd(res, 200, disableDeskHaBridge());
+    return;
+  }
+  if (body.daliNamed === true) {
+    if (!deskHaStatus().running) startDeskHaBridge(body);
+    jsonEnd(res, 200, { ...deskHaStatus(), ...republishNamedDaliHa() });
     return;
   }
   const out = startDeskHaBridge(body);
