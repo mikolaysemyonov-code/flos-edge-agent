@@ -282,6 +282,15 @@ function queueHaDaliDrive(gateway, channelId, pct) {
   void driveHaDaliGroup(gateway, channelId, pct).catch(() => {});
 }
 
+/** Стол задимировал группу — HA не должна висеть «Неизвестно». */
+export function syncHaDaliState(gateway, channelId, pct) {
+  if (!state.running) return false;
+  const parsed = parseDaliChannelId(channelId);
+  if (parsed?.kind !== "group") return false;
+  publishHaDaliState(gateway, parsed.channelId, pct);
+  return true;
+}
+
 function applyHaDaliCommand(parsed, payload) {
   const t = haDaliGroupTarget(parsed?.deviceTopicKey, parsed?.controlId);
   if (!t) return false;
@@ -423,11 +432,13 @@ function offerDiscovery(parsed) {
 }
 
 function echoRetained(row) {
-  if (hostIsThisController(readDeskHaConfig().host)) return;
   const client = state.remote || state.local;
   if (!client || !row?.payload) return;
+  const flos = /^\/flos\//.test(String(row.payload.state_topic || ""));
+  if (hostIsThisController(readDeskHaConfig().host) && !flos) return;
   const st = state.values.get(row.payload.state_topic);
   if (st != null && st !== "") pub(client, row.payload.state_topic, st, true);
+  else if (flos && row.kind === "dim") pub(client, row.payload.state_topic, haDaliStatePayload(0), true);
   else if (row.kind !== "dim" && row.kind !== "drive") pub(client, row.payload.state_topic, "0", true);
   const bt = row.payload.brightness_state_topic;
   if (bt) {

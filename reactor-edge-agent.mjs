@@ -36,7 +36,7 @@ import {
 } from "./wb-rules-journal-incidents.mjs";
 
 /** Одна строка в heartbeat и snapshot — иначе UI врёт версией. */
-const EDGE_AGENT_VERSION = "edge-pilot-v2.lan-desk-339";
+const EDGE_AGENT_VERSION = "edge-pilot-v2.lan-desk-340";
 
 /** Prefer `FLOS_*` (FL OS); fall back to legacy `REACTOR_*` for existing deployments. */
 function env(primary, legacy) {
@@ -1131,6 +1131,12 @@ function isResyncDumpReady() {
 }
 
 const MQTT_MIRROR_BUS_TOPICS = ["/devices/#", "devices/#", "/devices/+/controls/+", "devices/+/controls/+"];
+const MQTT_MIRROR_HA_CMD_TOPICS = [
+  "flos/cover/#",
+  "/flos/cover/#",
+  "flos/dali/#",
+  "/flos/dali/#",
+];
 
 function subscribeMqttMirrorTopics(client, url) {
   client.subscribe(MQTT_MIRROR_BUS_TOPICS, { qos: 0 }, (err) => {
@@ -1143,7 +1149,7 @@ function subscribeMqttMirrorTopics(client, url) {
     mqttMirrorState.lastError = null;
     mqttMirrorState.subscribedAtMs = Date.now();
     if (url) console.log(`[flos-edge-agent] mqtt bus mirror connected ${url}`);
-    client.subscribe(["flos/cover/#", "/flos/cover/#"], { qos: 0 }, () => {});
+    client.subscribe(MQTT_MIRROR_HA_CMD_TOPICS, { qos: 0 }, () => {});
   });
 }
 
@@ -1168,7 +1174,7 @@ async function resyncMqttMirrorFromBroker(waitMs) {
         clearMqttMirrorEntries();
         mqttMirrorState.subscribedAtMs = Date.now();
         mqttMirrorState.acceptIngest = true;
-        if (!err) client.subscribe(["flos/cover/#", "/flos/cover/#"], { qos: 0 }, () => {});
+        if (!err) client.subscribe(MQTT_MIRROR_HA_CMD_TOPICS, { qos: 0 }, () => {});
         finish(!err);
       });
     });

@@ -42,6 +42,7 @@ import {
   deskHaStatus,
   disableDeskHaBridge,
   startDeskHaBridge,
+  syncHaDaliState,
 } from "./runtime-desk-ha-bridge.mjs";
 import { assessDeskCanPour, buildDeskPourPackage } from "./runtime-desk-pour.mjs";
 import {
@@ -942,6 +943,10 @@ export async function handleRuntimeDeskActuate(req, res) {
       line: daliActuateProofLine(proof),
       ok: Boolean(out.ok || proof.ok),
     };
+    if (out.ok && parsed.kind === "group") {
+      const n = Number.isFinite(pct) ? pct : 100;
+      syncHaDaliState(body.deviceTopicKey, parsed.channelId, n);
+    }
   }
   if (out.ok && body.deviceTopicKey && body.controlId) {
     const desired = String(body.desired || out.desired || "").toLowerCase();
