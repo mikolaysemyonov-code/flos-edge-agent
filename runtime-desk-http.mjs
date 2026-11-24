@@ -79,6 +79,14 @@ import {
   verifyDaliGroupOnBus,
 } from "./runtime-desk-dali-probe.mjs";
 import {
+  deleteDeskEclerZone,
+  driveDeskEclerCommand,
+  probeDeskEclerZone,
+  readDeskEclerConfig,
+  upsertDeskEclerZone,
+} from "./runtime-desk-ecler-rpc.mjs";
+import { eclerShelfRows } from "./runtime-desk-ecler.mjs";
+import {
   bindDeskKeyPlanItem,
   captureDeskKeyPlanItem,
   captureDeskKeyDraft,
@@ -846,6 +854,42 @@ export async function handleRuntimeDeskHa(req, res) {
   }
   const out = startDeskHaBridge(body);
   jsonEnd(res, out.ok ? 200 : 400, out);
+}
+
+export async function handleRuntimeDeskEcler(req, res) {
+  const method = (req.method ?? "GET").toUpperCase();
+  if (method === "GET") {
+    const cfg = readDeskEclerConfig();
+    jsonEnd(res, 200, { ok: true, ...cfg, shelves: eclerShelfRows(cfg.zones) });
+    return;
+  }
+  if (method !== "POST") {
+    jsonEnd(res, 405, { ok: false, error: "method" });
+    return;
+  }
+  const chunks = [];
+  for await (const c of req) chunks.push(c);
+  let body = {};
+  try {
+    const raw = Buffer.concat(chunks).toString("utf8");
+    if (raw.trim()) body = JSON.parse(raw);
+  } catch {
+    jsonEnd(res, 400, { ok: false, error: "invalid_json" });
+    return;
+  }
+  if (body.delete === true || body.remove === true) {
+    jsonEnd(res, 200, deleteDeskEclerZone(body.id || body.zoneId));
+    return;
+  }
+  if (body.probe === true) {
+    jsonEnd(res, 200, await probeDeskEclerZone(body));
+    return;
+  }
+  if (body.drive === true) {
+    jsonEnd(res, 200, await driveDeskEclerCommand(body.zoneId || body.id, body.payload || body));
+    return;
+  }
+  jsonEnd(res, 200, upsertDeskEclerZone(body));
 }
 
 export function handleRuntimeDeskHaLights(_req, res) {

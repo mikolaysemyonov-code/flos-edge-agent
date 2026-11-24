@@ -9,6 +9,7 @@ import { emitDeskCron, isDeskCronSolution } from "./runtime-desk-pour-cron.mjs";
 import { emitDeskLight, isDeskLightSolution } from "./runtime-desk-pour-light.mjs";
 import { emitDeskScene, isDeskSceneSolution } from "./runtime-desk-pour-scenes.mjs";
 import { emitDeskVavHelper, emitDeskVavSolution, isDeskVavSolution } from "./runtime-desk-pour-vav.mjs";
+import { emitDeskAudio, isDeskAudioSolution } from "./runtime-desk-pour-audio.mjs";
 
 const DESK_PREFIX = "desk_sol_";
 const SUPPORTED = new Set([
@@ -69,6 +70,7 @@ const RULE_SUFFIXES = [
   "_set",
   "_sec",
   "_on",
+  "_audio",
 ];
 
 /** desk_sol_<solutionId>_toggle → solutionId. Без суффикса — id целиком (дим). */
@@ -274,7 +276,8 @@ export function supportedDeskSolution(sol) {
     isDeskCronSolution(row) ||
     isDeskLightSolution(row) ||
     isDeskSceneSolution(row) ||
-    isDeskVavSolution(row)
+    isDeskVavSolution(row) ||
+    isDeskAudioSolution(row)
   );
 }
 
@@ -287,6 +290,7 @@ function emitOne(sol) {
   if (isDeskCronSolution(row)) return emitDeskCron(row);
   if (isDeskLightSolution(row)) return emitDeskLight(row);
   if (isDeskSceneSolution(row)) return emitDeskScene(row);
+  if (isDeskAudioSolution(row)) return emitDeskAudio(row);
   if (sid === "light_all_off") return emitAllOff(row);
   if (sid === "master_power_off_restore") return emitMasterOffRestore(row);
   if (sid === "custom_control_task") return emitCustomSet(row);

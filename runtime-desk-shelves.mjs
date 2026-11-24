@@ -28,6 +28,8 @@ const SKU = {
   mcm8: "WB-MCM8",
   mcm16: "MCM16",
   mao4: "WB-MAO4",
+  "do-ssr-8": "WB-DO-SSR-8",
+  dossr8: "WB-DO-SSR-8",
   map3ev: "WB-MAP3EV",
   "mwac-v2": "WB-MWAC-V2",
   mwac: "MWAC",
@@ -91,7 +93,7 @@ function controlIdOf(entry) {
 }
 
 function isRelayFamily(type) {
-  return /^(mr6c|mr6cu|mr6cv3|mr6c-v3|mr12|mr6lv|mrps6|mrm|mr3|mrwl|mrwm)/i.test(String(type ?? ""));
+  return /^(mr6c|mr6cu|mr6cv3|mr6c-v3|mr12|mr6lv|mrps6|mrm|mr3|mrwl|mrwm|do-ssr-8|dossr8)/i.test(String(type ?? ""));
 }
 
 function isLedFamily(type) {
@@ -154,6 +156,8 @@ const OUTPUT_BANK = {
   mrm2: 2,
   mrwm: 2,
   mrwm2: 2,
+  "do-ssr-8": 8,
+  dossr8: 8,
 };
 
 export function expectedDeskOutputIds(deviceTopicKey) {
@@ -162,6 +166,7 @@ export function expectedDeskOutputIds(deviceTopicKey) {
   let n = parsed ? OUTPUT_BANK[parsed.type] || 0 : 0;
   if (!n && (isLedFamily(parsed?.type) || /led|ampled/i.test(raw))) n = 4;
   if (!n && (parsed?.type === "mdm3" || /mdm3/i.test(raw))) n = 3;
+  if (!n && /do-ssr|dossr|ssr-8/i.test(parsed?.type || raw)) n = 8;
   if (!n && (isRelayFamily(parsed?.type) || /mr6|mrps6|mrm|mrwl|mrwm/i.test(raw))) {
     n = /mr12/i.test(parsed?.type || raw) ? 12 : /mr3/i.test(parsed?.type || raw) ? 3 : 6;
   }

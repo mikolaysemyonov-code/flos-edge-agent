@@ -176,7 +176,7 @@ want_pinned_github() {
 }
 
 field_dockerfile_ok() {
-  [[ -s "$1" ]] && grep -qE '^COPY runtime-rules-inventory\.mjs ' "$1" && grep -qE '^COPY desk\.html ' "$1" && grep -qE '^COPY desk\.css ' "$1" && grep -qE '^COPY desk\.js ' "$1" && grep -qE '^COPY runtime-desk-shelves\.mjs ' "$1" && grep -qE '^COPY runtime-desk-dali\.mjs ' "$1" && grep -qE '^COPY runtime-desk-dali-rpc\.mjs ' "$1" && grep -qE '^COPY runtime-desk-marking\.mjs ' "$1" && grep -qE '^COPY runtime-desk-groups\.mjs ' "$1" && grep -qE '^COPY runtime-desk-solutions\.mjs ' "$1" && grep -qE '^COPY runtime-desk-rules-marks\.mjs ' "$1" && grep -qE '^COPY runtime-desk-releases\.mjs ' "$1" && grep -qE '^COPY runtime-desk-pour\.mjs ' "$1" && grep -qE '^COPY runtime-desk-pour-core\.mjs ' "$1" && grep -qE '^COPY runtime-desk-pour-user\.mjs ' "$1" && grep -qE '^COPY runtime-desk-pour-climate\.mjs ' "$1" && grep -qE '^COPY runtime-desk-pour-light\.mjs ' "$1" && grep -qE '^COPY runtime-desk-pour-scenes\.mjs ' "$1" && grep -qE '^COPY runtime-desk-pour-cron\.mjs ' "$1" && grep -qE '^COPY runtime-desk-actuate\.mjs ' "$1" && grep -qE '^COPY runtime-desk-key-scan\.mjs ' "$1" && grep -qE '^COPY runtime-desk-line-beacon\.mjs ' "$1" && grep -qE '^COPY runtime-desk-health\.mjs ' "$1" && grep -qE '^COPY runtime-desk-audit\.mjs ' "$1" && grep -qE '^COPY runtime-desk-pour-vav\.mjs ' "$1" && grep -qE '^COPY runtime-desk-field-cert\.mjs ' "$1" && grep -qE '^COPY runtime-desk-pour-stale\.mjs ' "$1" && grep -qE '^COPY runtime-desk-pour-mqtt\.mjs ' "$1" && grep -qE '^COPY agent-bundle-files\.txt ' "$1"
+  [[ -s "$1" ]] && grep -qE '^COPY runtime-rules-inventory\.mjs ' "$1" && grep -qE '^COPY desk\.html ' "$1" && grep -qE '^COPY desk\.css ' "$1" && grep -qE '^COPY desk\.js ' "$1" && grep -qE '^COPY runtime-desk-shelves\.mjs ' "$1" && grep -qE '^COPY runtime-desk-dali\.mjs ' "$1" && grep -qE '^COPY runtime-desk-dali-rpc\.mjs ' "$1" && grep -qE '^COPY runtime-desk-ecler\.mjs ' "$1" && grep -qE '^COPY runtime-desk-ecler-rpc\.mjs ' "$1" && grep -qE '^COPY runtime-desk-pour-audio\.mjs ' "$1" && grep -qE '^COPY runtime-desk-marking\.mjs ' "$1" && grep -qE '^COPY runtime-desk-groups\.mjs ' "$1" && grep -qE '^COPY runtime-desk-solutions\.mjs ' "$1" && grep -qE '^COPY runtime-desk-rules-marks\.mjs ' "$1" && grep -qE '^COPY runtime-desk-releases\.mjs ' "$1" && grep -qE '^COPY runtime-desk-pour\.mjs ' "$1" && grep -qE '^COPY runtime-desk-pour-core\.mjs ' "$1" && grep -qE '^COPY runtime-desk-pour-user\.mjs ' "$1" && grep -qE '^COPY runtime-desk-pour-climate\.mjs ' "$1" && grep -qE '^COPY runtime-desk-pour-light\.mjs ' "$1" && grep -qE '^COPY runtime-desk-pour-scenes\.mjs ' "$1" && grep -qE '^COPY runtime-desk-pour-cron\.mjs ' "$1" && grep -qE '^COPY runtime-desk-actuate\.mjs ' "$1" && grep -qE '^COPY runtime-desk-key-scan\.mjs ' "$1" && grep -qE '^COPY runtime-desk-line-beacon\.mjs ' "$1" && grep -qE '^COPY runtime-desk-health\.mjs ' "$1" && grep -qE '^COPY runtime-desk-audit\.mjs ' "$1" && grep -qE '^COPY runtime-desk-pour-vav\.mjs ' "$1" && grep -qE '^COPY runtime-desk-field-cert\.mjs ' "$1" && grep -qE '^COPY runtime-desk-pour-stale\.mjs ' "$1" && grep -qE '^COPY runtime-desk-pour-mqtt\.mjs ' "$1" && grep -qE '^COPY runtime-desk-ha-raw\.mjs ' "$1" && grep -qE '^COPY runtime-desk-ha-bridge\.mjs ' "$1" && grep -qE '^COPY agent-bundle-files\.txt ' "$1"
 }
 
 # Список файлов — agent-bundle-files.txt, не вторая копия в этом скрипте.
@@ -232,7 +232,7 @@ ensure_agent_files() {
 # Не поднимать Restarting-контейнер, если GitHub/tip отдал JS без модуля в образе.
 assert_field_image_complete() {
   local missing=0
-  for f in runtime-rules-inventory.mjs wb-rules-journal-incidents.mjs runtime-control-plane-http.mjs runtime-desk-http.mjs runtime-desk-shelves.mjs runtime-desk-dali.mjs runtime-desk-dali-rpc.mjs runtime-desk-marking.mjs runtime-desk-groups.mjs runtime-desk-solutions.mjs runtime-desk-rules-marks.mjs runtime-desk-releases.mjs runtime-desk-pour.mjs runtime-desk-pour-core.mjs runtime-desk-pour-user.mjs runtime-desk-pour-climate.mjs runtime-desk-pour-light.mjs runtime-desk-pour-scenes.mjs runtime-desk-pour-cron.mjs runtime-desk-actuate.mjs runtime-desk-key-scan.mjs runtime-desk-passport.mjs runtime-desk-line-beacon.mjs runtime-desk-health.mjs runtime-desk-audit.mjs runtime-desk-pour-vav.mjs runtime-desk-field-cert.mjs runtime-desk-pour-stale.mjs runtime-desk-pour-mqtt.mjs desk.html desk.css desk.js reactor-edge-agent.mjs Dockerfile agent-bundle-files.txt; do
+  for f in runtime-rules-inventory.mjs wb-rules-journal-incidents.mjs runtime-control-plane-http.mjs runtime-desk-http.mjs runtime-desk-shelves.mjs runtime-desk-dali.mjs runtime-desk-dali-rpc.mjs runtime-desk-ecler.mjs runtime-desk-ecler-rpc.mjs runtime-desk-pour-audio.mjs runtime-desk-ha-raw.mjs runtime-desk-ha-bridge.mjs runtime-desk-marking.mjs runtime-desk-groups.mjs runtime-desk-solutions.mjs runtime-desk-rules-marks.mjs runtime-desk-releases.mjs runtime-desk-pour.mjs runtime-desk-pour-core.mjs runtime-desk-pour-user.mjs runtime-desk-pour-climate.mjs runtime-desk-pour-light.mjs runtime-desk-pour-scenes.mjs runtime-desk-pour-cron.mjs runtime-desk-actuate.mjs runtime-desk-key-scan.mjs runtime-desk-passport.mjs runtime-desk-line-beacon.mjs runtime-desk-health.mjs runtime-desk-audit.mjs runtime-desk-pour-vav.mjs runtime-desk-field-cert.mjs runtime-desk-pour-stale.mjs runtime-desk-pour-mqtt.mjs desk.html desk.css desk.js reactor-edge-agent.mjs Dockerfile agent-bundle-files.txt; do
     if [[ ! -s "$AGENT_DIR/$f" ]]; then
       echo "[flos-edge-agent] ERROR: нет $AGENT_DIR/$f — не собираю дырявый образ." >&2
       missing=1
@@ -286,12 +286,33 @@ export FLOS_RUNTIME_HTTP_AUTH_TOKEN="$AUTH_TOKEN"
 export FLOS_CONTROLLER_MQTT_URL="mqtt://127.0.0.1:1883"
 export FLOS_STRICT_SIGNATURES="false"
 
+repair_docker_buildkit() {
+  local root
+  root="$(docker info -f '{{.DockerRootDir}}' 2>/dev/null || true)"
+  [[ -z "$root" ]] && root="/var/lib/docker"
+  local d
+  for d in "$root/buildkit" /mnt/data/docker/lib/buildkit /var/lib/docker/buildkit; do
+    if [[ -d "$d" ]]; then
+      echo "[flos-edge-agent] BuildKit cache сношу ($d) — типичный panic cache.db" >&2
+      mv "$d" "$d.bak.$(date +%s)" 2>/dev/null || rm -rf "$d" || true
+    fi
+  done
+}
+
 echo "[flos-edge-agent] docker compose up --build…"
 cd "$DATA_DIR"
 set +e
 docker compose --env-file "$DATA_DIR/.env" -f "$DATA_DIR/docker-compose.yml" up -d --build
 COMPOSE_RC=$?
 set -e
+if [[ "$COMPOSE_RC" != "0" ]]; then
+  echo "[flos-edge-agent] compose --build exit=$COMPOSE_RC — пробую снести BuildKit cache и ещё раз" >&2
+  repair_docker_buildkit
+  set +e
+  docker compose --env-file "$DATA_DIR/.env" -f "$DATA_DIR/docker-compose.yml" up -d --build
+  COMPOSE_RC=$?
+  set -e
+fi
 if [[ "$COMPOSE_RC" != "0" ]]; then
   # Не оставляем старый образ «как будто обновились» — иначе на щите залипает lan-desk-164.
   echo "[flos-edge-agent] ERROR: compose --build exit=$COMPOSE_RC — старый контейнер не трогаю. Смотрите лог выше." >&2
@@ -304,13 +325,17 @@ if ! docker ps --filter name=flos-edge-agent --format '{{.Names}}' | grep -q '^f
   docker compose --env-file "$DATA_DIR/.env" -f "$DATA_DIR/docker-compose.yml" up -d || true
 fi
 
-echo "[flos-edge-agent] проверяю облако с контроллера…"
-if curl -4 -fsS --max-time 20 -o /dev/null "$CLOUD_URL/" \
-  || curl -fsS --max-time 20 -o /dev/null "$CLOUD_URL/"; then
-  echo "[flos-edge-agent] облако доступно: $CLOUD_URL"
+if [[ "$UPGRADE_ONLY" == "true" ]]; then
+  echo "[flos-edge-agent] --upgrade-only: облако с щита не пингую"
 else
-  echo "[flos-edge-agent] WARN: $CLOUD_URL недоступен с щита (DNS/firewall/Tailscale/IPv6). Enroll не пройдёт." >&2
-  echo "[flos-edge-agent] с щита: curl -4 -I --max-time 15 $CLOUD_URL/   и   curl -6 -I --max-time 8 $CLOUD_URL/" >&2
+  echo "[flos-edge-agent] проверяю облако с контроллера…"
+  if timeout 12 curl -4 -fsS --connect-timeout 5 --max-time 10 -o /dev/null "$CLOUD_URL/" \
+    || timeout 12 curl -fsS --connect-timeout 5 --max-time 10 -o /dev/null "$CLOUD_URL/"; then
+    echo "[flos-edge-agent] облако доступно: $CLOUD_URL"
+  else
+    echo "[flos-edge-agent] WARN: $CLOUD_URL недоступен с щита (DNS/firewall/Tailscale/IPv6). Enroll не пройдёт." >&2
+    echo "[flos-edge-agent] с щита: curl -4 -I --max-time 15 $CLOUD_URL/   и   curl -6 -I --max-time 8 $CLOUD_URL/" >&2
+  fi
 fi
 
 echo "[flos-edge-agent] жду http://127.0.0.1:18081/runtime/health…"

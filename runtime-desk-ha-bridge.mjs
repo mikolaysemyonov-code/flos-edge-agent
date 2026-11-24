@@ -16,6 +16,9 @@ import {
   haDaliHaTitle,
   haDaliUniqueId,
   haDaliStatePayload,
+  haDroppedDaliUniqueIds,
+  haFanoutTopic,
+  haNamedDaliFromShelves,
   legacyHaDaliUniqueIds,
   haDaliTopics,
   haRawBrightnessControl,
@@ -177,6 +180,7 @@ const state = {
   sidekick: null,
   sidekickOk: false,
   lastTc: new Map(),
+  liveTimer: null,
 };
 
 function publicStatus() {
@@ -317,6 +321,7 @@ function queueHaDaliDrive(gateway, channelId, pct) {
   publishHaDaliState(gateway, channelId, pct);
   void driveHaDaliGroup(gateway, channelId, pct).then((r) => {
     if (r && r.ok === false) state.lastError = String(r.error || "dali_dapc");
+    else publishHaDaliState(gateway, channelId, pct);
   }).catch((e) => {
     state.lastError = String(e?.message || e || "dali_dapc");
   });
@@ -335,6 +340,7 @@ function queueHaDaliTemp(gateway, channelId, mired) {
   publishHaDaliState(gateway, channelId, pct, mired);
   void driveHaDaliTemp(gateway, channelId, mired).then((r) => {
     if (r && r.ok === false) state.lastError = String(r.error || "dali_tc");
+    else publishHaDaliState(gateway, channelId, pct, mired);
   }).catch((e) => {
     state.lastError = String(e?.message || e || "dali_tc");
   });
@@ -419,19 +425,34 @@ function rememberEntity(row) {
     kind: row.kind,
     deviceTopicKey: row.deviceTopicKey,
     controlId: row.controlId,
+    gateway: row.gateway || "",
+    channelId: row.channelId || "",
     name: row.payload?.name || row.controlId,
     hardware: row.hardware || row.payload?.name || row.uniqueId,
     named: row.named === true,
   });
 }
 
+function publishClient(client, topic, payload, retain) {
+  if (!client || typeof client.publish !== "function") return;
+  try {
+    client.publish(topic, payload, { qos: 1, retain: retain === true }, () => {});
+  } catch {
+    /* ignore */
+  }
+}
+
 function pub(client, topic, payload, retain) {
+  const t = String(topic || "");
   if (hostIsThisController(readDeskHaConfig().host)) {
     mirrorPublish(topic, payload, retain);
+    if (haFanoutTopic(t) && state.sidekickOk) publishClient(state.sidekick, t, payload, retain);
     return;
   }
-  if (!client) return;
-  client.publish(topic, payload, { qos: 1, retain: retain === true }, () => {});
+  publishClient(client, t, payload, retain);
+  if (haFanoutTopic(t) && state.sidekick && state.sidekick !== client && state.sidekickOk) {
+    publishClient(state.sidekick, t, payload, retain);
+  }
 }
 
 function legacyHaUniqueIds(deviceTopicKey, controlId) {
@@ -607,16 +628,18 @@ function allLoadRows() {
 }
 
 function tombstoneDroppedDali() {
+  const gws = new Set();
   for (const s of loadShelves()) {
     const gw = String(s?.deviceTopicKey || "");
-    if (!/^wb-dali_/i.test(gw)) continue;
+    if (/^wb-dali_/i.test(gw)) gws.add(gw);
+  }
+  for (const uid of haDroppedDaliUniqueIds([...gws], state.keepIds)) tombstoneUniqueId(uid);
+  for (const gw of gws) {
     for (let bus = 1; bus <= 3; bus += 1) {
       for (let g = 0; g <= 15; g += 1) {
         const cid = `bus_${bus}_g${g}`;
-        const uid = haDaliUniqueId(gw, cid);
-        if (state.keepIds.has(uid)) continue;
+        if (state.keepIds.has(haDaliUniqueId(gw, cid))) continue;
         for (const id of legacyHaDaliUniqueIds(gw, cid)) tombstoneUniqueId(id);
-        tombstoneUniqueId(uid);
       }
     }
   }
@@ -766,11 +789,32 @@ function endClient(c) {
   }
 }
 
+function pulseNamedDaliState() {
+  for (const e of state.entities.values()) {
+    if (!e.gateway || !e.channelId) continue;
+    const st = haDaliTopics(e.gateway, e.channelId).state;
+    const body = state.values.get(st);
+    if (body == null || body === "") continue;
+    pub(state.remote || state.local, st, body, true);
+  }
+}
+
+function startDaliStatePulse() {
+  if (state.liveTimer) clearInterval(state.liveTimer);
+  state.liveTimer = setInterval(() => {
+    if (state.running) pulseNamedDaliState();
+  }, 15_000);
+}
+
 export function stopDeskHaBridge() {
   state.running = false;
   state.localOk = false;
   state.remoteOk = false;
   state.sidekickOk = false;
+  if (state.liveTimer) {
+    clearInterval(state.liveTimer);
+    state.liveTimer = null;
+  }
   const remote = state.remote;
   const local = state.local;
   if (remote && remote !== local) endClient(remote);
@@ -797,6 +841,11 @@ function startHaDaliSidekick(alreadyHost) {
     state.sidekickOk = true;
     c.subscribe("/flos/dali/+/+/set", { qos: 0 }, () => {});
     c.subscribe("flos/dali/+/+/set", { qos: 0 }, () => {});
+    for (const row of haNamedDaliFromShelves(loadShelves())) {
+      publishDiscovery(row);
+      echoRetained(row);
+    }
+    pulseNamedDaliState();
   });
   c.on("offline", () => {
     state.sidekickOk = false;
@@ -849,6 +898,7 @@ function connectLocalViaMirror() {
   };
   wait(0);
   startHaDaliSidekick();
+  startDaliStatePulse();
 }
 
 function connectPair(cfg) {
@@ -922,6 +972,7 @@ function connectPair(cfg) {
   });
   remote.on("message", onRemoteMessage);
   startHaDaliSidekick(cfg.host);
+  startDaliStatePulse();
 }
 
 export function republishNamedDaliHa() {
@@ -941,16 +992,10 @@ export function republishNamedDaliHa() {
     }
   }
   const names = [];
-  for (const s of loadShelves()) {
-    for (const ch of Array.isArray(s?.channels) ? s.channels : []) {
-      const title = haDaliHaTitle(ch?.name || ch?.title);
-      if (!title) continue;
-      const row = buildHaRawDiscovery(s.deviceTopicKey, ch.controlId, title);
-      if (!row?.gateway) continue;
-      publishDiscovery(row);
-      echoRetained(row);
-      names.push(title);
-    }
+  for (const row of haNamedDaliFromShelves(loadShelves())) {
+    publishDiscovery(row);
+    echoRetained(row);
+    names.push(String(row.payload?.name || ""));
   }
   return { ok: true, daliNamed: names.length, names };
 }

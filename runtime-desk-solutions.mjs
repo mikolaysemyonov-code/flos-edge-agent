@@ -11,8 +11,20 @@ function isPourLoad(controlId) {
   const c = String(controlId ?? "").trim();
   if (/^(On|Off|Toggle) K\d+$/i.test(c)) return false;
   if (/^Input /i.test(c)) return false;
+  if (/^player$/i.test(c)) return true;
   return isLoadControl(c);
 }
+
+const VALVE_POLARITY = {
+  key: "polarity",
+  kind: "select",
+  label: "Клапан / реле",
+  def: "nc",
+  options: [
+    { v: "nc", t: "NC: без питания закрыт · ON греет (реле, SSR, электропол)" },
+    { v: "no", t: "NO: без питания открыт · ON закрывает (греет при OFF)" },
+  ],
+};
 
 const PRESS_FIELD = {
   key: "press",
@@ -177,13 +189,26 @@ export const DESK_SOLUTION_CARDS = [
   M("ac_window_off", "Климат", "Окно открыто — стоп кондея", "Если окно открыто → кондей OFF. Сам обратно не включает.", {
     loadKind: "ac",
   }),
-  M("thermostat_simple_vd", "Климат", "Термостат на щите", "Желаемая ± гистерезис: вкл при thr−h, выкл при thr+h.", {
+  M("thermostat_simple_vd", "Климат", "Термостат на щите", "Желаемая ± гистерезис: вкл при thr−h, выкл при thr+h. Реле/SSR + NC/NO.", {
     loadKind: "heat",
     fields: [
       { key: "thr", label: "Желаемая температура", unit: "°C", def: 25 },
       { key: "hyst", label: "Гистерезис ±", unit: "°C", def: 1 },
+      VALVE_POLARITY,
       { key: "minOn", label: "Мин. работа", unit: "сек", def: 60 },
       { key: "minOff", label: "Мин. пауза", unit: "сек", def: 60 },
+      { key: "staleSec", label: "Нет данных — стоп через", unit: "сек", def: 900 },
+    ],
+  }),
+  M("radiator_comfort", "Климат", "Радиатор / сервопривод", "Комнатная температура → реле или DO-SSR-8. NC греет при ON, NO — при OFF.", {
+    loadKind: "heat",
+    fields: [
+      { key: "thr", label: "Желаемая температура", unit: "°C", def: 22 },
+      { key: "hyst", label: "Гистерезис ±", unit: "°C", def: 1 },
+      VALVE_POLARITY,
+      { key: "minOn", label: "Мин. работа", unit: "сек", def: 120 },
+      { key: "minOff", label: "Мин. пауза", unit: "сек", def: 120 },
+      { key: "staleSec", label: "Нет данных — стоп через", unit: "сек", def: 900 },
     ],
   }),
   C("rollers_evening", "Шторы", "Роллеты: вечер", "В указанное время закрывает роллеты / шторы.", {
@@ -310,28 +335,59 @@ export const DESK_SOLUTION_CARDS = [
       { key: "hyst", label: "Гистерезис ±", unit: "°C", def: 1 },
       { key: "minOn", label: "Мин. работа", unit: "сек", def: 120 },
       { key: "minOff", label: "Мин. пауза", unit: "сек", def: 120 },
+      VALVE_POLARITY,
       { key: "staleSec", label: "Нет данных — стоп через", unit: "сек", def: 900 },
     ],
   }),
-  M("warm_floor_electric_comfort", "Климат", "Тёплый пол электрический", "Вкл при thr−h, выкл при thr+h (22±1 → вкл ≤21, выкл ≥23). Нет данных → OFF.", {
+  M("warm_floor_electric_comfort", "Климат", "Тёплый пол электрический", "Вкл при thr−h, выкл при thr+h (22±1 → вкл ≤21, выкл ≥23). Реле/SSR. Нет данных → OFF.", {
     loadKind: "floor",
     fields: [
       { key: "thr", label: "Желаемая температура", unit: "°C", def: 22 },
       { key: "hyst", label: "Гистерезис ±", unit: "°C", def: 1 },
       { key: "minOn", label: "Мин. работа", unit: "сек", def: 120 },
       { key: "minOff", label: "Мин. пауза", unit: "сек", def: 120 },
+      VALVE_POLARITY,
       { key: "staleSec", label: "Нет данных — стоп через", unit: "сек", def: 900 },
     ],
   }),
-  M("warm_floor_water_comfort", "Климат", "Тёплый пол водяной", "Вкл при thr−h, выкл при thr+h. Нет данных → OFF.", {
+  M("warm_floor_water_comfort", "Климат", "Тёплый пол водяной", "Вкл при thr−h, выкл при thr+h. NC/NO на коллекторе. Нет данных → OFF.", {
     loadKind: "floor",
     fields: [
       { key: "thr", label: "Желаемая температура", unit: "°C", def: 22 },
       { key: "hyst", label: "Гистерезис ±", unit: "°C", def: 1 },
       { key: "minOn", label: "Мин. работа", unit: "сек", def: 120 },
       { key: "minOff", label: "Мин. пауза", unit: "сек", def: 120 },
+      VALVE_POLARITY,
       { key: "staleSec", label: "Нет данных — стоп через", unit: "сек", def: 900 },
     ],
+  }),
+  M("audio_toggle", "Аудио", "Ecler: вкл/выкл (пресет)", "Жест (обычно двойное) → играет пресет или Stop. Агент смотрит GetStats. Одна зона или все сразу.", {
+    loadKind: "audio",
+    fields: [
+      { ...PRESS_FIELD, def: "double" },
+      { key: "preset", label: "Пресет (Яндекс и т.п.)", unit: "1–20", def: 1 },
+    ],
+  }),
+  M("audio_volume_hold", "Аудио", "Ecler: громкость удержанием", "Удержание → громче (+1 дБ). Короткое+удержание → тише. Отпустили → стоп. Как диммер света.", {
+    loadKind: "audio",
+  }),
+  M("audio_preset", "Аудио", "Ecler: пресет", "Клавиша → PLAYER ZERO открывает пресет 1–20 (TCP 2003).", {
+    loadKind: "audio",
+    fields: [
+      PRESS_FIELD,
+      { key: "preset", label: "Пресет", unit: "1–20", def: 1 },
+    ],
+  }),
+  M("audio_volume", "Аудио", "Ecler: громкость", "Клавиша → громкость зоны в %.", {
+    loadKind: "audio",
+    fields: [
+      PRESS_FIELD,
+      { key: "volume", label: "Громкость", unit: "%", def: 40 },
+    ],
+  }),
+  M("audio_stop", "Аудио", "Ecler: стоп", "Клавиша → Stop на выбранных PLAYER ZERO.", {
+    loadKind: "audio",
+    fields: [PRESS_FIELD],
   }),
   M("weather_climate_link", "Климат", "Погода → климат", "Если на улице жарко → можно охлаждение / вентиляцию.", {
     loadKind: "climate",
@@ -475,6 +531,8 @@ export const DESK_CONTINUOUS_CARD_IDS = new Set([
 const LATCHING_CARDS = new Set([
   "light_button_toggle",
   "light_dim_hold_mcm",
+  "audio_toggle",
+  "audio_volume_hold",
   "socket_button_toggle",
   "curtain_button_open",
   "curtain_button_close",

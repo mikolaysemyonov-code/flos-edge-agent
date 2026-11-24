@@ -16,6 +16,7 @@ const CLIMATE = new Set([
   "ac_cool_comfort",
   "ac_window_off",
   "thermostat_simple_vd",
+  "radiator_comfort",
   "weather_climate_link",
 ]);
 
@@ -34,13 +35,18 @@ function num(params, key, fallback) {
 }
 
 function modeOf(sid) {
-  if (/warm_floor|thermostat/.test(sid)) return "lte";
+  if (/warm_floor|thermostat|radiator/.test(sid)) return "lte";
   if (sid === "humidifier_low") return "range";
   return "gte";
 }
 
-function isFloor(sid) {
-  return /warm_floor/.test(sid);
+function isHeatCircuit(sid) {
+  return /warm_floor|thermostat|radiator/.test(sid);
+}
+
+/** NO: катушка ON закрывает клапан → греть = реле OFF. NC / электрический пол: греть = реле ON. */
+function valveInvert(params) {
+  return /^(no|open)$/i.test(String(params?.polarity || "nc").trim());
 }
 
 function gteBand(sid, p) {
@@ -73,10 +79,15 @@ function setLoads(loads, wantExpr, id) {
     .join("\n");
 }
 
-function antiClickGuard(latch, minOnSec, minOffSec) {
+function applyHeatLoads(loads, id, invert) {
+  const coil = invert ? "!__want" : "__want";
+  return setLoads(loads, coil, id);
+}
+
+function antiClickGuard(latch, minOnSec, minOffSec, invert) {
   const onMs = Math.max(0, minOnSec) * 1000;
   const offMs = Math.max(0, minOffSec) * 1000;
-  if (!onMs && !offMs) return { preface: "", apply: setLoads };
+  if (!onMs && !offMs) return { preface: "", wrap: (loads, id) => applyHeatLoads(loads, id, invert) };
   const tVar = latch + "_t";
   const wantVar = latch + "_w";
   return {
@@ -90,7 +101,7 @@ function antiClickGuard(latch, minOnSec, minOffSec) {
         `        else if (!${wantVar} && ${offMs} && __elapsed < ${offMs}) __want = ${wantVar};`,
         `        else { ${wantVar} = __want; ${tVar} = __now; }`,
         `      }`,
-        setLoads(loads, "__want", id),
+        applyHeatLoads(loads, id, invert),
       ].join("\n"),
   };
 }
@@ -133,7 +144,7 @@ function emitHumidityMotion(sol) {
   const humLatch = base + "_hum";
   const motionUntil = base + "_mot";
   const latch = base;
-  const guard = antiClickGuard(latch, num(p, "minOn", 180), num(p, "minOff", 180));
+  const guard = antiClickGuard(latch, num(p, "minOn", 180), num(p, "minOff", 180), false);
   const tick = [
     `function ${base}_tick() {`,
     "  try {",
@@ -168,11 +179,12 @@ function emitHumidityMotion(sol) {
     .join("\n");
 }
 
-function emitFloorStaleWatch(sol, loads, latch, staleSec) {
+function emitFloorStaleWatch(sol, loads, latch, staleSec, invert) {
   if (!staleSec || staleSec <= 0) return "";
   const id = "desk_sol_" + sol.id + "_stale";
   const ts = latch + "_ok";
-  const off = loads.map((p) => `      wbActuatorSet(${esc(p)}, false, ${esc(id)}, 50);`).join("\n");
+  const coil = invert ? "true" : "false";
+  const off = loads.map((p) => `      wbActuatorSet(${esc(p)}, ${coil}, ${esc(id)}, 50);`).join("\n");
   return [
     `var ${ts} = Date.now();`,
     `(function () {`,
@@ -209,8 +221,9 @@ export function emitDeskClimate(sol) {
   const latch = "_desk_clim_" + String(sol.id || "").replace(/[^a-zA-Z0-9_]/g, "_");
   const minOn = num(p, "minOn", /vent_|ac_|humidifier/.test(sid) ? 180 : 60);
   const minOff = num(p, "minOff", /vent_|ac_|humidifier/.test(sid) ? 180 : 60);
-  const guard = antiClickGuard(latch, minOn, minOff);
-  const staleSec = isFloor(sid) ? num(p, "staleSec", 900) : 0;
+  const invert = isHeatCircuit(sid) && valveInvert(p);
+  const guard = antiClickGuard(latch, minOn, minOff, invert);
+  const staleSec = isHeatCircuit(sid) ? num(p, "staleSec", 900) : 0;
   const ts = latch + "_ok";
 
   let body;
@@ -260,7 +273,7 @@ export function emitDeskClimate(sol) {
   return [
     `var ${latch} = false;`,
     guard.preface || "",
-    emitFloorStaleWatch(sol, loads, latch, staleSec),
+    emitFloorStaleWatch(sol, loads, latch, staleSec, invert),
     `defineRule(${esc(id)}, {`,
     `  whenChanged: ${esc(sensor)},`,
     "  then: function () {",

@@ -49,6 +49,7 @@ import {
   handleRuntimeDeskPoured,
   handleRuntimeDeskRulesFile,
   handleRuntimeDeskHa,
+  handleRuntimeDeskEcler,
   handleRuntimeDeskHaLights,
   handleRuntimeDeskSolutions,
   handleRuntimeDeskGroups,
@@ -897,6 +898,7 @@ function deskWriteLocked(method, urlPath) {
     urlPath === "/runtime/desk-audit" ||
     urlPath === "/runtime/desk-clock" ||
     urlPath === "/runtime/desk-ha" ||
+    urlPath === "/runtime/desk-ecler" ||
     urlPath === "/runtime/desk-mark.csv" ||
     urlPath === "/runtime/desk-mark.xlsx" ||
     urlPath === "/runtime/mqtt-scan"
@@ -1009,6 +1011,13 @@ export function runtimeHttpPathHandler(req, res) {
   }
   if (method === "GET" && urlPath === "/runtime/desk-rules-file") {
     handleRuntimeDeskRulesFile(req, res);
+    return true;
+  }
+  if ((method === "GET" || method === "POST") && urlPath === "/runtime/desk-ecler") {
+    void handleRuntimeDeskEcler(req, res).catch((err) => {
+      console.error("[runtime-control-plane] desk-ecler:", err?.message ?? err);
+      if (!res.headersSent) jsonWrite(res, 500, { ok: false, error: "desk_ecler_failed" });
+    });
     return true;
   }
   if ((method === "GET" || method === "POST") && urlPath === "/runtime/desk-ha") {

@@ -210,6 +210,44 @@ export function haDaliStatePayload(pct, mired) {
   });
 }
 
+/** Discovery и /flos/state должны уйти на брокер HA, не только на щит. */
+export function haFanoutTopic(topic) {
+  return /^\/?(flos|homeassistant)\//i.test(String(topic || "").trim());
+}
+
+export function haNamedDaliFromShelves(shelves) {
+  const out = [];
+  const seen = new Set();
+  for (const shelf of Array.isArray(shelves) ? shelves : []) {
+    const key = String(shelf?.deviceTopicKey || "").trim();
+    for (const ch of Array.isArray(shelf?.channels) ? shelf.channels : []) {
+      const title = haDaliHaTitle(ch?.name || ch?.title);
+      if (!key || !title) continue;
+      const row = buildHaRawDiscovery(key, ch.controlId, title);
+      if (!row?.gateway || seen.has(row.uniqueId)) continue;
+      seen.add(row.uniqueId);
+      out.push({ ...row, named: true });
+    }
+  }
+  return out;
+}
+
+export function haDroppedDaliUniqueIds(gateways, keepIds) {
+  const keep = keepIds instanceof Set ? keepIds : new Set(keepIds || []);
+  const out = [];
+  for (const gw of gateways || []) {
+    const g = String(gw || "").trim();
+    if (!g) continue;
+    for (let bus = 1; bus <= 3; bus += 1) {
+      for (let n = 0; n <= 15; n += 1) {
+        const uid = haDaliUniqueId(g, `bus_${bus}_g${n}`);
+        if (!keep.has(uid)) out.push(uid);
+      }
+    }
+  }
+  return out;
+}
+
 /** MR6C / MR3 — шторы, не реле. MR6CU — реле, пока на шине нет Curtain. */
 export function haRawIsCurtainModule(deviceTopicKey) {
   const type = String(parseDeskDeviceKey(deviceTopicKey)?.type || "");

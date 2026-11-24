@@ -10,6 +10,9 @@ runtime-desk-shelves.mjs
 runtime-desk-dali.mjs
 runtime-desk-dali-rpc.mjs
 runtime-desk-dali-probe.mjs
+runtime-desk-ecler.mjs
+runtime-desk-ecler-rpc.mjs
+runtime-desk-pour-audio.mjs
 runtime-desk-marking.mjs
 runtime-desk-groups.mjs
 runtime-desk-solutions.mjs

@@ -86,12 +86,18 @@
         </li>
         <li>
           <span class="step">4</span>
+          <strong>Аудио</strong>
+          <span>Ecler PLAYER ZERO в LAN: IP зоны, потом карточка пресета / громкости / стоп.</span>
+          <button type="button" class="ghost" data-go="audio">Открыть</button>
+        </li>
+        <li>
+          <span class="step">5</span>
           <strong>Сценарии</strong>
           <span>Когда кнопки и свет уже названы, соберите «Я дома» и типовые карточки.</span>
           <button type="button" class="ghost" data-go="scenes">Открыть</button>
         </li>
         <li>
-          <span class="step">5</span>
+          <span class="step">6</span>
           <strong>Контроллер</strong>
           <span>Слева, внизу колонки. «На контроллере» — что уже записано. «История» — прошлые записи. Запись на щит — один раз, в конце.</span>
           <button type="button" class="ghost" data-go="board">Открыть</button>
@@ -142,6 +148,14 @@
     </section>
 
     <section id="panel-cards" class="panel glass" hidden data-tab="cards">
+      <div id="audioZones" class="dali-mdali" hidden>
+        <p class="meta">Ecler PLAYER ZERO · TCP 2003. Укажите IP уже в LAN.</p>
+        <ul id="audioZoneList" class="desk-sols"></ul>
+        <input id="audioHost" class="mod-search" type="text" placeholder="192.168.0.50" aria-label="IP PLAYER ZERO">
+        <input id="audioTitle" class="mod-search" type="text" placeholder="Гостиная" aria-label="Имя зоны">
+        <button id="audioAdd" class="ghost" type="button">Добавить зону</button>
+        <p class="meta" id="audioZoneLog" hidden></p>
+      </div>
       <p id="cardsRoom" class="meta cards-room" hidden></p>
       <p id="diskScenes" class="meta"></p>
       <input id="solSearch" class="mod-search" type="search" placeholder="mcm8_99/input 8 · mr6cu_17/k1" aria-label="Найти клавишу" hidden>
@@ -200,6 +214,7 @@
     <button class="tab" type="button" role="tab" data-nav="dali" data-tab="mark" aria-selected="false">DALI</button>
     <button class="tab" type="button" role="tab" data-nav="mdm" data-tab="mark" aria-selected="false">MDM3</button>
     <button class="tab" type="button" role="tab" data-nav="climate" data-tab="cards" aria-selected="false">Климат</button>
+    <button class="tab" type="button" role="tab" data-nav="audio" data-tab="cards" aria-selected="false">Аудио</button>
     <button class="tab" type="button" role="tab" data-nav="scenes" data-tab="cards" aria-selected="false">Сценарии <span class="n" id="n-cards"></span></button>
     <div class="rail-tree" data-open="1">
       <button class="tab rail-parent" type="button" data-nav="controller" aria-expanded="true">Контроллер</button>

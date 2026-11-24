@@ -26,6 +26,7 @@ import {
 } from "./runtime-control-plane-http.mjs";
 import { setRuntimeClockSetter, setRuntimeMqttScanHandler, setRuntimeRootSetter } from "./runtime-desk-http.mjs";
 import { bindDeskHaMirror, onDeskHaBusTraffic, onDeskHaCoverCommand, onDeskHaDaliCommand, onDeskHaDiscovery, resumeDeskHaBridgeFromDisk } from "./runtime-desk-ha-bridge.mjs";
+import { bindDeskEclerPublish, onDeskEclerCommand } from "./runtime-desk-ecler-rpc.mjs";
 import { isMarkShieldDiscoverableDeviceKey } from "./lib/mark-shield-discoverable-device.mjs";
 import { countOfflineDevices } from "./runtime-desk-shelves.mjs";
 import { cleanDeskPassword } from "./runtime-desk-gate.mjs";
@@ -36,7 +37,7 @@ import {
 } from "./wb-rules-journal-incidents.mjs";
 
 /** Одна строка в heartbeat и snapshot — иначе UI врёт версией. */
-const EDGE_AGENT_VERSION = "edge-pilot-v2.lan-desk-345";
+const EDGE_AGENT_VERSION = "edge-pilot-v2.lan-desk-347";
 
 /** Prefer `FLOS_*` (FL OS); fall back to legacy `REACTOR_*` for existing deployments. */
 function env(primary, legacy) {
@@ -1136,6 +1137,8 @@ const MQTT_MIRROR_HA_CMD_TOPICS = [
   "/flos/cover/#",
   "flos/dali/#",
   "/flos/dali/#",
+  "flos/audio/#",
+  "/flos/audio/#",
 ];
 
 function subscribeMqttMirrorTopics(client, url) {
@@ -1621,6 +1624,7 @@ function ingestMqttMirrorMessage(topic, buf) {
     try {
       onDeskHaCoverCommand(normalized, buf);
       onDeskHaDaliCommand(normalized, buf);
+      onDeskEclerCommand(normalized, buf);
     } catch {
       /* ignore */
     }
@@ -3512,6 +3516,11 @@ async function main() {
         omittedDeviceHint: scan.omittedDeviceHint || null,
       },
     };
+  });
+  bindDeskEclerPublish((topic, payload, retain) => {
+    const c = mqttMirrorState.client;
+    if (!c || mqttMirrorState.connected !== true) return;
+    c.publish(String(topic), String(payload ?? ""), { qos: 0, retain: retain === true });
   });
   bindDeskHaMirror({
     version: EDGE_AGENT_VERSION,

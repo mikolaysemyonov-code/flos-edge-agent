@@ -18,6 +18,7 @@
     let liveKeys = {};
     let pouredRules = [];
     let lastShelvesRows = [];
+    let eclerZones = [];
     let lastGapCount = 0;
     let lastPreview = { rows: [], gaps: [], ready: {}, reason: "" };
     const READY_BUCKETS = [
@@ -103,6 +104,7 @@
       dali: { tab: "mark", fam: "dali", title: "DALI" },
       mdm: { tab: "mark", fam: "mdm", title: "MDM3" },
       climate: { tab: "cards", filter: "Климат", title: "Климат" },
+      audio: { tab: "cards", filter: "Аудио", title: "Аудио" },
       scenes: { tab: "cards", title: "Сценарии" },
       history: { tab: "poured", pane: "hist", title: "История" },
       board: { tab: "poured", pane: "send", title: "На контроллере" },
@@ -168,7 +170,7 @@
       return /^K\d+$/i.test(id) || isDeskDrive(id);
     }
     function isDeskLoad(id) {
-      return /^(Channel \d+|K\d+)$/i.test(id) || isDeskDrive(id) || /^bus_\d+_(?:g\d+|\d+)$/i.test(String(id || "").trim());
+      return /^(Channel \d+|K\d+|player)$/i.test(id) || isDeskDrive(id) || /^bus_\d+_(?:g\d+|\d+)$/i.test(String(id || "").trim());
     }
     function parseDaliCh(id) {
       const c = String(id || "").trim();
@@ -510,7 +512,7 @@
       if (/mdm/i.test(k)) return "mdm";
       if (/led|ampled|mao/i.test(k)) return "light";
       if (/mcm|gpio|mdi|mwac|wd14|mio/i.test(k)) return "buttons";
-      if (/mr6|mr12|mrm|mrps/i.test(k)) return "relays";
+      if (/mr6|mr12|mrm|mrps|do-ssr|dossr|ssr-8/i.test(k)) return "relays";
       return "";
     }
     function splitShelves(rows) {
@@ -648,7 +650,10 @@
       }
       setTab(spec.tab, true);
       const cardBar = $("cardFilters");
-      if (cardBar) cardBar.hidden = activeNav === "climate";
+      if (cardBar) cardBar.hidden = activeNav === "climate" || activeNav === "audio";
+      const audioZones = $("audioZones");
+      if (audioZones) audioZones.hidden = activeNav !== "audio";
+      if (activeNav === "audio") void loadEclerZones();
       const solSearch = $("solSearch");
       if (solSearch) solSearch.hidden = spec.tab !== "cards";
       const solKindBar = $("solKindFilters");
@@ -2625,9 +2630,9 @@
     const SOL_KIND_ORDER = ["toggle", "dim", "motion", "other"];
     function solKindOf(sol) {
       const id = String((sol && sol.solutionId) || "");
-      if (id === "light_dim_hold_mcm") return "dim";
+      if (id === "light_dim_hold_mcm" || id === "audio_volume_hold") return "dim";
       if (/motion|night_path|stair_light|reed_on/.test(id)) return "motion";
-      if (/toggle|all_off|master_power/.test(id)) return "toggle";
+      if (/toggle|all_off|master_power|audio_toggle/.test(id)) return "toggle";
       return "other";
     }
     function solKindRu(kind) {
@@ -2878,6 +2883,7 @@
     }
     function sheetTgtLab(card) {
       if (card.cat === "Шторы") return card.multi ? "Шторы / приводы" : "Штора";
+      if (card.cat === "Аудио") return card.multi ? "Зоны Ecler" : "Зона Ecler";
       if (card.cat === "Климат") return card.multi ? "Нагрузки" : "Нагрузка";
       if (card.cat === "Охрана") {
         if (/leak/.test(card.id)) return card.multi ? "Краны" : "Кран";
@@ -2901,6 +2907,7 @@
       if (s === "розетка") return "розетку";
       if (s === "штора") return "штору";
       if (s === "нагрузка") return "нагрузку";
+      if (s === "зона ecler") return "зону Ecler";
       if (s === "заслонка 0–10 в") return "заслонку 0–10 В";
       return s;
     }
@@ -2947,13 +2954,20 @@
           || /mao/i.test(r.deviceTopicKey || "");
       }
       if (kind === "ac") return /кондей|кондиц/i.test(lab);
-      if (kind === "floor") return /тёпл|тепл|пол|серво|коллект/i.test(lab);
-      if (kind === "heat") return /терм|обогрев|радиат|котёл|котел|тёпл|тепл/i.test(lab);
+      if (kind === "floor" || kind === "heat") {
+        const key = r.deviceTopicKey || "";
+        if (/do-ssr|dossr|ssr-8/i.test(key) && /^K\d+$/i.test(r.controlId || "")) return true;
+        if (kind === "floor") return /тёпл|тепл|пол|серво|коллект/i.test(lab);
+        return /терм|обогрев|радиат|котёл|котел|тёпл|тепл|серво|коллект/i.test(lab);
+      }
       if (kind === "humid") return /увлажн/i.test(lab);
       if (kind === "valve") return /кран|клапан|перекрыт/i.test(lab);
       if (kind === "lock") return /замок/i.test(lab);
       if (kind === "siren") return /сирен|тревог/i.test(lab);
       if (kind === "gate") return isDeskDrive(r.controlId) || /ворот|калитк|шлагбаум/i.test(lab);
+      if (kind === "audio") {
+        return /^player$/i.test(r.controlId || "") || /ecler-zero/i.test(r.deviceTopicKey || "") || /ecler|акустик|плеер|player zero/i.test(lab);
+      }
       if (kind === "climate") return /кондей|вытяж|приточ|вентил|насос|увлажн|калорифер|серво|заслон/i.test(lab);
       return true;
     }
@@ -3463,6 +3477,7 @@
       const have = new Set(deskCatalog.map((c) => c.cat));
       const cats = CAT_ORDER.filter((c) => have.has(c));
       if (activeNav === "climate" && have.has("Климат")) cardFilter = "Климат";
+      if (activeNav === "audio" && have.has("Аудио")) cardFilter = "Аудио";
       if (!cats.includes(cardFilter)) cardFilter = cats[0] || "Свет";
       filters.replaceChildren();
       cats.forEach((cat) => {
@@ -3478,7 +3493,7 @@
         });
         filters.appendChild(b);
       });
-      filters.hidden = activeNav === "climate";
+      filters.hidden = activeNav === "climate" || activeNav === "audio";
       const grid = $("vitrine");
       grid.replaceChildren();
       if (cardFilter === "Свет") {
@@ -3677,8 +3692,66 @@
         .join(" · ");
       return type ? room + " · " + type : room;
     }
+    async function loadEclerZones() {
+      try {
+        const r = await fetch("/runtime/desk-ecler");
+        const j = await r.json();
+        eclerZones = Array.isArray(j && j.zones) ? j.zones : [];
+      } catch (_e) {
+        eclerZones = [];
+      }
+      paintEclerZones();
+    }
+    function eclerPost(body) {
+      return fetch("/runtime/desk-ecler", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(body || {}),
+      }).then((r) => r.json());
+    }
+    function paintEclerZones() {
+      const ul = $("audioZoneList");
+      const log = $("audioZoneLog");
+      if (!ul) return;
+      ul.innerHTML = "";
+      (eclerZones || []).forEach((z) => {
+        const li = document.createElement("li");
+        li.textContent = (z.title || z.host) + " · " + z.host;
+        const probe = document.createElement("button");
+        probe.type = "button";
+        probe.className = "ghost";
+        probe.textContent = "Проверить";
+        probe.addEventListener("click", () => {
+          if (log) { log.hidden = false; log.textContent = "стучусь…"; }
+          eclerPost({ probe: true, ...z }).then((r) => {
+            if (log) log.textContent = r && r.ok ? ("на связи · " + (r.body && r.body.title ? r.body.title : z.host)) : ("нет ответа: " + ((r && r.error) || "timeout"));
+          }).catch(() => { if (log) log.textContent = "агент не ответил"; });
+        });
+        const del = document.createElement("button");
+        del.type = "button";
+        del.className = "ghost";
+        del.textContent = "Снять";
+        del.addEventListener("click", () => {
+          eclerPost({ delete: true, id: z.id }).then(() => loadEclerZones());
+        });
+        li.appendChild(probe);
+        li.appendChild(del);
+        ul.appendChild(li);
+      });
+    }
     function namedLoads() {
       const raw = [];
+      (eclerZones || []).forEach((z) => {
+        if (!z || !z.id) return;
+        raw.push({
+          deviceTopicKey: z.id,
+          controlId: "player",
+          name: z.title || z.host || z.id,
+          room: z.title || "",
+          slave: 0,
+          ch: 0,
+        });
+      });
       (lastShelvesRows || []).forEach((s) => {
         (s.channels || []).forEach((ch) => {
           if (!isDeskLoad(ch.controlId)) return;
@@ -4251,7 +4324,7 @@
       if (/mcm/i.test(k)) return "mcm";
       if (/dali|mdm/i.test(k)) return "dali";
       if (/led|ampled/i.test(k)) return "led";
-      if (/mr6|mr12|mrm|mrps/i.test(k)) return "mr";
+      if (/mr6|mr12|mrm|mrps|do-ssr|dossr|ssr-8/i.test(k)) return "mr";
       return "led";
     }
     function moduleKindRu(kind) {
@@ -4973,7 +5046,7 @@
       pour.type = "button";
       pour.className = "ghost bind";
       pour.textContent = "Залить";
-      pour.title = "Имя группы на щит: ячейка form_logic_os и мост на wanted_level";
+      pour.title = "Имя группы на щит: ячейка form_logic_os → /flos/dali (DAPC), не MQTT group_00";
       pour.addEventListener("click", () => {
         daliWalkMeta = { name: name.value.trim() };
         pour.disabled = true;
@@ -8447,7 +8520,7 @@
     if (solSearch) {
       solSearch.addEventListener("input", () => {
         solQuery = solSearch.value;
-        if (activeNav === "scenes" || activeNav === "climate") renderDeskSolutions();
+        if (activeNav === "scenes" || activeNav === "climate" || activeNav === "audio") renderDeskSolutions();
       });
     }
     const modSearch = $("modSearch");
@@ -8556,6 +8629,25 @@
             .catch(() => window.alert("Нет связи со столом."));
         };
         reader.readAsText(file);
+      });
+    }
+    if ($("audioAdd")) {
+      $("audioAdd").addEventListener("click", () => {
+        const host = ($("audioHost") && $("audioHost").value) || "";
+        const title = ($("audioTitle") && $("audioTitle").value) || "";
+        const log = $("audioZoneLog");
+        eclerPost({ host, title }).then((j) => {
+          if (log) {
+            log.hidden = false;
+            log.textContent = j && j.ok ? "зона записана" : ("не вышло: " + ((j && j.error) || "bad_zone"));
+          }
+          if (j && j.ok) {
+            if ($("audioHost")) $("audioHost").value = "";
+            void loadEclerZones();
+          }
+        }).catch(() => {
+          if (log) { log.hidden = false; log.textContent = "агент не ответил"; }
+        });
       });
     }
     if ($("clearMarks")) {
@@ -8887,6 +8979,7 @@
         if (go === "cards" || go === "scenes") { openNav("scenes"); return; }
         if (go === "poured" || go === "board") { openNav("board"); return; }
         if (go === "climate") { openNav("climate"); return; }
+        if (go === "audio") { openNav("audio"); return; }
         if (go === "history") { openNav("history"); return; }
         if (go === "keys" || go === "site" || go === "remote" || go === "pnr") { openNav("pnr"); return; }
         if (go === "lines") { openNav("light"); return; }
