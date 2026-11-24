@@ -1,14 +1,15 @@
 /**
  * L1 свет со стола → defineRule (motion/reed/night + dim Auto-Change).
- * Параметры: level (%), offDelay (сек; 0 = гасить сразу при уходе).
+ * DALI-группы: удержание шагает virt _bri/_temp → wrap /flos (не LED Auto-Change).
  */
-import { cellId, physPath } from "./runtime-desk-pour-core.mjs";
+import { cellId, physPath, virtCell } from "./runtime-desk-pour-core.mjs";
 import { deskButtonCounter, deskColonCell } from "./runtime-desk-marking.mjs";
 import { liveDeskDeviceKey } from "./runtime-desk-rules-marks.mjs";
 import { parseDaliMqttId } from "./runtime-desk-dali.mjs";
 
 const LIGHT = new Set([
   "light_dim_hold_mcm",
+  "light_cct_hold",
   "light_motion",
   "light_reed_on",
   "light_night_path",
@@ -95,6 +96,89 @@ function setLines(paths, pct, ruleId, priority, indent) {
     .flatMap((path) => wbActuatorSetLines(path, pct, ruleId, priority))
     .map((line) => indent + line)
     .join("\n");
+}
+
+function daliVirtCells(paths) {
+  const out = [];
+  for (const p of paths || []) {
+    const mqtt = String(p || "").replace(/\/wanted_level$/i, "");
+    if (!parseDaliMqttId(mqtt)) continue;
+    const cell = virtCell(p);
+    if (cell) out.push(cell);
+  }
+  return out;
+}
+
+/** Удержание MCM: шаг ячейки form_logic_os, wrap сам бьёт DAPC/DT8. */
+function emitDaliRangeHold(sol, suffix, field, spec) {
+  const base = inputBase(sol.trigger);
+  const long = press(sol.trigger, "Long");
+  const shortlong = press(sol.trigger, "Shortlong");
+  const cells = daliVirtCells((sol.targets || []).map(pathOf).filter(Boolean));
+  if (!base || !long || !shortlong || !cells.length) return "";
+  const id = "desk_sol_" + sol.id;
+  const timer = "_desk_dali_" + String(sol.id || "x").replace(/[^a-zA-Z0-9_]/g, "_");
+  const min = Number(spec.min);
+  const max = Number(spec.max);
+  const step = Number(spec.step);
+  const def = Number(spec.def);
+  const tick = (dir) => {
+    const n = dir === "inc" ? step : -step;
+    const apply = cells
+      .map((c) => {
+        const topic = JSON.stringify(c + field);
+        const sw = JSON.stringify(c);
+        return [
+          `          var __v = Number(readValue("form_logic_os/" + ${topic}));`,
+          `          if (isNaN(__v)) __v = ${def};`,
+          `          __v = __v + (${n});`,
+          `          if (__v < ${min}) __v = ${min};`,
+          `          if (__v > ${max}) __v = ${max};`,
+          `          dev["form_logic_os"][${topic}] = __v;`,
+          field === "_bri"
+            ? `          dev["form_logic_os"][${sw}] = __v > 0;`
+            : `          if (__v > 0) dev["form_logic_os"][${sw}] = true;`,
+        ].join("\n");
+      })
+      .join("\n");
+    return [
+      `      if (${timer}) { try { clearInterval(${timer}); } catch (_c) {} ${timer} = 0; }`,
+      apply.replace(/^          /gm, "      "),
+      `      ${timer} = setInterval(function () {`,
+      "        try {",
+      apply,
+      "        } catch (_e) {}",
+      "      }, 180);",
+    ].join("\n");
+  };
+  return [
+    `var ${timer} = 0;`,
+    `defineRule(${esc(id + "_" + suffix + "_up")}, {`,
+    `  whenChanged: ${esc(long)},`,
+    "  then: function () {",
+    "    try {",
+    tick("inc"),
+    "    } catch (e) { if (typeof wbRuleGuardCatch === 'function') wbRuleGuardCatch(" + esc(id + "_" + suffix + "_up") + ", e); }",
+    "  }",
+    "});",
+    `defineRule(${esc(id + "_" + suffix + "_dn")}, {`,
+    `  whenChanged: ${esc(shortlong)},`,
+    "  then: function () {",
+    "    try {",
+    tick("dec"),
+    "    } catch (e) { if (typeof wbRuleGuardCatch === 'function') wbRuleGuardCatch(" + esc(id + "_" + suffix + "_dn") + ", e); }",
+    "  }",
+    "});",
+    `defineRule(${esc(id + "_" + suffix + "_stop")}, {`,
+    `  whenChanged: ${esc(base)},`,
+    "  then: function () {",
+    "    try {",
+    `      if (wbIsOn(readValue(${esc(base)}))) return;`,
+    `      if (${timer}) { try { clearInterval(${timer}); } catch (_c) {} ${timer} = 0; }`,
+    "    } catch (e) { if (typeof wbRuleGuardCatch === 'function') wbRuleGuardCatch(" + esc(id + "_" + suffix + "_stop") + ", e); }",
+    "  }",
+    "});",
+  ].join("\n");
 }
 
 function autoChangeOf(channelPath) {
@@ -184,13 +268,14 @@ function emitOnWhenActive(sol, defaults) {
  * иначе мост видит Channel при яркости 0 и гасит линию.
  */
 function emitDimHold(sol) {
+  const dali = emitDaliRangeHold(sol, "ddim", "_bri", { min: 0, max: 100, step: 4, def: 40 });
   const base = inputBase(sol.trigger);
   const long = press(sol.trigger, "Long");
   const shortlong = press(sol.trigger, "Shortlong");
   const loads = (sol.targets || []).map(pathOf).filter(Boolean);
-  if (!base || !long || !shortlong || !loads.length) return "";
+  if (!base || !long || !shortlong || !loads.length) return dali;
   const autos = loads.map(autoChangeOf).filter(Boolean);
-  if (!autos.length) return "";
+  if (!autos.length) return dali;
   const id = "desk_sol_" + sol.id;
   const flag = "__dimSu_" + String(sol.id || "x").replace(/[^a-zA-Z0-9_]/g, "_");
   const firstBri = brightnessOf(loads[0]);
@@ -210,7 +295,7 @@ function emitDimHold(sol) {
   ].join("\n");
   const writeAc = (val, pad) =>
     autos.map((p) => `${pad}wbActuatorSet(${esc(p)}, ${val}, ${esc(id)}, 50);`).join("\n");
-  return [
+  const led = [
     `defineRule(${esc(id + "_dim_up")}, {`,
     `  whenChanged: ${esc(long)},`,
     "  then: function () {",
@@ -248,6 +333,7 @@ function emitDimHold(sol) {
     "  }",
     "});",
   ].join("\n");
+  return dali ? dali + "\n" + led : led;
 }
 
 export function isDeskLightSolution(sol) {
@@ -257,6 +343,9 @@ export function isDeskLightSolution(sol) {
 export function emitDeskLight(sol) {
   const sid = String(sol?.solutionId || "");
   if (!LIGHT.has(sid)) return "";
+  if (sid === "light_cct_hold") {
+    return emitDaliRangeHold(sol, "cct", "_temp", { min: 153, max: 500, step: 12, def: 370 });
+  }
   if (sid === "light_dim_hold_mcm") return emitDimHold(sol);
   if (sid === "light_night_path") return emitOnWhenActive(sol, { level: 15, offDelay: 45 });
   if (sid === "light_reed_on") return emitOnWhenActive(sol, { level: 100, offDelay: 0 });

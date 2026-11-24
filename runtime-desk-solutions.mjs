@@ -47,6 +47,7 @@ const C = (id, cat, title, summary, extra = {}) => M(id, cat, title, summary, { 
 export const DESK_L1_LIGHT_IDS = [
   "light_button_toggle",
   "light_dim_hold_mcm",
+  "light_cct_hold",
   "light_all_off",
   "master_power_off_restore",
   "light_motion",
@@ -73,7 +74,10 @@ export const DESK_SOLUTION_CARDS = [
       },
     ],
   }),
-  M("light_dim_hold_mcm", "Свет", "Диммирование", "Удержание → плавно вверх/вниз (WB Auto-Change); отпустили → стоп. Несколько линий синхронно от первой.", {
+  M("light_dim_hold_mcm", "Свет", "Диммирование", "Удержание → ярче, короткое+удержание → темнее. LED: Auto-Change. DALI-группа: шаг 4% в /flos (DAPC). Отпустили → стоп.", {
+    loadKind: "light",
+  }),
+  M("light_cct_hold", "Свет", "DALI: температура удержанием", "Удержание → теплее (mirek↑), короткое+удержание → холоднее. DT8 группа. Отпустили → стоп.", {
     loadKind: "light",
   }),
   M("custom_control_task", "Общее", "Иная задача", "Если нажали → записать значение на выбранные нагрузки.", {
@@ -531,6 +535,7 @@ export const DESK_CONTINUOUS_CARD_IDS = new Set([
 const LATCHING_CARDS = new Set([
   "light_button_toggle",
   "light_dim_hold_mcm",
+  "light_cct_hold",
   "audio_toggle",
   "audio_volume_hold",
   "socket_button_toggle",

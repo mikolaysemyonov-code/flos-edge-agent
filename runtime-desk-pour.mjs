@@ -61,10 +61,11 @@ function lastLiveChannelMap() {
 }
 
 function withDaliTemp(row, live) {
-  if (!row || !isDaliChannelId(row.controlId) || row.tempControl) return row;
+  if (!row || !isDaliChannelId(row.controlId)) return row;
+  if (row.tempControl) return row;
   const ch = live.get(row.deviceTopicKey + "\0" + row.controlId);
-  const tempControl = typeof ch?.tempControl === "string" ? ch.tempControl.trim() : "";
-  return tempControl ? { ...row, tempControl } : row;
+  const fromLive = typeof ch?.tempControl === "string" ? ch.tempControl.trim() : "";
+  return { ...row, tempControl: fromLive || "wanted_colour_temperature" };
 }
 
 function namedLoadsFromDesk() {

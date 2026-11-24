@@ -72,6 +72,7 @@
     const L1_LIGHT = [
       "light_button_toggle",
       "light_dim_hold_mcm",
+      "light_cct_hold",
       "light_all_off",
       "light_motion",
       "light_night_path",
@@ -2630,7 +2631,7 @@
     const SOL_KIND_ORDER = ["toggle", "dim", "motion", "other"];
     function solKindOf(sol) {
       const id = String((sol && sol.solutionId) || "");
-      if (id === "light_dim_hold_mcm" || id === "audio_volume_hold") return "dim";
+      if (id === "light_dim_hold_mcm" || id === "light_cct_hold" || id === "audio_volume_hold") return "dim";
       if (/motion|night_path|stair_light|reed_on/.test(id)) return "motion";
       if (/toggle|all_off|master_power|audio_toggle/.test(id)) return "toggle";
       return "other";
@@ -3008,7 +3009,7 @@
       else if (card.cat === "Свет" || card.cat === "Сцены") all = preferRows(all, isLightLoad, true);
       else if (card.cat === "Розетки") all = preferRows(all, (r) => /розетк/i.test(r.label || ""), true);
       // Диммирование — только линии с Auto-Change / Channel (не обычные реле).
-      if (card.id === "light_dim_hold_mcm") {
+      if (card.id === "light_dim_hold_mcm" || card.id === "light_cct_hold") {
         all = preferRows(all, isLikelyDimmerLoad, true);
       }
       return all;

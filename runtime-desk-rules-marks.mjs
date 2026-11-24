@@ -249,6 +249,7 @@ function contactSort(a, b) {
 export const DESK_CARD_IDS = [
   "light_button_toggle",
   "light_dim_hold_mcm",
+  "light_cct_hold",
   "light_all_off",
   "socket_button_toggle",
   "curtain_button_open",
@@ -258,6 +259,7 @@ export const DESK_CARD_IDS = [
 export const DESK_CARD_RU = {
   light_button_toggle: "Переключение",
   light_dim_hold_mcm: "Дим-удержание",
+  light_cct_hold: "Температура DALI",
   light_all_off: "Все выкл",
   socket_button_toggle: "Розетка",
   curtain_button_open: "Штора открыть",
