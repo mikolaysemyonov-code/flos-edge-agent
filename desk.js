@@ -3438,7 +3438,7 @@
       "Общее": "<svg viewBox='0 0 24 24'><path d='M12 3l1.8 5.5H19l-4.4 3.2L16.4 18 12 14.8 7.6 18l1.8-6.3L5 8.5h5.2z'/></svg>",
       "Сцены": "<svg viewBox='0 0 24 24'><path d='M3 11l9-8 9 8'/><path d='M5 10v10h14V10'/></svg>",
     };
-    const CAT_ORDER = ["Свет", "Шторы", "Климат", "Охрана", "Розетки", "Общее", "Сцены"];
+    const CAT_ORDER = ["Свет", "Шторы", "Климат", "Аудио", "Охрана", "Розетки", "Общее", "Сцены"];
     function paintCardTile(grid, card) {
       const onDesk = deskSolutions.filter((s) => s.solutionId === card.id);
       const btn = document.createElement("button");

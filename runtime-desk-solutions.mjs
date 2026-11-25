@@ -365,22 +365,12 @@ export const DESK_SOLUTION_CARDS = [
       { key: "staleSec", label: "Нет данных — стоп через", unit: "сек", def: 900 },
     ],
   }),
-  M("audio_toggle", "Аудио", "Ecler: вкл/выкл (пресет)", "Жест (обычно двойное) → играет пресет или Stop. Агент смотрит GetStats. Одна зона или все сразу.", {
+  M("audio_stop", "Аудио", "Ecler: стоп", "Клавиша → Stop на выбранных PLAYER ZERO. Не рвёт AirPlay / Music Assistant.", {
     loadKind: "audio",
-    fields: [
-      { ...PRESS_FIELD, def: "double" },
-      { key: "preset", label: "Пресет (Яндекс и т.п.)", unit: "1–20", def: 1 },
-    ],
+    fields: [PRESS_FIELD],
   }),
   M("audio_volume_hold", "Аудио", "Ecler: громкость удержанием", "Удержание → громче (+1 дБ). Короткое+удержание → тише. Отпустили → стоп. Как диммер света.", {
     loadKind: "audio",
-  }),
-  M("audio_preset", "Аудио", "Ecler: пресет", "Клавиша → PLAYER ZERO открывает пресет 1–20 (TCP 2003).", {
-    loadKind: "audio",
-    fields: [
-      PRESS_FIELD,
-      { key: "preset", label: "Пресет", unit: "1–20", def: 1 },
-    ],
   }),
   M("audio_volume", "Аудио", "Ecler: громкость", "Клавиша → громкость зоны в %.", {
     loadKind: "audio",
@@ -389,9 +379,19 @@ export const DESK_SOLUTION_CARDS = [
       { key: "volume", label: "Громкость", unit: "%", def: 40 },
     ],
   }),
-  M("audio_stop", "Аудио", "Ecler: стоп", "Клавиша → Stop на выбранных PLAYER ZERO.", {
+  M("audio_preset", "Аудио", "Ecler: пресет", "Клавиша → PLAYER ZERO открывает пресет 1–20 (TCP 2003). Не для Яндекса из Music Assistant.", {
     loadKind: "audio",
-    fields: [PRESS_FIELD],
+    fields: [
+      PRESS_FIELD,
+      { key: "preset", label: "Пресет", unit: "1–20", def: 1 },
+    ],
+  }),
+  M("audio_toggle", "Аудио", "Ecler: вкл/выкл (пресет)", "Не для показа: открывает пресет Zero (часто dlna://) и сбивает AirPlay. Стоп и громкость — соседние карточки.", {
+    loadKind: "audio",
+    fields: [
+      { ...PRESS_FIELD, def: "double" },
+      { key: "preset", label: "Пресет (локальный Zero)", unit: "1–20", def: 1 },
+    ],
   }),
   M("weather_climate_link", "Климат", "Погода → климат", "Если на улице жарко → можно охлаждение / вентиляцию.", {
     loadKind: "climate",
