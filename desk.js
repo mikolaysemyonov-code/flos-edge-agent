@@ -79,6 +79,13 @@
       "stair_light_motion",
       "light_reed_on",
     ];
+    const L1_CLIMATE = [
+      "warm_floor_electric_comfort",
+      "radiator_comfort",
+      "thermostat_simple_vd",
+      "vent_humidity",
+      "vent_co2",
+    ];
     let deskRooms = [];
     let markPending = {};
     let roomFilter = "";
@@ -191,6 +198,8 @@
       if (/mcm|wd14|mdi|gpio/i.test(key) && (/^IN/i.test(c) || /_IN/i.test(c)) && !/^K\d+$/i.test(c)) {
         return true;
       }
+      if (/msw/i.test(key) && /^(Temperature|Humidity|CO2)/i.test(c)) return true;
+      if (/m1w2|w1/i.test(key) && (/^(Temperature|Humidity|CO2)/i.test(c) || /^(External Sensor|Sensor) \d+$/i.test(c))) return true;
       return false;
     }
     function patchChannelValue(deviceTopicKey, controlId, lastValue) {
@@ -2234,7 +2243,7 @@
           // Счётчики — только для скана, в типовые не тащим.
           if (/(?:Single|Short|Long|Shortlong|Double) Press Counter$/i.test(String(ch.controlId || ""))) return;
           if (!isDeskInput(ch.controlId, s.deviceTopicKey)
-            && !/геркон|движен|reed|motion|pir|co2|влажн|темпер/i.test(String(ch.name || ""))) {
+            && !/геркон|движен|reed|motion|pir|co2|влажн|темпер|temperature|humidity/i.test(String(ch.name || "") + " " + String(ch.controlId || ""))) {
             return;
           }
           const name = String(ch.name || "").trim();
@@ -2877,6 +2886,7 @@
       if (card.id === "vent_vav_zone" || card.id === "vent_co2" || card.id === "vent_diy_vav") return "CO₂";
       if (sheetIsReed(card)) return "Дверь / геркон";
       if (sheetIsMotion(card)) return "Датчик движения";
+      if (/warm_floor|radiator|thermostat/.test(card.id)) return "M1W2 / MSW · температура";
       return sheetNeedSensor(card) ? "Датчик" : "Кнопка";
     }
     function sheetAuxLab(card) {
@@ -2885,6 +2895,8 @@
     function sheetTgtLab(card) {
       if (card.cat === "Шторы") return card.multi ? "Шторы / приводы" : "Штора";
       if (card.cat === "Аудио") return card.multi ? "Зоны Ecler" : "Зона Ecler";
+      if (card.id === "warm_floor_electric_comfort") return "MR2 Mini / реле пола";
+      if (card.id === "radiator_comfort") return "MR6C · 24 В серво";
       if (card.cat === "Климат") return card.multi ? "Нагрузки" : "Нагрузка";
       if (card.cat === "Охрана") {
         if (/leak/.test(card.id)) return card.multi ? "Краны" : "Кран";
@@ -2922,7 +2934,15 @@
       return onlyHits ? hit : hit.concat(rows.filter((r) => !hitFn(r)));
     }
     function isSensorLabel(label) {
-      return /датчик|темпер|влажн|co[₂2]|геркон|движен|протеч|двер|окн|pir/i.test(String(label || ""));
+      return /датчик|темпер|влажн|co[₂2]|геркон|движен|протеч|двер|окн|pir|temperature|humidity/i.test(String(label || ""));
+    }
+    function isMswTemperature(r) {
+      const cid = String(r?.controlId || "");
+      const key = String(r?.deviceTopicKey || "");
+      if (/^Temperature$/i.test(cid)) return true;
+      if (/msw/i.test(key) && /temp/i.test(cid + " " + (r.label || ""))) return true;
+      if (/m1w2/i.test(key) && /^(External Sensor|Sensor) \d+$/i.test(cid)) return true;
+      return false;
     }
     function isCurtainLoad(r) {
       return isDeskDrive(r.controlId) || /штор|роллет|жалюз|тюль|экран|привод/i.test(r.label || "");
@@ -2957,8 +2977,10 @@
       if (kind === "ac") return /кондей|кондиц/i.test(lab);
       if (kind === "floor" || kind === "heat") {
         const key = r.deviceTopicKey || "";
-        if (/do-ssr|dossr|ssr-8/i.test(key) && /^K\d+$/i.test(r.controlId || "")) return true;
-        if (kind === "floor") return /тёпл|тепл|пол|серво|коллект/i.test(lab);
+        const cid = r.controlId || "";
+        if (/curtain|штор/i.test(lab + " " + cid)) return false;
+        if (/^K\d+$/i.test(cid) && /mr6c|mrm2|mr2-mini|mr2mini|do-ssr|dossr|ssr-8/i.test(key)) return true;
+        if (kind === "floor") return /тёпл|тепл|пол|серво|коллект|электропол/i.test(lab);
         return /терм|обогрев|радиат|котёл|котел|тёпл|тепл|серво|коллект/i.test(lab);
       }
       if (kind === "humid") return /увлажн/i.test(lab);
@@ -2976,6 +2998,9 @@
       const all = namedTriggers().filter((r) => String(r.label || "").trim());
       if (card.id === "vent_vav_zone" || /co2/i.test(card.id)) {
         return preferRows(all, (r) => /co\s*₂|co2|душно|углекисл/i.test(r.label || "") || isSensorLabel(r.label), true);
+      }
+      if (/warm_floor|radiator|thermostat/.test(card.id)) {
+        return preferRows(all, (r) => isMswTemperature(r) || /темпер|temperature/i.test(r.label || ""), true);
       }
       if (sheetIsMotion(card)) {
         return preferRows(all, (r) =>
@@ -3464,6 +3489,13 @@
     }
     function cardsForFilter() {
       const rows = deskCatalog.filter((c) => c.cat === cardFilter);
+      if (cardFilter === "Климат") {
+        const rank = (id) => {
+          const i = L1_CLIMATE.indexOf(id);
+          return i < 0 ? 1000 : i;
+        };
+        return rows.slice().sort((a, b) => rank(a.id) - rank(b.id));
+      }
       if (cardFilter !== "Свет") return rows;
       const rank = (id) => {
         const i = L1_LIGHT.indexOf(id);
@@ -3717,7 +3749,11 @@
       ul.innerHTML = "";
       (eclerZones || []).forEach((z) => {
         const li = document.createElement("li");
-        li.textContent = (z.title || z.host) + " · " + z.host;
+        const setup = z.setup || {};
+        const hint = setup.ready
+          ? "AirPlay · " + (setup.volume || 0) + "%"
+          : (setup.source ? setup.source + (setup.mute ? " · mute" : "") : "без настройки");
+        li.textContent = (z.title || z.host) + " · " + z.host + " · " + hint;
         const probe = document.createElement("button");
         probe.type = "button";
         probe.className = "ghost";
@@ -3725,7 +3761,28 @@
         probe.addEventListener("click", () => {
           if (log) { log.hidden = false; log.textContent = "стучусь…"; }
           eclerPost({ probe: true, ...z }).then((r) => {
-            if (log) log.textContent = r && r.ok ? ("на связи · " + (r.body && r.body.title ? r.body.title : z.host)) : ("нет ответа: " + ((r && r.error) || "timeout"));
+            const s = r && r.setup;
+            if (log) {
+              log.textContent = r && r.ok
+                ? ("на связи · " + ((s && s.source) || (r.body && r.body.txtSource) || z.host) + (s && s.mute ? " · mute" : "") + (s && s.volume != null ? " · " + s.volume + "%" : ""))
+                : ("нет ответа: " + ((r && r.error) || "timeout"));
+            }
+          }).catch(() => { if (log) log.textContent = "агент не ответил"; });
+        });
+        const setupBtn = document.createElement("button");
+        setupBtn.type = "button";
+        setupBtn.className = "ghost";
+        setupBtn.textContent = "Настроить";
+        setupBtn.addEventListener("click", () => {
+          if (log) { log.hidden = false; log.textContent = "настраиваю AirPlay…"; }
+          eclerPost({ setup: true, ...z }).then((r) => {
+            if (log) {
+              const s = r && r.setup;
+              if (r && r.ok && s && s.ready) log.textContent = "готов · AirPlay · " + s.volume + "%";
+              else if (r && r.error === "usb_or_open") log.textContent = "USB держит источник — в веб Zero смените на AirPlay, затем снова Настроить";
+              else log.textContent = "не готов: " + ((s && s.source) || (r && r.error) || "timeout");
+            }
+            void loadEclerZones();
           }).catch(() => { if (log) log.textContent = "агент не ответил"; });
         });
         const del = document.createElement("button");
@@ -3736,6 +3793,7 @@
           eclerPost({ delete: true, id: z.id }).then(() => loadEclerZones());
         });
         li.appendChild(probe);
+        li.appendChild(setupBtn);
         li.appendChild(del);
         ul.appendChild(li);
       });
@@ -8637,12 +8695,15 @@
         const host = ($("audioHost") && $("audioHost").value) || "";
         const title = ($("audioTitle") && $("audioTitle").value) || "";
         const log = $("audioZoneLog");
+        if (log) { log.hidden = false; log.textContent = "настраиваю плеер…"; }
         eclerPost({ host, title }).then((j) => {
+          const s = j && j.setup;
           if (log) {
-            log.hidden = false;
-            log.textContent = j && j.ok ? "зона записана" : ("не вышло: " + ((j && j.error) || "bad_zone"));
+            if (j && j.ok && s && s.ready) log.textContent = "готов · AirPlay · " + s.volume + "%";
+            else if (j && j.zones) log.textContent = "зона есть, плеер: " + ((s && s.source) || (j && j.error) || "без AirPlay");
+            else log.textContent = "не вышло: " + ((j && j.error) || "bad_zone");
           }
-          if (j && j.ok) {
+          if (j && (j.ok || j.zones)) {
             if ($("audioHost")) $("audioHost").value = "";
             void loadEclerZones();
           }

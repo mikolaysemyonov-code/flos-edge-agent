@@ -12,6 +12,7 @@ runtime-desk-dali-rpc.mjs
 runtime-desk-dali-probe.mjs
 runtime-desk-ecler.mjs
 runtime-desk-ecler-rpc.mjs
+runtime-desk-ecler-setup.mjs
 runtime-desk-pour-audio.mjs
 runtime-desk-marking.mjs
 runtime-desk-groups.mjs

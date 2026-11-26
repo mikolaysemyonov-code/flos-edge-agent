@@ -26,6 +26,28 @@ const VALVE_POLARITY = {
   ],
 };
 
+const ELECTRIC_FLOOR_POLARITY = {
+  key: "polarity",
+  kind: "select",
+  label: "Реле пола",
+  def: "nc",
+  options: [
+    { v: "nc", t: "ON = греет (обычный SSR / реле)" },
+    { v: "no", t: "Инверсия: ON = стоп" },
+  ],
+};
+
+const RADIATOR_SERVO_POLARITY = {
+  key: "polarity",
+  kind: "select",
+  label: "Серво 24 В",
+  def: "nc",
+  options: [
+    { v: "nc", t: "NC: ON подаёт 24 В · серво открывает · греет" },
+    { v: "no", t: "NO: ON снимает 24 В · греет при OFF" },
+  ],
+};
+
 const PRESS_FIELD = {
   key: "press",
   kind: "select",
@@ -204,12 +226,12 @@ export const DESK_SOLUTION_CARDS = [
       { key: "staleSec", label: "Нет данных — стоп через", unit: "сек", def: 900 },
     ],
   }),
-  M("radiator_comfort", "Климат", "Радиатор / сервопривод", "Комнатная температура → реле или DO-SSR-8. NC греет при ON, NO — при OFF.", {
+  M("radiator_comfort", "Климат", "Радиатор / серво 24 В", "MSW температура комнаты → MR6C рвёт или подаёт 24 В на серво. NC: ON = 24 В = греет.", {
     loadKind: "heat",
     fields: [
       { key: "thr", label: "Желаемая температура", unit: "°C", def: 22 },
       { key: "hyst", label: "Гистерезис ±", unit: "°C", def: 1 },
-      VALVE_POLARITY,
+      RADIATOR_SERVO_POLARITY,
       { key: "minOn", label: "Мин. работа", unit: "сек", def: 120 },
       { key: "minOff", label: "Мин. пауза", unit: "сек", def: 120 },
       { key: "staleSec", label: "Нет данных — стоп через", unit: "сек", def: 900 },
@@ -343,14 +365,14 @@ export const DESK_SOLUTION_CARDS = [
       { key: "staleSec", label: "Нет данных — стоп через", unit: "сек", def: 900 },
     ],
   }),
-  M("warm_floor_electric_comfort", "Климат", "Тёплый пол электрический", "Вкл при thr−h, выкл при thr+h (22±1 → вкл ≤21, выкл ≥23). Реле/SSR. Нет данных → OFF.", {
+  M("warm_floor_electric_comfort", "Климат", "Тёплый пол электрический", "M1W2 1-Wire или MSW → реле MR2 Mini / SSR. 22±1: вкл ≤21 °C, выкл ≥23 °C. Нет данных → OFF.", {
     loadKind: "floor",
     fields: [
       { key: "thr", label: "Желаемая температура", unit: "°C", def: 22 },
       { key: "hyst", label: "Гистерезис ±", unit: "°C", def: 1 },
       { key: "minOn", label: "Мин. работа", unit: "сек", def: 120 },
       { key: "minOff", label: "Мин. пауза", unit: "сек", def: 120 },
-      VALVE_POLARITY,
+      ELECTRIC_FLOOR_POLARITY,
       { key: "staleSec", label: "Нет данных — стоп через", unit: "сек", def: 900 },
     ],
   }),

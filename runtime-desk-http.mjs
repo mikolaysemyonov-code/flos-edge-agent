@@ -85,6 +85,7 @@ import {
   readDeskEclerConfig,
   upsertDeskEclerZone,
 } from "./runtime-desk-ecler-rpc.mjs";
+import { commissionDeskEclerZone } from "./runtime-desk-ecler-setup.mjs";
 import { eclerShelfRows } from "./runtime-desk-ecler.mjs";
 import {
   bindDeskKeyPlanItem,
@@ -889,7 +890,16 @@ export async function handleRuntimeDeskEcler(req, res) {
     jsonEnd(res, 200, await driveDeskEclerCommand(body.zoneId || body.id, body.payload || body));
     return;
   }
-  jsonEnd(res, 200, upsertDeskEclerZone(body));
+  if (body.setup === true || body.commission === true) {
+    jsonEnd(res, 200, await commissionDeskEclerZone(body));
+    return;
+  }
+  const saved = upsertDeskEclerZone(body);
+  if (!saved.ok) {
+    jsonEnd(res, 200, saved);
+    return;
+  }
+  jsonEnd(res, 200, await commissionDeskEclerZone(body));
 }
 
 export function handleRuntimeDeskHaLights(_req, res) {

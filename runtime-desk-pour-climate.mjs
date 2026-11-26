@@ -270,20 +270,27 @@ export function emitDeskClimate(sol) {
         `      if (isNaN(v)) return;`,
       ].join("\n");
 
+  const tick = latch + "_go";
+  const heatTick = isHeatCircuit(sid)
+    ? [`(function () { try { setInterval(${tick}, 30000); ${tick}(); } catch (_e) {} })();`].join("\n")
+    : "";
+
   return [
     `var ${latch} = false;`,
     guard.preface || "",
     emitFloorStaleWatch(sol, loads, latch, staleSec, invert),
-    `defineRule(${esc(id)}, {`,
-    `  whenChanged: ${esc(sensor)},`,
-    "  then: function () {",
-    "    try {",
+    `function ${tick}() {`,
+    "  try {",
     readBlock,
     body,
     guard.wrap ? guard.wrap(loads, id) : setLoads(loads, "__want", id),
-    "    } catch (e) { if (typeof wbRuleGuardCatch === 'function') wbRuleGuardCatch(" + esc(id) + ", e); }",
-    "  }",
+    "  } catch (e) { if (typeof wbRuleGuardCatch === 'function') wbRuleGuardCatch(" + esc(id) + ", e); }",
+    "}",
+    `defineRule(${esc(id)}, {`,
+    `  whenChanged: ${esc(sensor)},`,
+    `  then: function () { ${tick}(); }`,
     "});",
+    heatTick,
   ]
     .filter(Boolean)
     .join("\n");

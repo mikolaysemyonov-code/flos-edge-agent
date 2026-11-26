@@ -14,7 +14,11 @@ const SKU = {
   mrps6: "WB-MRPS6",
   mrwm2: "WB-MRWM2",
   mrwm: "WB-MRWM",
+  "mrm2-mini": "WB-MRM2-mini",
+  mrm2: "WB-MRM2",
   mr3: "WB-MR3",
+  m1w2: "WB-M1W2",
+  msw: "WB-MSW",
   mio: "WB-MIO",
   led: "WB-LED",
   ampled: "WB-AMPLED",
@@ -93,7 +97,16 @@ function controlIdOf(entry) {
 }
 
 function isRelayFamily(type) {
-  return /^(mr6c|mr6cu|mr6cv3|mr6c-v3|mr12|mr6lv|mrps6|mrm|mr3|mrwl|mrwm|do-ssr-8|dossr8)/i.test(String(type ?? ""));
+  return /^(mr6c|mr6cu|mr6cv3|mr6c-v3|mr12|mr6lv|mrps6|mrm2-mini|mrm2|mrm|mr3|mrwl|mrwm|do-ssr-8|dossr8)/i.test(String(type ?? ""));
+}
+
+/** MSW воздух / M1W2 1-Wire — не силовые K, но нужны карточке климата. */
+export function isDeskClimateSensorControl(controlId, deviceTopicKey) {
+  const c = String(controlId ?? "").trim();
+  const key = String(deviceTopicKey ?? "");
+  if (/msw/i.test(key) && /^(Temperature|Humidity|CO2|Max Motion)$/i.test(c)) return true;
+  if (/m1w2/i.test(key) && (/^(External Sensor|Sensor) \d+$/i.test(c) || /^Temperature$/i.test(c))) return true;
+  return false;
 }
 
 function isLedFamily(type) {
@@ -120,6 +133,7 @@ export function isDeskShelfChannelControl(controlId, deviceTopicKey) {
   const c = String(controlId ?? "").trim();
   if (!c) return false;
   if (isDaliChannelId(c)) return true;
+  if (isDeskClimateSensorControl(c, deviceTopicKey)) return true;
   if (/brightness|temperature|palette|error|voltage|current|power|frequency|energy|status|offline|dapc|bulk_send|wanted_level|go_to_scene|actual_level/i.test(c)) {
     return false;
   }
@@ -154,6 +168,8 @@ const OUTPUT_BANK = {
   mr3lv: 3,
   mrwl3: 3,
   mrm2: 2,
+  "mrm2-mini": 2,
+  "mr2-mini": 2,
   mrwm: 2,
   mrwm2: 2,
   "do-ssr-8": 8,
@@ -167,6 +183,7 @@ export function expectedDeskOutputIds(deviceTopicKey) {
   if (!n && (isLedFamily(parsed?.type) || /led|ampled/i.test(raw))) n = 4;
   if (!n && (parsed?.type === "mdm3" || /mdm3/i.test(raw))) n = 3;
   if (!n && /do-ssr|dossr|ssr-8/i.test(parsed?.type || raw)) n = 8;
+  if (!n && /mrm2|mr2-mini/i.test(parsed?.type || raw)) n = 2;
   if (!n && (isRelayFamily(parsed?.type) || /mr6|mrps6|mrm|mrwl|mrwm/i.test(raw))) {
     n = /mr12/i.test(parsed?.type || raw) ? 12 : /mr3/i.test(parsed?.type || raw) ? 3 : 6;
   }

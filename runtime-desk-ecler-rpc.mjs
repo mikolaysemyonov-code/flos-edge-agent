@@ -10,6 +10,7 @@ import {
   eclerIsPlaying,
   eclerProbeFrame,
   eclerRpcFrames,
+  eclerSetupSnapshot,
   eclerStatePayload,
   eclerTopics,
   normalizeEclerZone,
@@ -120,7 +121,8 @@ export async function probeDeskEclerZone(input) {
   const row = normalizeEclerZone(input) || zoneById(input?.id);
   if (!row) return { ok: false, error: "bad_zone" };
   const sent = await eclerSendTcp(row.host, row.port, [eclerProbeFrame()], 4000);
-  return { ...sent, zone: row };
+  const setup = eclerSetupSnapshot(sent?.body, sent?.body?.SourceList);
+  return { ...sent, zone: row, setup };
 }
 
 const zoneTail = new Map();

@@ -30,7 +30,16 @@ export function normalizeEclerZone(input) {
   if (!host || !id) return null;
   if (host === "0.0.0.0" || /[/?#]/.test(host)) return null;
   if (!Number.isFinite(port) || port < 1 || port > 65535) return null;
-  return { id, host, port, title };
+  const row = { id, host, port, title };
+  if (input?.setup && typeof input.setup === "object") {
+    row.setup = {
+      source: String(input.setup.source || ""),
+      mute: Boolean(input.setup.mute),
+      volume: Number.isFinite(Number(input.setup.volume)) ? Number(input.setup.volume) : 0,
+      ready: Boolean(input.setup.ready),
+    };
+  }
+  return row;
 }
 
 export function eclerTopics(zoneId) {
@@ -97,7 +106,43 @@ export function eclerRpcFrames(cmd) {
 }
 
 export function eclerProbeFrame() {
-  return eclerRpcLine({ method: "Player.GetStats" });
+  return eclerRpcLine({ method: "Player.GetStatsEx" });
+}
+
+export function eclerSourceListFrame() {
+  return eclerRpcLine({ method: "Source.GetList" });
+}
+
+export function eclerOpenSourceFrame(source) {
+  return eclerRpcLine({ method: "Player.Open", Source: Number(source) });
+}
+
+export function eclerLiveVolumeFrame(volume) {
+  const n = Number.isFinite(Number(volume)) ? Math.max(0, Math.min(100, Math.round(Number(volume)))) : 40;
+  return eclerRpcLine({ method: "Player.Volume", Volume: n, Mute: false });
+}
+
+export function eclerAirPlayIndex(list) {
+  const rows = Array.isArray(list) ? list : [];
+  const i = rows.findIndex((s) => /airplay/i.test(String(s || "")));
+  return i >= 0 ? i : 4;
+}
+
+function eclerSourceLabel(raw) {
+  const t = String(raw || "").trim();
+  if (!t || t === "-" || t === "---") return "";
+  return t;
+}
+
+export function eclerSetupSnapshot(stats, list) {
+  const st = stats && typeof stats === "object" ? stats : {};
+  const idx = Number(st.source);
+  const fromList = Array.isArray(list) && Number.isFinite(idx) ? String(list[idx] || "") : "";
+  const source = eclerSourceLabel(st.txtSource) || eclerSourceLabel(fromList);
+  const mute = st.mute === true || st.Mute === true || st.mute === 1 || st.Mute === 1 || st.mute === "1";
+  const volume = Number.isFinite(Number(st.volume)) ? Number(st.volume) : 0;
+  const ready = /airplay/i.test(source) && !mute && volume > 0;
+  return { source, mute, volume, ready };
 }
 
 export function parseEclerReply(raw) {
@@ -107,7 +152,15 @@ export function parseEclerReply(raw) {
   try {
     const j = JSON.parse(chunk);
     if (j && j.result === false) return { ok: false, error: "ecler_false", body: j };
-    if (j && (j.result === true || j.title != null || j.status != null || j.volume != null)) {
+    if (
+      j &&
+      (j.result === true ||
+        j.title != null ||
+        j.status != null ||
+        j.volume != null ||
+        j.txtSource != null ||
+        Array.isArray(j.SourceList))
+    ) {
       return { ok: true, body: j };
     }
   } catch {
