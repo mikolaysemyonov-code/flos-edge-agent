@@ -48,6 +48,13 @@ const RADIATOR_SERVO_POLARITY = {
   ],
 };
 
+const HA_LABEL_FIELD = {
+  key: "label",
+  kind: "text",
+  label: "Подпись в HA",
+  def: "",
+};
+
 const PRESS_FIELD = {
   key: "press",
   kind: "select",
@@ -218,6 +225,7 @@ export const DESK_SOLUTION_CARDS = [
   M("thermostat_simple_vd", "Климат", "Термостат на щите", "Желаемая ± гистерезис: вкл при thr−h, выкл при thr+h. Реле/SSR + NC/NO.", {
     loadKind: "heat",
     fields: [
+      HA_LABEL_FIELD,
       { key: "thr", label: "Желаемая температура", unit: "°C", def: 25 },
       { key: "hyst", label: "Гистерезис ±", unit: "°C", def: 1 },
       VALVE_POLARITY,
@@ -229,6 +237,7 @@ export const DESK_SOLUTION_CARDS = [
   M("radiator_comfort", "Климат", "Радиатор / серво 24 В", "MSW температура комнаты → MR6C рвёт или подаёт 24 В на серво. NC: ON = 24 В = греет.", {
     loadKind: "heat",
     fields: [
+      HA_LABEL_FIELD,
       { key: "thr", label: "Желаемая температура", unit: "°C", def: 22 },
       { key: "hyst", label: "Гистерезис ±", unit: "°C", def: 1 },
       RADIATOR_SERVO_POLARITY,
@@ -357,6 +366,7 @@ export const DESK_SOLUTION_CARDS = [
   M("warm_floor_comfort", "Климат", "Тёплый пол: комфорт", "Вкл при thr−h, выкл при thr+h. Нет данных > stale → OFF.", {
     loadKind: "floor",
     fields: [
+      HA_LABEL_FIELD,
       { key: "thr", label: "Желаемая температура", unit: "°C", def: 22 },
       { key: "hyst", label: "Гистерезис ±", unit: "°C", def: 1 },
       { key: "minOn", label: "Мин. работа", unit: "сек", def: 120 },
@@ -368,6 +378,7 @@ export const DESK_SOLUTION_CARDS = [
   M("warm_floor_electric_comfort", "Климат", "Тёплый пол электрический", "M1W2 1-Wire или MSW → реле MR2 Mini / SSR. 22±1: вкл ≤21 °C, выкл ≥23 °C. Нет данных → OFF.", {
     loadKind: "floor",
     fields: [
+      HA_LABEL_FIELD,
       { key: "thr", label: "Желаемая температура", unit: "°C", def: 22 },
       { key: "hyst", label: "Гистерезис ±", unit: "°C", def: 1 },
       { key: "minOn", label: "Мин. работа", unit: "сек", def: 120 },
@@ -379,6 +390,7 @@ export const DESK_SOLUTION_CARDS = [
   M("warm_floor_water_comfort", "Климат", "Тёплый пол водяной", "Вкл при thr−h, выкл при thr+h. NC/NO на коллекторе. Нет данных → OFF.", {
     loadKind: "floor",
     fields: [
+      HA_LABEL_FIELD,
       { key: "thr", label: "Желаемая температура", unit: "°C", def: 22 },
       { key: "hyst", label: "Гистерезис ±", unit: "°C", def: 1 },
       { key: "minOn", label: "Мин. работа", unit: "сек", def: 120 },
@@ -715,6 +727,10 @@ export function upsertDeskSolution(input) {
       const opts = Array.isArray(f.options) ? f.options.map((o) => String(o.v)) : [];
       const v = String(raw ?? f.def ?? "");
       params[f.key] = opts.includes(v) ? v : String(f.def ?? opts[0] ?? "");
+      continue;
+    }
+    if (f.kind === "text") {
+      params[f.key] = String(raw ?? f.def ?? "").trim().slice(0, 80);
       continue;
     }
     const n = Number(raw);

@@ -32,6 +32,7 @@ COPY desk-ha-dashboard-recipe.json /app/desk-ha-dashboard-recipe.json
 COPY desk-ha-dashboard-curtains.yaml /app/desk-ha-dashboard-curtains.yaml
 COPY runtime-desk-pour-user.mjs /app/runtime-desk-pour-user.mjs
 COPY runtime-desk-pour-climate.mjs /app/runtime-desk-pour-climate.mjs
+COPY runtime-desk-pour-thermostat.mjs /app/runtime-desk-pour-thermostat.mjs
 COPY runtime-desk-pour-light.mjs /app/runtime-desk-pour-light.mjs
 COPY runtime-desk-pour-scenes.mjs /app/runtime-desk-pour-scenes.mjs
 COPY runtime-desk-pour-cron.mjs /app/runtime-desk-pour-cron.mjs

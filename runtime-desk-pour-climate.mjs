@@ -3,6 +3,7 @@
  * minOn/minOff — антищелчок; staleSec — страховка тёплого пола.
  */
 import { liveDeskDeviceKey } from "./runtime-desk-rules-marks.mjs";
+import { deskThermostatCellId, isDeskHeatThermostat } from "./runtime-desk-pour-thermostat.mjs";
 
 const CLIMATE = new Set([
   "vent_humidity",
@@ -236,15 +237,30 @@ export function emitDeskClimate(sol) {
       `      var __want = ${latch};`,
     ].join("\n");
   } else if (mode === "lte") {
-    // Симметрия: ON при thr−h, OFF при thr+h (желаемая 22 / hyst 1 → вкл ≤21, выкл ≥23).
+    // Симметрия: ON при thr−h, OFF при thr+h. Уставка живёт в form_logic_os (HA / щит).
     const thr = num(p, "thr", 22);
     const h = Math.max(0.1, num(p, "hyst", 1));
-    body = [
-      `      var thr = ${thr}; var h = ${h};`,
-      `      if (v <= thr - h) ${latch} = true;`,
-      `      else if (v >= thr + h) ${latch} = false;`,
-      `      var __want = ${latch};`,
-    ].join("\n");
+    const heatVd = isDeskHeatThermostat(sol);
+    const th = heatVd ? deskThermostatCellId(sol) : "";
+    const en = th ? th + "_en" : "";
+    body = heatVd
+      ? [
+          `      var thr = Number(readValue(${esc("form_logic_os/" + th)}));`,
+          `      if (isNaN(thr)) thr = ${thr};`,
+          `      var h = ${h};`,
+          `      var __en = readValue(${esc("form_logic_os/" + en)});`,
+          `      var enabled = (__en === "" || __en == null) ? true : wbIsOn(__en);`,
+          `      if (!enabled) ${latch} = false;`,
+          `      else if (v <= thr - h) ${latch} = true;`,
+          `      else if (v >= thr + h) ${latch} = false;`,
+          `      var __want = ${latch};`,
+        ].join("\n")
+      : [
+          `      var thr = ${thr}; var h = ${h};`,
+          `      if (v <= thr - h) ${latch} = true;`,
+          `      else if (v >= thr + h) ${latch} = false;`,
+          `      var __want = ${latch};`,
+        ].join("\n");
   } else {
     const { on, off } = gteBand(sid, p);
     body = [
@@ -274,6 +290,11 @@ export function emitDeskClimate(sol) {
   const heatTick = isHeatCircuit(sid)
     ? [`(function () { try { setInterval(${tick}, 30000); ${tick}(); } catch (_e) {} })();`].join("\n")
     : "";
+  const heatVd = isDeskHeatThermostat(sol);
+  const th = heatVd ? deskThermostatCellId(sol) : "";
+  const changed = heatVd
+    ? `[${esc(sensor)}, ${esc("form_logic_os/" + th)}, ${esc("form_logic_os/" + th + "_en")}]`
+    : esc(sensor);
 
   return [
     `var ${latch} = false;`,
@@ -287,7 +308,7 @@ export function emitDeskClimate(sol) {
     "  } catch (e) { if (typeof wbRuleGuardCatch === 'function') wbRuleGuardCatch(" + esc(id) + ", e); }",
     "}",
     `defineRule(${esc(id)}, {`,
-    `  whenChanged: ${esc(sensor)},`,
+    `  whenChanged: ${changed},`,
     `  then: function () { ${tick}(); }`,
     "});",
     heatTick,

@@ -30,6 +30,7 @@ desk-ha-dashboard-recipe.json
 desk-ha-dashboard-curtains.yaml
 runtime-desk-pour-user.mjs
 runtime-desk-pour-climate.mjs
+runtime-desk-pour-thermostat.mjs
 runtime-desk-pour-light.mjs
 runtime-desk-pour-scenes.mjs
 runtime-desk-pour-cron.mjs

@@ -3249,6 +3249,14 @@
           });
           const draftVal = draft && draft.params ? draft.params[f.key] : undefined;
           inp.value = draftVal != null ? String(draftVal) : String(f.def);
+        } else if (f.kind === "text") {
+          inp = document.createElement("input");
+          inp.type = "text";
+          inp.className = "bind wide";
+          inp.maxLength = 80;
+          inp.placeholder = "Ванная";
+          const draftVal = draft && draft.params ? draft.params[f.key] : undefined;
+          inp.value = draftVal != null ? String(draftVal) : String(f.def || "");
         } else {
           inp = document.createElement("input");
           inp.type = "number";
@@ -3268,6 +3276,10 @@
         fields.forEach((f) => {
           if (f.kind === "select") {
             out[f.key] = String(paramInputs[f.key].value || f.def || "");
+            return;
+          }
+          if (f.kind === "text") {
+            out[f.key] = String(paramInputs[f.key].value || "").trim().slice(0, 80);
             return;
           }
           const n = Number(paramInputs[f.key].value);
@@ -3440,8 +3452,9 @@
           const opt = (f.options || []).find((o) => String(o.v) === String(v));
           return f.label + ": " + ((opt && opt.t) || v || f.def);
         }
+        if (f.kind === "text") return v ? String(v) : "";
         return f.label + " " + (Number.isFinite(Number(v)) ? Number(v) : f.def) + (f.unit || "");
-      }).join(" · ");
+      }).filter(Boolean).join(" · ");
     }
     const CARD_ICO = {
       light_button_toggle: "<svg viewBox='0 0 24 24'><rect x='2' y='7' width='20' height='10' rx='5'/><circle cx='16' cy='12' r='3'/></svg>",

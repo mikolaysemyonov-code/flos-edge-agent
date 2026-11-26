@@ -15,6 +15,7 @@ import {
   readPouredDeskSnapshot,
 } from "./runtime-desk-rules-marks.mjs";
 import { mergeDeskNamesIntoCore } from "./runtime-desk-pour-core.mjs";
+import { mergeDeskThermostatsIntoCore } from "./runtime-desk-pour-thermostat.mjs";
 import {
   collectFlosIdsFromReleaseRing,
   prepareCoreWithStaleHide,
@@ -302,6 +303,14 @@ export function buildDeskPourPackage(scopeRaw = "all", opts = {}) {
         removedIds = bridged.removedIds || removedIds;
         activeIds = bridged.activeIds || activeIds;
       }
+    }
+    const coreNow = shards.find((s) => s.filename === "00_core.js")?.content || coreSrc;
+    const therm = mergeDeskThermostatsIntoCore(coreNow, pouredSols);
+    if (therm.ok && therm.changed) {
+      const shard = { filename: "00_core.js", content: therm.content };
+      const prev = shards.findIndex((s) => s.filename === "00_core.js");
+      if (prev >= 0) shards[prev] = shard;
+      else shards.push(shard);
     }
   }
 

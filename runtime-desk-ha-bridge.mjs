@@ -40,6 +40,8 @@ import {
 } from "./runtime-desk-ha-raw.mjs";
 import { expectedDeskOutputIds } from "./runtime-desk-shelves.mjs";
 import { deskHaLights, deskHaPouredLoads } from "./runtime-desk-ha-lights.mjs";
+import { listDeskSolutions } from "./runtime-desk-solutions.mjs";
+import { buildHaClimateDiscovery } from "./runtime-desk-pour-thermostat.mjs";
 
 function localBrokerUrl() {
   const host = (process.env.FLOS_MQTT_MIRROR_HOST || process.env.REACTOR_MQTT_MIRROR_HOST || "127.0.0.1").trim();
@@ -171,6 +173,7 @@ const state = {
   lastChannelOn: new Map(),
   keepIds: new Set(),
   keepTopics: new Set(),
+  climateTopics: new Set(),
   ghosted: new Set(),
   entities: new Map(),
   pendingTombstone: new Set(),
@@ -462,7 +465,7 @@ function legacyHaUniqueIds(deviceTopicKey, controlId) {
 
 function tombstoneUniqueId(uniqueId) {
   const client = state.remote || state.local;
-  for (const kind of ["light", "switch", "cover", "binary_sensor"]) {
+  for (const kind of ["light", "switch", "cover", "binary_sensor", "climate"]) {
     pub(client, `homeassistant/${kind}/${uniqueId}/config`, "", true);
   }
   state.discovered.delete(uniqueId);
@@ -645,9 +648,46 @@ function tombstoneDroppedDali() {
   }
 }
 
+function climateRows() {
+  const out = [];
+  for (const sol of listDeskSolutions()) {
+    const row = buildHaClimateDiscovery(sol);
+    if (row) out.push(row);
+  }
+  return out;
+}
+
+function rememberClimateTopics(rows) {
+  state.climateTopics = new Set();
+  for (const row of rows) {
+    if (row.kind !== "heat") continue;
+    if (row.currentTopic) state.climateTopics.add(row.currentTopic);
+    if (row.setpointTopic) state.climateTopics.add(row.setpointTopic);
+    if (row.modeTopic) state.climateTopics.add(row.modeTopic);
+  }
+}
+
+function echoClimate(row) {
+  if (row?.kind !== "heat") return;
+  const client = state.remote || state.local;
+  if (!client) return;
+  for (const t of [row.currentTopic, row.setpointTopic, row.modeTopic]) {
+    if (!t) continue;
+    const v = state.values.get(t);
+    if (v != null && v !== "") pub(client, t, v, true);
+  }
+}
+
+function maybeForwardClimate(parsed, text) {
+  if (!parsed || parsed.isCommand) return;
+  if (!state.climateTopics.has(parsed.stateTopic)) return;
+  if (state.remote && state.remote !== state.local) pub(state.remote, parsed.stateTopic, text, true);
+}
+
 function discoverAll() {
   seedValuesFromShelves();
-  const rows = allLoadRows();
+  const rows = allLoadRows().concat(climateRows());
+  rememberClimateTopics(rows);
   state.keepIds = new Set(rows.map((r) => r.uniqueId));
   state.keepTopics = new Set(rows.map((r) => String(r.topic || "").replace(/^\/+/, "")));
   tombstoneSlavedRelays(state.driveKeys);
@@ -656,6 +696,7 @@ function discoverAll() {
   for (const row of rows) {
     publishDiscovery(row);
     echoRetained(row);
+    echoClimate(row);
   }
   flushTombstones();
   return true;
@@ -727,6 +768,7 @@ export function onDeskHaBusTraffic(topic, buf) {
       const n = Number(text);
       if (Number.isFinite(n) && n > 0) state.lastBri.set(parsed.stateTopic, String(n));
     }
+    maybeForwardClimate(parsed, text);
     return;
   }
   if (applyHaDaliCommand(parsed, text)) return;
@@ -743,6 +785,7 @@ function onBrokerMessage(topic, buf) {
       const n = Number(text);
       if (Number.isFinite(n) && n > 0) state.lastBri.set(parsed.stateTopic, String(n));
     }
+    maybeForwardClimate(parsed, text);
   }
   if (shouldTombstoneHaDiscovery(topic, text, state.keepTopics) || isForeignHaDiscovery(topic, text)) {
     if (state.discovered.size) {
@@ -775,6 +818,10 @@ function onRemoteMessage(topic, buf) {
   if (!parsed || !parsed.isCommand) return;
   const text = buf ? buf.toString("utf8") : "";
   if (applyHaDaliCommand(parsed, text)) return;
+  if (parsed.deviceTopicKey === "form_logic_os" && /^th_/.test(String(parsed.controlId || ""))) {
+    pub(state.local, parsed.commandTopic, text, false);
+    return;
+  }
   if (!isHaRawLoadControl(parsed.deviceTopicKey, parsed.controlId)) return;
   pub(state.local, parsed.commandTopic, text, false);
 }
