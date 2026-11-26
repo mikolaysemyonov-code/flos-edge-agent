@@ -27,6 +27,7 @@ const SCENE_LEVEL = {
 
 const SCENES = new Set([
   ...Object.keys(SCENE_LEVEL),
+  "curtain_button_toggle",
   "curtain_button_open",
   "curtain_button_close",
   "curtain_button_stop",
@@ -47,9 +48,17 @@ function pathOf(c) {
   return physPath(c.deviceTopicKey, c.controlId);
 }
 
-function triggerWhen(trig) {
+function pressKind(sol) {
+  const p = String(sol?.params?.press || (sol?.solutionId === "curtain_button_toggle" ? "double" : "single")).toLowerCase();
+  if (p === "double") return "Double";
+  if (p === "long") return "Long";
+  if (p === "shortlong") return "Shortlong";
+  return "Short";
+}
+
+function triggerWhen(trig, kind) {
   const dev = liveDeskDeviceKey(trig?.deviceTopicKey);
-  const cid = deskButtonCounter(trig?.controlId, "Short", dev);
+  const cid = deskButtonCounter(trig?.controlId, kind || "Short", dev);
   if (!dev || !cid) return "";
   return dev + "/" + cid;
 }
@@ -107,6 +116,28 @@ function emitCurtain(sol, kind) {
   return deskEmitRule(id, when, lines.join("\n"), { pressEdge: true });
 }
 
+/** Двойное: открыть, ещё раз — закрыть. Latch в скрипте: привод не держит состояние. */
+function emitCurtainToggle(sol) {
+  const when = triggerWhen(sol.trigger, pressKind(sol));
+  const loads = (sol.targets || []).map(pathOf).filter(Boolean);
+  if (!when || !loads.length) return "";
+  const id = "desk_sol_" + sol.id + "_curt";
+  const latch = "_desk_curt_" + String(sol.id || "").replace(/[^a-zA-Z0-9_]/g, "_");
+  const lines = [
+    `      ${latch} = !${latch};`,
+    `      var __open = ${latch};`,
+  ];
+  for (const p of loads) {
+    const open = p.replace(/ Close$/i, " Open");
+    const close = open.replace(/ Open$/i, " Close");
+    lines.push(`      wbActuatorSet(${esc(open)}, __open ? 1 : 0, ${esc(id)}, 55);`);
+    if (close !== open) {
+      lines.push(`      wbActuatorSet(${esc(close)}, __open ? 0 : 1, ${esc(id)}, 55);`);
+    }
+  }
+  return `var ${latch} = false;\n` + deskEmitRule(id, when, lines.join("\n"), { pressEdge: true });
+}
+
 /** Замок — жест кнопки, не уровень входа. Счётчик не читаем через wbIsOn. */
 function emitLock(sol) {
   const when = triggerWhen(sol.trigger);
@@ -139,6 +170,7 @@ export function isDeskSceneSolution(sol) {
 export function emitDeskScene(sol) {
   const sid = String(sol?.solutionId || "");
   if (!SCENES.has(sid)) return "";
+  if (sid === "curtain_button_toggle") return emitCurtainToggle(sol);
   if (sid === "curtain_button_open" || sid === "gate_button_open") return emitCurtain(sol, "open");
   if (sid === "curtain_button_close" || sid === "gate_button_close") return emitCurtain(sol, "close");
   if (sid === "curtain_button_stop" || sid === "gate_button_stop") return emitCurtain(sol, "stop");

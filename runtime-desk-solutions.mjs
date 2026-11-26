@@ -253,6 +253,10 @@ export const DESK_SOLUTION_CARDS = [
       { key: "mm", label: "Минута", unit: "0–59", def: 0 },
     ],
   }),
+  M("curtain_button_toggle", "Шторы", "Шторы: открыть / закрыть", "Двойное нажатие открывает фазные шторы, следующее двойное — закрывает.", {
+    loadKind: "curtain",
+    fields: [{ ...PRESS_FIELD, def: "double" }],
+  }),
   M("curtain_button_open", "Шторы", "Шторы: открыть кнопкой", "Если нажали → выбранные шторы / роллеты открываются.", { loadKind: "curtain" }),
   M("curtain_button_close", "Шторы", "Шторы: закрыть кнопкой", "Если нажали → выбранные шторы закрываются.", { loadKind: "curtain" }),
   M("curtain_button_stop", "Шторы", "Шторы: стоп кнопкой", "Если нажали → выбранные приводы стоп.", { loadKind: "curtain" }),
@@ -573,6 +577,7 @@ const LATCHING_CARDS = new Set([
   "audio_toggle",
   "audio_volume_hold",
   "socket_button_toggle",
+  "curtain_button_toggle",
   "curtain_button_open",
   "curtain_button_close",
   "curtain_button_stop",
