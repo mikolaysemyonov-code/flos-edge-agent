@@ -249,16 +249,19 @@ export function emitDeskClimate(sol) {
           `      if (isNaN(thr)) thr = ${thr};`,
           `      var h = ${h};`,
           `      var __en = readValue(${esc("form_logic_os/" + en)});`,
-          `      var enabled = (__en === "" || __en == null) ? true : wbIsOn(__en);`,
+          `      var enabled = !(__en === false || __en === 0 || __en === "0" || String(__en).toLowerCase() === "false" || String(__en).toLowerCase() === "off");`,
+          `      if (__en === "" || __en == null) enabled = true;`,
           `      if (!enabled) ${latch} = false;`,
           `      else if (v <= thr - h) ${latch} = true;`,
           `      else if (v >= thr + h) ${latch} = false;`,
+          `      else return;`,
           `      var __want = ${latch};`,
         ].join("\n")
       : [
           `      var thr = ${thr}; var h = ${h};`,
           `      if (v <= thr - h) ${latch} = true;`,
           `      else if (v >= thr + h) ${latch} = false;`,
+          `      else return;`,
           `      var __want = ${latch};`,
         ].join("\n");
   } else {
@@ -273,12 +276,7 @@ export function emitDeskClimate(sol) {
   const readBlock = staleSec
     ? [
         `      var v = Number(readValue(${esc(sensor)}));`,
-        `      if (isNaN(v)) {`,
-        `        ${latch} = false;`,
-        `        var __want = false;`,
-        guard.wrap ? guard.wrap(loads, id) : setLoads(loads, "__want", id),
-        `        return;`,
-        `      }`,
+        `      if (isNaN(v)) return;`,
         `      ${ts} = Date.now();`,
       ].join("\n")
     : [
@@ -288,7 +286,7 @@ export function emitDeskClimate(sol) {
 
   const tick = latch + "_go";
   const heatTick = isHeatCircuit(sid)
-    ? [`(function () { try { setInterval(${tick}, 30000); ${tick}(); } catch (_e) {} })();`].join("\n")
+    ? [`(function () { try { setInterval(${tick}, 30000); setTimeout(${tick}, 3000); } catch (_e) {} })();`].join("\n")
     : "";
   const heatVd = isDeskHeatThermostat(sol);
   const th = heatVd ? deskThermostatCellId(sol) : "";

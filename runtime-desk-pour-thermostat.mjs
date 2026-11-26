@@ -101,7 +101,7 @@ export function mergeDeskThermostatsIntoCore(coreSrc, solutions) {
       continue;
     }
     const range = `    ${esc(id)}: { type: "range", title: ${esc(title)}, value: ${value}, min: 5, max: 35 },`;
-    const sw = `    ${esc(en)}: { type: "switch", title: ${esc(title + " · нагрев")}, value: true, forceDefault: false },`;
+    const sw = `    ${esc(en)}: { type: "switch", title: ${esc(title + " · нагрев")}, value: true, forceDefault: true },`;
     const a = upsertCellLine(src, id, range);
     src = a.src;
     if (a.changed) changed = true;
