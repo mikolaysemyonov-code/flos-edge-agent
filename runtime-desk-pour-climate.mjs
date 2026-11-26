@@ -98,8 +98,8 @@ function antiClickGuard(latch, minOnSec, minOffSec, invert) {
         `      var __now = Date.now();`,
         `      if (__want !== ${wantVar}) {`,
         `        var __elapsed = __now - ${tVar};`,
-        `        if (${wantVar} && ${onMs} && __elapsed < ${onMs}) __want = ${wantVar};`,
-        `        else if (!${wantVar} && ${offMs} && __elapsed < ${offMs}) __want = ${wantVar};`,
+        `        if (${wantVar} && ${onMs} && __elapsed < ${onMs} && !__forceOff) __want = ${wantVar};`,
+        `        else if (!${wantVar} && ${offMs} && __elapsed < ${offMs} && !__forceOn) __want = ${wantVar};`,
         `        else { ${wantVar} = __want; ${tVar} = __now; }`,
         `      }`,
         applyHeatLoads(loads, id, invert),
@@ -256,6 +256,8 @@ export function emitDeskClimate(sol) {
           `      else if (v >= thr + h) ${latch} = false;`,
           `      else return;`,
           `      var __want = ${latch};`,
+          `      var __forceOn = enabled && v <= thr - h;`,
+          `      var __forceOff = !enabled || v >= thr + h;`,
         ].join("\n")
       : [
           `      var thr = ${thr}; var h = ${h};`,
@@ -263,6 +265,8 @@ export function emitDeskClimate(sol) {
           `      else if (v >= thr + h) ${latch} = false;`,
           `      else return;`,
           `      var __want = ${latch};`,
+          `      var __forceOn = v <= thr - h;`,
+          `      var __forceOff = v >= thr + h;`,
         ].join("\n");
   } else {
     const { on, off } = gteBand(sid, p);
@@ -286,7 +290,7 @@ export function emitDeskClimate(sol) {
 
   const tick = latch + "_go";
   const heatTick = isHeatCircuit(sid)
-    ? [`(function () { try { setInterval(${tick}, 30000); setTimeout(${tick}, 3000); } catch (_e) {} })();`].join("\n")
+    ? [`(function () { try { setInterval(${tick}, 10000); setTimeout(${tick}, 1500); } catch (_e) {} })();`].join("\n")
     : "";
   const heatVd = isDeskHeatThermostat(sol);
   const th = heatVd ? deskThermostatCellId(sol) : "";
@@ -300,6 +304,8 @@ export function emitDeskClimate(sol) {
     emitFloorStaleWatch(sol, loads, latch, staleSec, invert),
     `function ${tick}() {`,
     "  try {",
+    "      var __forceOn = false;",
+    "      var __forceOff = false;",
     readBlock,
     body,
     guard.wrap ? guard.wrap(loads, id) : setLoads(loads, "__want", id),
