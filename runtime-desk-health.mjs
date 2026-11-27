@@ -158,7 +158,7 @@ export function assessDeskHealth(shelves, ctx = {}) {
   for (const sol of solutions) {
     const t = sol?.trigger;
     if (!t?.deviceTopicKey || !t?.controlId) {
-      if (sol?.solutionId && !/^cron_|outdoor_|anti_ice/i.test(String(sol.solutionId))) {
+      if (sol?.solutionId && !/^cron_|outdoor_|anti_ice|scene_astro_/i.test(String(sol.solutionId))) {
         issues.push(
           issue("warn", "sol_no_trig", "Типовая без кнопки: «" + (sol.title || sol.solutionId) + "»"),
         );

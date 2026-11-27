@@ -36,6 +36,7 @@ COPY runtime-desk-pour-thermostat.mjs /app/runtime-desk-pour-thermostat.mjs
 COPY runtime-desk-pour-light.mjs /app/runtime-desk-pour-light.mjs
 COPY runtime-desk-pour-scenes.mjs /app/runtime-desk-pour-scenes.mjs
 COPY runtime-desk-pour-cron.mjs /app/runtime-desk-pour-cron.mjs
+COPY runtime-desk-pour-astro.mjs /app/runtime-desk-pour-astro.mjs
 COPY runtime-desk-actuate.mjs /app/runtime-desk-actuate.mjs
 COPY runtime-desk-key-scan.mjs /app/runtime-desk-key-scan.mjs
 COPY runtime-desk-walk.mjs /app/runtime-desk-walk.mjs

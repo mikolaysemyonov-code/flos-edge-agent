@@ -5,6 +5,7 @@ import { physPath, virtCell } from "./runtime-desk-pour-core.mjs";
 import { deskButtonCounter, deskEmitRule } from "./runtime-desk-marking.mjs";
 import { liveDeskDeviceKey } from "./runtime-desk-rules-marks.mjs";
 import { emitDeskClimate, isDeskClimateSolution } from "./runtime-desk-pour-climate.mjs";
+import { emitDeskAstro, emitDeskAstroHelper, isDeskAstroSolution } from "./runtime-desk-pour-astro.mjs";
 import { emitDeskCron, isDeskCronSolution } from "./runtime-desk-pour-cron.mjs";
 import { emitDeskLight, isDeskLightSolution } from "./runtime-desk-pour-light.mjs";
 import { emitDeskScene, isDeskSceneSolution } from "./runtime-desk-pour-scenes.mjs";
@@ -71,6 +72,7 @@ const RULE_SUFFIXES = [
   "_vavf",
   "_stale",
   "_cron",
+  "_astro",
   "_clim",
   "_curt",
   "_set",
@@ -131,6 +133,7 @@ function stripDeskRules(src) {
   text = text.replace(/^\/\/\s*desk_sol[^\n]*\n?/gm, "");
   text = text.replace(/^var _desk_[^\n]*\n?/gm, "");
   text = text.replace(/function __deskVavY[\s\S]*?function __deskVavPushFan[\s\S]*?\n\}/g, "");
+  text = text.replace(/function __deskSunUtcH[\s\S]*?\n\}/g, "");
   text = text.replace(/\(function \(\) \{\n {2}if \(typeof global === 'undefined'\) return;\n[\s\S]*?\}\)\(\);\n?/g, "");
   const re = /defineRule\s*\(\s*['"]desk_sol_[^'"]+['"][\s\S]*?(?=defineRule\s*\(|$)/g;
   return text.replace(re, "").replace(/\n{3,}/g, "\n\n").trim();
@@ -279,6 +282,7 @@ export function supportedDeskSolution(sol) {
   return (
     SUPPORTED.has(sid) ||
     isDeskClimateSolution(row) ||
+    isDeskAstroSolution(row) ||
     isDeskCronSolution(row) ||
     isDeskLightSolution(row) ||
     isDeskSceneSolution(row) ||
@@ -293,6 +297,7 @@ function emitOne(sol) {
   if (isDeskVavSolution(row)) return emitDeskVavSolution(row);
   const sid = String(row.solutionId || "");
   if (isDeskClimateSolution(row)) return emitDeskClimate(row);
+  if (isDeskAstroSolution(row)) return emitDeskAstro(row);
   if (isDeskCronSolution(row)) return emitDeskCron(row);
   if (isDeskLightSolution(row)) return emitDeskLight(row);
   if (isDeskSceneSolution(row)) return emitDeskScene(row);
@@ -303,12 +308,18 @@ function emitOne(sol) {
   return emitToggle(row);
 }
 
-function chunksFor(list, { helper }) {
+function chunksFor(list, opts = {}) {
   const chunks = [];
   const rows = list.map(canonSol);
-  if (helper && rows.some(isDeskVavSolution)) {
+  const helperVav = opts.helperVav ?? opts.helper;
+  const helperAstro = opts.helperAstro ?? opts.helper;
+  if (helperVav && rows.some(isDeskVavSolution)) {
     const js = emitDeskVavHelper();
     if (js) chunks.push(ownedChunk("__vav", js));
+  }
+  if (helperAstro && rows.some(isDeskAstroSolution)) {
+    const js = emitDeskAstroHelper();
+    if (js) chunks.push(ownedChunk("__astro", js));
   }
   for (const sol of rows) {
     const js = emitOne(sol);
@@ -338,7 +349,7 @@ export function mergeDeskSolutionsIntoUser(userSrc, solutions, opts = {}) {
     const content = joinUser(base, chunks);
     return {
       content,
-      emitted: chunks.filter((c) => !c.startsWith("// desk_sol_owner:__vav\n")).length,
+      emitted: chunks.filter((c) => !c.startsWith("// desk_sol_owner:__vav\n") && !c.startsWith("// desk_sol_owner:__astro\n")).length,
       changed: content.trim() !== String(userSrc || "").trim(),
       solutionIds: list.map((s) => String(s.id)),
     };
@@ -346,8 +357,10 @@ export function mergeDeskSolutionsIntoUser(userSrc, solutions, opts = {}) {
   const targets = list.filter((s) => onlyIds.includes(String(s.id)));
   let text = String(userSrc || "");
   for (const sol of targets) text = dropOwnerBlock(text, String(sol.id));
-  const needHelper = targets.some(isDeskVavSolution) && !text.includes("function __deskVavY");
-  const chunks = chunksFor(targets, { helper: needHelper });
+  const chunks = chunksFor(targets, {
+    helperVav: targets.some(isDeskVavSolution) && !text.includes("function __deskVavY"),
+    helperAstro: targets.some(isDeskAstroSolution) && !text.includes("function __deskSunUtcH"),
+  });
   let content = text.replace(/\n{3,}/g, "\n\n").trim();
   if (chunks.length) {
     if (!content.includes("// desk_sol — типовые со стола LAN")) {
@@ -359,7 +372,7 @@ export function mergeDeskSolutionsIntoUser(userSrc, solutions, opts = {}) {
   }
   return {
     content,
-    emitted: chunks.filter((c) => !c.startsWith("// desk_sol_owner:__vav\n")).length,
+    emitted: chunks.filter((c) => !c.startsWith("// desk_sol_owner:__vav\n") && !c.startsWith("// desk_sol_owner:__astro\n")).length,
     changed: content.trim() !== String(userSrc || "").trim(),
     solutionIds: targets.map((s) => String(s.id)),
   };

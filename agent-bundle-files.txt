@@ -34,6 +34,7 @@ runtime-desk-pour-thermostat.mjs
 runtime-desk-pour-light.mjs
 runtime-desk-pour-scenes.mjs
 runtime-desk-pour-cron.mjs
+runtime-desk-pour-astro.mjs
 runtime-desk-actuate.mjs
 runtime-desk-key-scan.mjs
 runtime-desk-walk.mjs

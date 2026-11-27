@@ -4,6 +4,7 @@
  * vent_vav_zone / vent_vav_fan — не vent_diy_vav (реле). «Я дома» — scene_come_home.
  */
 import { isDeskDeviceKey, patchDeskDocument, readDeskDocument, withShelfChannelCards } from "./runtime-desk-marking.mjs";
+import { DESK_ASTRO_IDS } from "./runtime-desk-pour-astro.mjs";
 import { DESK_CRON_IDS } from "./runtime-desk-pour-cron.mjs";
 import { exclusiveDeskCards, isLoadControl } from "./runtime-desk-rules-marks.mjs";
 
@@ -443,6 +444,26 @@ export const DESK_SOLUTION_CARDS = [
   M("leak_close_valves", "Охрана", "Протечка — закрыть краны", "Если протечка → закрыть краны. Только линии с именем «кран/клапан».", { loadKind: "valve" }),
   M("lock_button_set", "Охрана", "Замок кнопкой", "Если нажали → команда на выбранные замки.", { loadKind: "lock" }),
   M("siren_motion", "Охрана", "Сирена по движению", "Если движение → выбранные сирены / тревога.", { loadKind: "siren" }),
+  C("scene_astro_on", "Сцены", "Свет по закату", "Включает выбранный свет в закат (астрономия NOAA). Часы — контроллер; координаты — поля карточки. Сдвиг минус = раньше. После перезагрузки догонит, если закат сегодня уже был.", {
+    loadKind: "light",
+    perLoadLevel: true,
+    fields: [
+      {
+        key: "event",
+        kind: "select",
+        label: "Событие",
+        def: "sunset",
+        options: [
+          { v: "sunset", t: "Закат (край солнца)" },
+          { v: "dusk", t: "Гражданские сумерки (−6°)" },
+        ],
+      },
+      { key: "offsetMin", label: "Сдвиг", unit: "мин (− раньше)", def: 0 },
+      { key: "lat", label: "Широта", unit: "°", def: 55.75 },
+      { key: "lon", label: "Долгота", unit: "°", def: 37.62 },
+      { key: "level", label: "Яркость", unit: "%", def: 100 },
+    ],
+  }),
   M("scene_away", "Сцены", "Не дома", "Галка + 0% = погасить; без галки = не трогаем (например спальню).", {
     loadKind: "light",
     perLoadLevel: true,
@@ -515,7 +536,7 @@ export function deskSolutionCatalog() {
   return DESK_SOLUTION_CARDS.filter((c) => c.pour !== false).map((c) => ({
     ...c,
     continuous: DESK_CONTINUOUS_CARD_IDS.has(c.id),
-    cron: DESK_CRON_IDS.has(c.id),
+    cron: DESK_CRON_IDS.has(c.id) || DESK_ASTRO_IDS.has(c.id),
   }));
 }
 
@@ -655,7 +676,7 @@ export function findScheduleOutputClash(solutions) {
   for (const s of solutions || []) {
     const kind = DESK_CONTINUOUS_CARD_IDS.has(s?.solutionId)
       ? "c"
-      : DESK_CRON_IDS.has(s?.solutionId)
+      : DESK_CRON_IDS.has(s?.solutionId) || DESK_ASTRO_IDS.has(s?.solutionId)
         ? "k"
         : "";
     if (!kind) continue;
