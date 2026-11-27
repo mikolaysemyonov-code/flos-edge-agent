@@ -98,10 +98,18 @@ export function mergeDeskThermostatsIntoCore(coreSrc, solutions) {
       const e = patchTitleOnly(src, en, title + " · нагрев");
       src = e.src;
       if (e.changed) changed = true;
+      const fd = src.replace(
+        new RegExp("(" + esc(en).replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + "\\s*:\\s*\\{[^\\n]*forceDefault:\\s*)true"),
+        "$1false",
+      );
+      if (fd !== src) {
+        src = fd;
+        changed = true;
+      }
       continue;
     }
     const range = `    ${esc(id)}: { type: "range", title: ${esc(title)}, value: ${value}, min: 5, max: 35 },`;
-    const sw = `    ${esc(en)}: { type: "switch", title: ${esc(title + " · нагрев")}, value: true, forceDefault: true },`;
+    const sw = `    ${esc(en)}: { type: "switch", title: ${esc(title + " · нагрев")}, value: true, forceDefault: false },`;
     const a = upsertCellLine(src, id, range);
     src = a.src;
     if (a.changed) changed = true;

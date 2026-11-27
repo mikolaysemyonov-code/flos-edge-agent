@@ -254,18 +254,20 @@ export function emitDeskClimate(sol) {
           `      if (!enabled) ${latch} = false;`,
           `      else if (v <= thr - h) ${latch} = true;`,
           `      else if (v >= thr + h) ${latch} = false;`,
+          `      else if (v < thr) ${latch} = true;`,
           `      else return;`,
           `      var __want = ${latch};`,
-          `      var __forceOn = enabled && v <= thr - h;`,
+          `      var __forceOn = enabled && v < thr;`,
           `      var __forceOff = !enabled || v >= thr + h;`,
         ].join("\n")
       : [
           `      var thr = ${thr}; var h = ${h};`,
           `      if (v <= thr - h) ${latch} = true;`,
           `      else if (v >= thr + h) ${latch} = false;`,
+          `      else if (v < thr) ${latch} = true;`,
           `      else return;`,
           `      var __want = ${latch};`,
-          `      var __forceOn = v <= thr - h;`,
+          `      var __forceOn = v < thr;`,
           `      var __forceOff = v >= thr + h;`,
         ].join("\n");
   } else {

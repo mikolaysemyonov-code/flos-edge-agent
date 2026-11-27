@@ -379,7 +379,7 @@ export const DESK_SOLUTION_CARDS = [
       { key: "staleSec", label: "Нет данных — стоп через", unit: "сек", def: 900 },
     ],
   }),
-  M("warm_floor_electric_comfort", "Климат", "Тёплый пол электрический", "M1W2 1-Wire или MSW → реле MR2 Mini / SSR. 22±1: вкл ≤21 °C, выкл ≥23 °C. Нет данных → OFF.", {
+  M("warm_floor_electric_comfort", "Климат", "Тёплый пол электрический", "После пропадания щита: если «нагрев» ON и t < уставки — снова греет. Лето: выключи «нагрев» — пол не стартует. 22±1, нет данных → OFF.", {
     loadKind: "floor",
     fields: [
       HA_LABEL_FIELD,
