@@ -69,12 +69,12 @@ function setLoads(loads, wantExpr, id) {
     .map((load) =>
       [
         "      try {",
-        `        if (wbIsOn(readValue(${esc(load)})) !== !!(${wantExpr})) {`,
+        `        var __cell = readValue(${esc(load)});`,
+        "        if (__cell === undefined) {}",
+        `        else if (wbIsOn(__cell) !== !!(${wantExpr})) {`,
         `          wbActuatorSet(${esc(load)}, ${wantExpr}, ${esc(id)}, 50);`,
         "        }",
-        "      } catch (_e) {",
-        `        wbActuatorSet(${esc(load)}, ${wantExpr}, ${esc(id)}, 50);`,
-        "      }",
+        "      } catch (_e) {}",
       ].join("\n"),
     )
     .join("\n");
@@ -292,7 +292,7 @@ export function emitDeskClimate(sol) {
 
   const tick = latch + "_go";
   const heatTick = isHeatCircuit(sid)
-    ? [`(function () { try { setInterval(${tick}, 10000); setTimeout(${tick}, 1500); } catch (_e) {} })();`].join("\n")
+    ? [`(function () { try { setInterval(${tick}, 10000); setTimeout(${tick}, 8000); } catch (_e) {} })();`].join("\n")
     : "";
   const heatVd = isDeskHeatThermostat(sol);
   const th = heatVd ? deskThermostatCellId(sol) : "";
