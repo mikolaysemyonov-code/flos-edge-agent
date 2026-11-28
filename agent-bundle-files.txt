@@ -26,6 +26,7 @@ runtime-desk-ha-raw.mjs
 runtime-desk-ha-bridge.mjs
 runtime-desk-ha-dashboard.mjs
 runtime-desk-mark-sheet.mjs
+runtime-desk-links-sheet.mjs
 desk-ha-dashboard-recipe.json
 desk-ha-dashboard-curtains.yaml
 runtime-desk-pour-user.mjs

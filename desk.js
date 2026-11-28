@@ -8624,6 +8624,14 @@
         } else renderMark();
       });
     });
+    if ($("linksXlsx")) {
+      $("linksXlsx").addEventListener("click", () => {
+        const a = document.createElement("a");
+        a.href = "/runtime/desk-links.xlsx";
+        a.download = "карта-связей.xlsx";
+        a.click();
+      });
+    }
     if ($("passportXlsx")) {
       $("passportXlsx").addEventListener("click", () => {
         const unboundKeys = keyPlan.filter((k) => !k.deviceTopicKey).length;

@@ -28,6 +28,7 @@ COPY runtime-desk-ha-raw.mjs /app/runtime-desk-ha-raw.mjs
 COPY runtime-desk-ha-bridge.mjs /app/runtime-desk-ha-bridge.mjs
 COPY runtime-desk-ha-dashboard.mjs /app/runtime-desk-ha-dashboard.mjs
 COPY runtime-desk-mark-sheet.mjs /app/runtime-desk-mark-sheet.mjs
+COPY runtime-desk-links-sheet.mjs /app/runtime-desk-links-sheet.mjs
 COPY desk-ha-dashboard-recipe.json /app/desk-ha-dashboard-recipe.json
 COPY desk-ha-dashboard-curtains.yaml /app/desk-ha-dashboard-curtains.yaml
 COPY runtime-desk-pour-user.mjs /app/runtime-desk-pour-user.mjs
