@@ -3091,6 +3091,7 @@
       let trigPicker = null;
       let auxPicker = null;
       let tgtPicker = null;
+      let nightPicker = null;
       let trig = null;
       let aux = null;
       const trigLab = document.createElement("span");
@@ -3225,6 +3226,26 @@
       disposers.push(tgtPicker.dispose);
       const tgtNode = tgtPicker.node;
       const collectTargets = () => tgtPicker.collect();
+      let nightLab = null;
+      let nightNode = null;
+      if (card.nightLoads) {
+        nightLab = document.createElement("span");
+        nightLab.className = "fld";
+        nightLab.textContent = "Гасить по часам (необязательно)";
+        const draftNight = (draft && Array.isArray(draft.nightTargets) ? draft.nightTargets : [])
+          .map((t) => contactKey(t.deviceTopicKey, t.controlId));
+        nightPicker = makeTagPicker({
+          rows: loads,
+          multi: true,
+          placeholder: "Линии в 00:00…",
+          searchPlaceholder: rawOn ? rawHint : "",
+          emptyText: "Нет линий — разметьте свет.",
+          draftKeys: draftNight,
+          onChange: bump,
+        });
+        disposers.push(nightPicker.dispose);
+        nightNode = nightPicker.node;
+      }
       cardSheetDispose = () => disposers.forEach((fn) => { try { fn(); } catch (_e) {} });
       const fields = (Array.isArray(card.fields) ? card.fields : [])
         .filter((f) => !(perLoadLevel && f.key === "level"))
@@ -3316,6 +3337,7 @@
             trigger: needTrig ? trigContact : null,
             aux: needAux ? auxContact : undefined,
             targets: collectTargets(),
+            nightTargets: nightPicker ? nightPicker.collect() : undefined,
             params: (fields.length || perLoadLevel) ? collectParams() : undefined,
           }),
         }).then((r) => r.json()).then((j) => {
@@ -3408,6 +3430,7 @@
         if (trigPicker) trigPicker.setRows(rawOn ? rawTriggerRows() : namedTrigRows, hint, rawOn ? rawEmpty : "");
         if (auxPicker) auxPicker.setRows(rawOn ? rawTriggerRows() : auxNamed, hint, rawOn ? rawEmpty : "");
         if (tgtPicker) tgtPicker.setRows(rawOn ? rawLoadsForCard(card) : namedLoadRows, hint, rawOn ? rawEmpty : "");
+        if (nightPicker) nightPicker.setRows(rawOn ? rawLoadsForCard(card) : namedLoadRows, hint, rawOn ? rawEmpty : "");
       });
       const body = document.createElement("div");
       body.className = "sheet-body";
@@ -3440,6 +3463,7 @@
       if (needAux && aux) body.append(auxLab, aux);
       body.append(tgtLab, tgtNode);
       if (fields.length) body.appendChild(paramBox);
+      if (nightLab && nightNode) body.append(nightLab, nightNode);
       body.appendChild(err);
       box.append(head, body, actions);
     }

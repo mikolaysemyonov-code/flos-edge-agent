@@ -444,9 +444,10 @@ export const DESK_SOLUTION_CARDS = [
   M("leak_close_valves", "Охрана", "Протечка — закрыть краны", "Если протечка → закрыть краны. Только линии с именем «кран/клапан».", { loadKind: "valve" }),
   M("lock_button_set", "Охрана", "Замок кнопкой", "Если нажали → команда на выбранные замки.", { loadKind: "lock" }),
   M("siren_motion", "Охрана", "Сирена по движению", "Если движение → выбранные сирены / тревога.", { loadKind: "siren" }),
-  C("scene_astro_on", "Сцены", "Свет по закату", "Включает выбранный свет в закат (астрономия NOAA). Часы — контроллер; координаты — поля карточки. Сдвиг минус = раньше. После перезагрузки догонит, если закат сегодня уже был.", {
+  C("scene_astro_on", "Сцены", "Свет по закату", "Включает за 15 мин до заката, гасит через 15 мин после восхода. Часы — щит. Можно отдельно погасить часть линий в 00:00 (или другой час).", {
     loadKind: "light",
     perLoadLevel: true,
+    nightLoads: true,
     fields: [
       {
         key: "event",
@@ -454,11 +455,25 @@ export const DESK_SOLUTION_CARDS = [
         label: "Событие",
         def: "sunset",
         options: [
-          { v: "sunset", t: "Закат (край солнца)" },
-          { v: "dusk", t: "Гражданские сумерки (−6°)" },
+          { v: "sunset", t: "Закат / восход (край солнца)" },
+          { v: "dusk", t: "Сумерки / рассвет (−6°)" },
         ],
       },
-      { key: "offsetMin", label: "Сдвиг", unit: "мин (− раньше)", def: 0 },
+      { key: "offsetOn", label: "До заката", unit: "мин (− раньше)", def: -15 },
+      { key: "offsetOff", label: "После восхода", unit: "мин (+ позже)", def: 15 },
+      {
+        key: "nightOff",
+        kind: "select",
+        label: "Ещё гасить по часам",
+        def: "none",
+        options: [
+          { v: "none", t: "Нет" },
+          { v: "all", t: "Все линии карточки" },
+          { v: "some", t: "Только указанные ниже" },
+        ],
+      },
+      { key: "nightHh", label: "Час гашения", unit: "0–23", def: 0 },
+      { key: "nightMm", label: "Минута гашения", unit: "0–59", def: 0 },
       { key: "lat", label: "Широта", unit: "°", def: 55.75 },
       { key: "lon", label: "Долгота", unit: "°", def: 37.62 },
       { key: "level", label: "Яркость", unit: "%", def: 100 },
@@ -762,6 +777,9 @@ export function upsertDeskSolution(input) {
     const n = Number(raw);
     params[f.key] = Number.isFinite(n) ? n : Number(f.def);
   }
+  const nightTargets = card.nightLoads
+    ? (Array.isArray(input?.nightTargets) ? input.nightTargets : []).map((t) => contactOf(t)).filter(Boolean)
+    : [];
   const row = {
     id,
     solutionId: card.id,
@@ -769,6 +787,7 @@ export function upsertDeskSolution(input) {
     trigger: trigger || null,
     ...(aux ? { aux } : {}),
     targets,
+    ...(nightTargets.length ? { nightTargets } : {}),
     ...(Object.keys(params).length ? { params } : {}),
     savedAt: new Date().toISOString(),
   };

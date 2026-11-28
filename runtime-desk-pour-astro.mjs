@@ -1,6 +1,6 @@
 /**
- * Сцена «свет по закату»: NOAA sunset/dusk, cron каждую минуту, раз в локальные сутки.
- * Часы и TZ — контроллер. Широта/долгота — поля карточки (дефолт Москва).
+ * Свет по солнцу: ON до заката, OFF после восхода, опционально гашение в час.
+ * NOAA, cron каждую минуту, TZ контроллера. Полярная ночь — пропуск.
  */
 import { wbActuatorSetLines } from "./runtime-desk-pour-light.mjs";
 import { physPath } from "./runtime-desk-pour-core.mjs";
@@ -27,7 +27,10 @@ function clampPct(n, fallback) {
   return fallback;
 }
 
-/** NOAA / Williams: UTC hours of rise or set, or null beyond polar circle. */
+function clampOffset(n) {
+  return Math.max(-180, Math.min(180, Math.round(Number(n) || 0)));
+}
+
 export function deskSunUtcHours(lat, lon, year, month, day, rising, zenithDeg) {
   const zenith = Number.isFinite(zenithDeg) ? zenithDeg : 90.833;
   const N1 = Math.floor((275 * month) / 9);
@@ -98,22 +101,49 @@ export function emitDeskAstroHelper() {
   ].join("\n");
 }
 
+function setLines(targets, pct, id) {
+  return targets
+    .flatMap((t) => wbActuatorSetLines(pathOf(t), pct, id, 55).map((line) => "        " + line))
+    .join("\n");
+}
+
+function nightLoads(sol, targets) {
+  const mode = String(sol?.params?.nightOff || "none").toLowerCase();
+  const picked = (Array.isArray(sol?.nightTargets) ? sol.nightTargets : []).filter((t) => pathOf(t));
+  if (mode === "all") return targets;
+  if (mode === "some" || picked.length) return picked.length ? picked : [];
+  return [];
+}
+
 export function emitDeskAstro(sol) {
   if (!isDeskAstroSolution(sol)) return "";
   const targets = (sol.targets || []).filter((t) => pathOf(t));
   if (!targets.length) return "";
   const lat = Math.max(-89.9, Math.min(89.9, num(sol.params, "lat", 55.75)));
   const lon = Math.max(-180, Math.min(180, num(sol.params, "lon", 37.62)));
-  const offset = Math.max(-180, Math.min(180, Math.round(num(sol.params, "offsetMin", 0))));
+  const offsetOn = clampOffset(num(sol.params, "offsetOn", num(sol.params, "offsetMin", -15)));
+  const offsetOff = clampOffset(num(sol.params, "offsetOff", 15));
   const zenith = String(sol.params?.event || "sunset").toLowerCase() === "dusk" ? 96 : 90.833;
   const fallback = clampPct(sol.params?.level, 100);
+  const night = nightLoads(sol, targets);
+  const nightMin = Math.max(0, Math.min(23, Math.round(num(sol.params, "nightHh", 0)))) * 60
+    + Math.max(0, Math.min(59, Math.round(num(sol.params, "nightMm", 0))));
   const id = "desk_sol_" + sol.id + "_astro";
-  const stamp = "_desk_astro_" + String(sol.id || "").replace(/[^a-zA-Z0-9_]/g, "_");
-  const sets = targets
-    .flatMap((t) => wbActuatorSetLines(pathOf(t), clampPct(t.level, fallback), id, 55).map((line) => "      " + line))
+  const safe = String(sol.id || "").replace(/[^a-zA-Z0-9_]/g, "_");
+  const onS = "_desk_astro_on_" + safe;
+  const offS = "_desk_astro_off_" + safe;
+  const nS = "_desk_astro_n_" + safe;
+  const onByLevel = targets
+    .flatMap((t) => wbActuatorSetLines(pathOf(t), clampPct(t.level, fallback), id, 55).map((line) => "        " + line))
     .join("\n");
-  return [
-    `var ${stamp} = "";`,
+  const offSets = setLines(targets, 0, id);
+  const nightSets = night.length ? setLines(night, 0, id) : "";
+  const lines = [
+    `var ${onS} = "";`,
+    `var ${offS} = "";`,
+  ];
+  if (nightSets) lines.push(`var ${nS} = "";`);
+  lines.push(
     `defineRule(${esc(id)}, {`,
     `  cron: "* * * * *",`,
     "  then: function () {",
@@ -123,17 +153,38 @@ export function emitDeskAstro(sol) {
     "      var mo = now.getMonth() + 1;",
     "      var d = now.getDate();",
     "      var day = y + '-' + mo + '-' + d;",
-    `      if (${stamp} === day) return;`,
-    `      var utc = __deskSunUtcH(${lat}, ${lon}, y, mo, d, false, ${zenith});`,
-    "      if (utc == null) return;",
-    `      var localMin = Math.round(utc * 60 + (-now.getTimezoneOffset())) + ${offset};`,
-    "      localMin = ((localMin % 1440) + 1440) % 1440;",
     "      var nowMin = now.getHours() * 60 + now.getMinutes();",
-    "      if (nowMin < localMin) return;",
-    `      ${stamp} = day;`,
-    sets,
+    "      var tz = -now.getTimezoneOffset();",
+    `      var setH = __deskSunUtcH(${lat}, ${lon}, y, mo, d, false, ${zenith});`,
+    `      var riseH = __deskSunUtcH(${lat}, ${lon}, y, mo, d, true, ${zenith});`,
+    "      if (setH == null || riseH == null) return;",
+    `      var onMin = ((Math.round(setH * 60 + tz) + ${offsetOn}) % 1440 + 1440) % 1440;`,
+    `      var offMin = ((Math.round(riseH * 60 + tz) + ${offsetOff}) % 1440 + 1440) % 1440;`,
+    "      if (nowMin >= onMin) {",
+    `        if (${onS} !== day) {`,
+    `          ${onS} = day;`,
+    onByLevel,
+    "        }",
+    "      } else if (nowMin >= offMin) {",
+    `        if (${offS} !== day) {`,
+    `          ${offS} = day;`,
+    offSets,
+    "        }",
+  );
+  if (nightSets) {
+    lines.push(
+      `      } else if (nowMin >= ${nightMin}) {`,
+      `        if (${nS} !== day) {`,
+      `          ${nS} = day;`,
+      nightSets,
+      "        }",
+    );
+  }
+  lines.push(
+    "      }",
     "    } catch (e) { if (typeof wbRuleGuardCatch === 'function') wbRuleGuardCatch(" + esc(id) + ", e); }",
     "  }",
     "});",
-  ].join("\n");
+  );
+  return lines.join("\n");
 }

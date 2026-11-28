@@ -28,7 +28,7 @@ export function deskLinkAction(sol) {
     return "переключает" + tail;
   }
   if (id === "light_all_off" || id === "cron_all_off" || id === "master_power_off_restore") return "гасит" + tail;
-  if (id === "scene_astro_on") return "включает по закату";
+  if (id === "scene_astro_on") return "включает до заката, гасит после восхода";
   const titles = new Map((deskSolutionCatalog() || []).map((c) => [c.id, c.title]));
   return titles.get(id) || sol?.title || id || "иное";
 }
